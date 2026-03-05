@@ -35,6 +35,99 @@ php artisan cipi:token-create
 - **Swagger Docs** — Interactive API reference available at `/docs`.
 - **Artisan Commands** — `cipi:token-create`, `cipi:token-list`, `cipi:token-revoke`.
 
+## MCP Integration
+
+The MCP server is exposed at `/mcp` using [Streamable HTTP](https://modelcontextprotocol.io/) transport and is secured with the same Sanctum token used by the REST API (the token must have the `mcp-access` ability).
+
+Generate a token if you haven't already:
+
+```bash
+php artisan cipi:token-create
+```
+
+Replace `https://your-server.com` and `YOUR_TOKEN` in the examples below with your actual Cipi host and token.
+
+### VS Code
+
+Create (or edit) `.vscode/mcp.json` in your workspace:
+
+```json
+{
+  "inputs": [
+    {
+      "type": "promptString",
+      "id": "cipi-token",
+      "description": "Cipi API Token",
+      "password": true
+    }
+  ],
+  "servers": {
+    "cipi-api": {
+      "type": "http",
+      "url": "https://your-server.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:cipi-token}"
+      }
+    }
+  }
+}
+```
+
+> Restart VS Code after adding the configuration. The token will be requested on first connection and securely stored.
+
+### Cursor
+
+Create (or edit) `.cursor/mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "cipi-api": {
+      "url": "https://your-server.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN"
+      }
+    }
+  }
+}
+```
+
+> Restart Cursor after adding the configuration (Cursor v0.40+).
+
+### Claude Code
+
+Run the following command from your terminal:
+
+```bash
+claude mcp add --transport http cipi-api https://your-server.com/mcp \
+  --header "Authorization: Bearer YOUR_TOKEN"
+```
+
+Verify the server is connected:
+
+```bash
+claude mcp list
+```
+
+### Available MCP Tools
+
+Once connected, the following tools are available to the AI agent:
+
+| Tool | Description |
+| --- | --- |
+| `AppList` | List all apps with domains, PHP versions, and aliases |
+| `AppShow` | Show details of a specific app |
+| `AppCreate` | Create a new app |
+| `AppEdit` | Edit an existing app |
+| `AppDelete` | Delete an app |
+| `AppDeploy` | Deploy an app |
+| `AppDeployRollback` | Rollback the last deploy |
+| `AppDeployUnlock` | Unlock a stuck deploy |
+| `AliasList` | List aliases for an app |
+| `AliasAdd` | Add an alias to an app |
+| `AliasRemove` | Remove an alias from an app |
+| `SslInstall` | Install an SSL certificate for an app |
+
 ## Configuration
 
 This package is automatically installed and configured by `cipi api`. No manual setup is needed.

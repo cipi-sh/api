@@ -7,6 +7,9 @@ use CipiApi\Mcp\Tools\AliasListTool;
 use CipiApi\Mcp\Tools\AliasRemoveTool;
 use CipiApi\Mcp\Tools\AppCreateTool;
 use CipiApi\Mcp\Tools\AppDeleteTool;
+use CipiApi\Mcp\Tools\AppDeployRollbackTool;
+use CipiApi\Mcp\Tools\AppDeployTool;
+use CipiApi\Mcp\Tools\AppDeployUnlockTool;
 use CipiApi\Mcp\Tools\AppEditTool;
 use CipiApi\Mcp\Tools\AppListTool;
 use CipiApi\Mcp\Tools\AppShowTool;
@@ -27,6 +30,9 @@ class CipiServer extends Server
         AppCreateTool::class,
         AppEditTool::class,
         AppDeleteTool::class,
+        AppDeployTool::class,
+        AppDeployRollbackTool::class,
+        AppDeployUnlockTool::class,
         AliasListTool::class,
         AliasAddTool::class,
         AliasRemoveTool::class,

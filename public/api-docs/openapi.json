@@ -243,6 +243,84 @@
                 }
             }
         },
+        "/apps/{name}/deploy": {
+            "post": {
+                "tags": ["Deploy"],
+                "summary": "Deploy app",
+                "description": "Trigger a deploy for an app. Validates app exists synchronously. Dispatches CLI command as async job. Requires `deploy-manage` ability.",
+                "operationId": "appDeploy",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/apps/{name}/deploy/rollback": {
+            "post": {
+                "tags": ["Deploy"],
+                "summary": "Rollback deploy",
+                "description": "Rollback the last deploy of an app. Validates app exists synchronously. Dispatches CLI command as async job. Requires `deploy-manage` ability.",
+                "operationId": "appDeployRollback",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/apps/{name}/deploy/unlock": {
+            "post": {
+                "tags": ["Deploy"],
+                "summary": "Unlock deploy",
+                "description": "Unlock a stuck deploy for an app. Validates app exists synchronously. Dispatches CLI command as async job. Requires `deploy-manage` ability.",
+                "operationId": "appDeployUnlock",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
         "/ssl/{name}": {
             "post": {
                 "tags": ["SSL"],
@@ -473,7 +551,7 @@
                             },
                             "type": {
                                 "type": "string",
-                                "enum": ["app-create", "app-edit", "app-delete", "alias-create", "alias-delete", "ssl-install"],
+                                "enum": ["app-create", "app-edit", "app-delete", "app-deploy", "app-deploy-rollback", "app-deploy-unlock", "alias-create", "alias-delete", "ssl-install"],
                                 "example": "app-create"
                             },
                             "status": {
@@ -489,6 +567,9 @@
                                     { "$ref": "#/components/schemas/JobResultAppCreate" },
                                     { "$ref": "#/components/schemas/JobResultAppEdit" },
                                     { "$ref": "#/components/schemas/JobResultAppDelete" },
+                                    { "$ref": "#/components/schemas/JobResultAppDeploy" },
+                                    { "$ref": "#/components/schemas/JobResultAppDeployRollback" },
+                                    { "$ref": "#/components/schemas/JobResultAppDeployUnlock" },
                                     { "$ref": "#/components/schemas/JobResultAliasCreate" },
                                     { "$ref": "#/components/schemas/JobResultAliasDelete" },
                                     { "$ref": "#/components/schemas/JobResultSslInstall" },
@@ -563,6 +644,30 @@
                 "properties": {
                     "app": { "type": "string" },
                     "deleted": { "type": "boolean", "example": true }
+                }
+            },
+            "JobResultAppDeploy": {
+                "type": "object",
+                "description": "Result for app-deploy job",
+                "properties": {
+                    "app": { "type": "string", "example": "myapp" },
+                    "deployed": { "type": "boolean", "example": true }
+                }
+            },
+            "JobResultAppDeployRollback": {
+                "type": "object",
+                "description": "Result for app-deploy-rollback job",
+                "properties": {
+                    "app": { "type": "string", "example": "myapp" },
+                    "rolled_back": { "type": "boolean", "example": true }
+                }
+            },
+            "JobResultAppDeployUnlock": {
+                "type": "object",
+                "description": "Result for app-deploy-unlock job",
+                "properties": {
+                    "app": { "type": "string", "example": "myapp" },
+                    "unlocked": { "type": "boolean", "example": true }
                 }
             },
             "JobResultAliasCreate": {
@@ -677,6 +782,7 @@
     },
     "tags": [
         { "name": "Apps", "description": "App management" },
+        { "name": "Deploy", "description": "App deploy management" },
         { "name": "Aliases", "description": "Domain alias management" },
         { "name": "SSL", "description": "SSL certificate management" },
         { "name": "Jobs", "description": "Background job status polling" }

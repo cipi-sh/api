@@ -12,6 +12,9 @@ class CipiOutputParser
             'app-create' => $this->parseAppCreate($plain),
             'app-edit' => $this->parseAppEdit($plain),
             'app-delete' => $this->parseAppDelete($plain),
+            'app-deploy' => $this->parseAppDeploy($plain),
+            'app-deploy-rollback' => $this->parseAppDeployRollback($plain),
+            'app-deploy-unlock' => $this->parseAppDeployUnlock($plain),
             'alias-create' => $this->parseAliasCreate($plain),
             'alias-delete' => $this->parseAliasDelete($plain),
             'ssl-install' => $this->parseSslInstall($plain),
@@ -129,6 +132,57 @@ class CipiOutputParser
         if (preg_match("/'([^']+)'\s+deleted/", $text, $m)) {
             return ['app' => $m[1], 'deleted' => true];
         }
+        return null;
+    }
+
+    protected function parseAppDeploy(string $text): ?array
+    {
+        if (preg_match('/deployed\s+successfully/i', $text)) {
+            $app = null;
+            if (preg_match("/'([^']+)'\s+deployed/i", $text, $m)) {
+                $app = $m[1];
+            }
+
+            return array_filter([
+                'app' => $app,
+                'deployed' => true,
+            ], fn ($v) => $v !== null);
+        }
+
+        return null;
+    }
+
+    protected function parseAppDeployRollback(string $text): ?array
+    {
+        if (preg_match('/rollback\s+completed/i', $text) || preg_match('/rolled\s+back/i', $text)) {
+            $app = null;
+            if (preg_match("/'([^']+)'\s+rolled\s+back/i", $text, $m)) {
+                $app = $m[1];
+            }
+
+            return array_filter([
+                'app' => $app,
+                'rolled_back' => true,
+            ], fn ($v) => $v !== null);
+        }
+
+        return null;
+    }
+
+    protected function parseAppDeployUnlock(string $text): ?array
+    {
+        if (preg_match('/deploy\s+unlocked/i', $text) || preg_match('/unlock\s+completed/i', $text)) {
+            $app = null;
+            if (preg_match("/'([^']+)'\s+(?:deploy\s+)?unlocked/i", $text, $m)) {
+                $app = $m[1];
+            }
+
+            return array_filter([
+                'app' => $app,
+                'unlocked' => true,
+            ], fn ($v) => $v !== null);
+        }
+
         return null;
     }
 
