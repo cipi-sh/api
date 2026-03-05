@@ -36,7 +36,7 @@ class CipiValidationService
     {
         $escaped = escapeshellarg($path);
         $output = [];
-        exec("sudo cat {$escaped} 2>/dev/null", $output, $exitCode);
+        exec("sudo /bin/cat {$escaped} 2>/dev/null", $output, $exitCode);
 
         return $exitCode === 0 ? implode("\n", $output) : null;
     }
