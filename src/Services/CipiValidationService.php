@@ -2,15 +2,43 @@
 
 namespace CipiApi\Services;
 
+use CipiApi\Exceptions\AppsJsonUnreadableException;
+
 class CipiValidationService
 {
     public function getApps(): array
     {
         $path = config('cipi.apps_json', '/etc/cipi/apps.json');
-        if (! file_exists($path)) {
-            return [];
+
+        $json = $this->readAppsJson($path);
+        if ($json === null) {
+            throw new AppsJsonUnreadableException($path);
         }
-        return json_decode(file_get_contents($path), true) ?: [];
+
+        return json_decode($json, true) ?: [];
+    }
+
+    protected function readAppsJson(string $path): ?string
+    {
+        if (! file_exists($path)) {
+            return null;
+        }
+
+        if (is_readable($path)) {
+            $content = file_get_contents($path);
+            return $content !== false ? $content : null;
+        }
+
+        return $this->readViaSudo($path);
+    }
+
+    protected function readViaSudo(string $path): ?string
+    {
+        $escaped = escapeshellarg($path);
+        $output = [];
+        exec("sudo cat {$escaped} 2>/dev/null", $output, $exitCode);
+
+        return $exitCode === 0 ? implode("\n", $output) : null;
     }
 
     public function appExists(string $name): bool

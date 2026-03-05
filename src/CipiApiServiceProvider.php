@@ -6,6 +6,7 @@ use CipiApi\Console\Commands\CipiTokenCreate;
 use CipiApi\Console\Commands\CipiTokenList;
 use CipiApi\Console\Commands\CipiTokenRevoke;
 use CipiApi\Console\Commands\SeedApiUser;
+use CipiApi\Exceptions\AppsJsonUnreadableException;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
@@ -19,6 +20,14 @@ class CipiApiServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $this->app->make(\Illuminate\Contracts\Debug\ExceptionHandler::class)->renderable(
+            function (AppsJsonUnreadableException $e, $request) {
+                if ($request && ($request->expectsJson() || $request->is('api/*'))) {
+                    return response()->json(['error' => $e->getMessage()], 503);
+                }
+            }
+        );
+
         $this->loadRoutesFrom(__DIR__ . '/../routes/api.php');
         $this->loadRoutesFrom(__DIR__ . '/../routes/web.php');
 

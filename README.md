@@ -35,6 +35,17 @@ php artisan cipi:token-create
 - **Swagger Docs** — Interactive API reference available at `/docs`.
 - **Artisan Commands** — `cipi:token-create`, `cipi:token-list`, `cipi:token-revoke`.
 
+## Configuration
+
+Set `CIPI_APPS_JSON` in `.env` (default: `/etc/cipi/apps.json`). The API must be able to read this file.
+
+**If you get "App not found" but the app exists in `cipi app list`:** the web server user cannot read `apps.json`. Either:
+
+- `chmod 644 /etc/cipi/apps.json` (makes it world-readable), or
+- Add to sudoers: `<api-user> ALL=(ALL) NOPASSWD: /usr/bin/cat /etc/cipi/apps.json`
+
+Replace `<api-user>` with the PHP-FPM user (e.g. `www-data` or the app username).
+
 ## License
 
 MIT

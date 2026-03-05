@@ -2,6 +2,7 @@
 
 namespace CipiApi\Http\Controllers;
 
+use CipiApi\Models\CipiJob;
 use CipiApi\Services\CipiJobService;
 use CipiApi\Services\CipiValidationService;
 use Illuminate\Http\JsonResponse;
@@ -70,6 +71,9 @@ class AppController extends Controller
         if ($usedBy) {
             return response()->json(['error' => "Domain '{$validated['domain']}' is already used by app '{$usedBy}'"], 409);
         }
+        if ($this->hasPendingAppCreate($validated['user'])) {
+            return response()->json(['error' => "App '{$validated['user']}' is already being created"], 409);
+        }
 
         $args = ['app create'];
         foreach ($validated as $k => $v) {
@@ -123,5 +127,13 @@ class AppController extends Controller
         $command = 'app delete ' . escapeshellarg($name) . ' --force';
         $job = $this->jobs->dispatch('app-delete', $command, ['app' => $name]);
         return response()->json(['job_id' => $job->id, 'status' => 'pending'], 202);
+    }
+
+    protected function hasPendingAppCreate(string $user): bool
+    {
+        return CipiJob::where('type', 'app-create')
+            ->whereIn('status', ['pending', 'running'])
+            ->where('params->user', $user)
+            ->exists();
     }
 }
