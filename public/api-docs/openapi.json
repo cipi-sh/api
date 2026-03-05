@@ -1,0 +1,592 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Cipi API",
+        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps, domain aliases, and SSL certificates.\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Write operations (create, edit, delete, SSL, alias add/remove) are dispatched as background jobs. The API responds immediately with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status.\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**MCP Server:** An MCP (Model Context Protocol) server is available at `/mcp` with the same authentication.",
+        "version": "2.0.0",
+        "contact": {
+            "name": "Cipi",
+            "url": "https://cipi.sh"
+        },
+        "license": {
+            "name": "MIT"
+        }
+    },
+    "servers": [
+        {
+            "url": "/api",
+            "description": "API"
+        }
+    ],
+    "security": [
+        {
+            "BearerAuth": []
+        }
+    ],
+    "paths": {
+        "/apps": {
+            "get": {
+                "tags": ["Apps"],
+                "summary": "List apps",
+                "description": "List all apps on the server. Requires `apps-view` ability. Returns data synchronously.",
+                "operationId": "appList",
+                "responses": {
+                    "200": {
+                        "description": "App list",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AppListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            },
+            "post": {
+                "tags": ["Apps"],
+                "summary": "Create app",
+                "description": "Create a new app. Validates domain/username synchronously (returns 409/422 on conflict). Dispatches CLI command as async job. Requires `apps-create` ability.",
+                "operationId": "appCreate",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AppCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "409": { "$ref": "#/components/responses/Conflict" },
+                    "422": { "$ref": "#/components/responses/ValidationError" }
+                }
+            }
+        },
+        "/apps/{name}": {
+            "get": {
+                "tags": ["Apps"],
+                "summary": "Show app",
+                "description": "Show app details. Returns data synchronously. Requires `apps-view` ability.",
+                "operationId": "appShow",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "App details",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AppShowResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            },
+            "put": {
+                "tags": ["Apps"],
+                "summary": "Edit app",
+                "description": "Edit an app (PHP version, branch, repository). Validates app exists synchronously. Dispatches CLI command as async job. Requires `apps-edit` ability.",
+                "operationId": "appEdit",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AppEditRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "422": { "$ref": "#/components/responses/ValidationError" }
+                }
+            },
+            "delete": {
+                "tags": ["Apps"],
+                "summary": "Delete app",
+                "description": "Permanently delete an app and all associated resources. Validates app exists synchronously. Dispatches CLI command as async job. Requires `apps-delete` ability.",
+                "operationId": "appDelete",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/apps/{name}/aliases": {
+            "get": {
+                "tags": ["Aliases"],
+                "summary": "List aliases",
+                "description": "List domain aliases for an app. Returns data synchronously. Requires `aliases-view` ability.",
+                "operationId": "aliasList",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Alias list",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AliasListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/apps/{name}/aliases/{alias}": {
+            "post": {
+                "tags": ["Aliases"],
+                "summary": "Add alias",
+                "description": "Add a domain alias to an app. Validates domain is not in use synchronously (returns 409). Dispatches CLI command as async job. Requires `aliases-create` ability.",
+                "operationId": "aliasCreate",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" },
+                    { "$ref": "#/components/parameters/AliasDomain" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "409": { "$ref": "#/components/responses/Conflict" },
+                    "422": { "$ref": "#/components/responses/ValidationError" }
+                }
+            },
+            "delete": {
+                "tags": ["Aliases"],
+                "summary": "Remove alias",
+                "description": "Remove a domain alias from an app. Validates alias exists synchronously (returns 404). Dispatches CLI command as async job. Requires `aliases-delete` ability.",
+                "operationId": "aliasDelete",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" },
+                    { "$ref": "#/components/parameters/AliasDomain" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/ssl/{name}": {
+            "post": {
+                "tags": ["SSL"],
+                "summary": "Install SSL",
+                "description": "Install Let's Encrypt SSL certificate for an app. Validates app exists synchronously. Dispatches CLI command as async job. Requires `ssl-manage` ability.",
+                "operationId": "sslInstall",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/jobs/{id}": {
+            "get": {
+                "tags": ["Jobs"],
+                "summary": "Get job status",
+                "description": "Poll a background job status. Any authenticated token can check any job. Returns status (pending, running, completed, failed) and output when finished.",
+                "operationId": "jobShow",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "description": "Job UUID",
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Job status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        }
+    },
+    "components": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "description": "Sanctum API token. Create with: cipi api token create"
+            }
+        },
+        "parameters": {
+            "AppName": {
+                "name": "name",
+                "in": "path",
+                "required": true,
+                "description": "App username (e.g. myapp)",
+                "schema": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9]{2,31}$"
+                }
+            },
+            "AliasDomain": {
+                "name": "alias",
+                "in": "path",
+                "required": true,
+                "description": "Domain alias (e.g. www.example.com)",
+                "schema": {
+                    "type": "string",
+                    "format": "hostname"
+                }
+            }
+        },
+        "schemas": {
+            "AppCreateRequest": {
+                "type": "object",
+                "required": ["user", "domain", "repository"],
+                "properties": {
+                    "user": {
+                        "type": "string",
+                        "description": "App username (lowercase, min 3 chars)",
+                        "pattern": "^[a-z][a-z0-9]*$",
+                        "minLength": 3,
+                        "maxLength": 32,
+                        "example": "myapp"
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Primary domain",
+                        "example": "myapp.example.com"
+                    },
+                    "repository": {
+                        "type": "string",
+                        "description": "Git repository URL (SSH)",
+                        "example": "git@github.com:user/repo.git"
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Git branch",
+                        "default": "main",
+                        "example": "main"
+                    },
+                    "php": {
+                        "type": "string",
+                        "description": "PHP version",
+                        "enum": ["7.4", "8.0", "8.1", "8.2", "8.3", "8.4", "8.5"],
+                        "default": "8.4",
+                        "example": "8.4"
+                    }
+                }
+            },
+            "AppEditRequest": {
+                "type": "object",
+                "properties": {
+                    "php": {
+                        "type": "string",
+                        "enum": ["7.4", "8.0", "8.1", "8.2", "8.3", "8.4", "8.5"],
+                        "description": "PHP version"
+                    },
+                    "branch": {
+                        "type": "string",
+                        "description": "Git branch",
+                        "maxLength": 64
+                    },
+                    "repository": {
+                        "type": "string",
+                        "description": "Git repository URL"
+                    }
+                }
+            },
+            "AppListResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "app": { "type": "string", "example": "myapp" },
+                                "domain": { "type": "string", "example": "myapp.example.com" },
+                                "php": { "type": "string", "example": "8.4" },
+                                "branch": { "type": "string", "example": "main" },
+                                "repository": { "type": "string", "example": "git@github.com:user/repo.git" },
+                                "aliases": {
+                                    "type": "array",
+                                    "items": { "type": "string" },
+                                    "example": ["www.myapp.example.com"]
+                                },
+                                "created_at": { "type": "string", "example": "2026-03-05" }
+                            }
+                        }
+                    }
+                }
+            },
+            "AppShowResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": { "type": "string" },
+                            "domain": { "type": "string" },
+                            "php": { "type": "string" },
+                            "branch": { "type": "string" },
+                            "repository": { "type": "string" },
+                            "aliases": {
+                                "type": "array",
+                                "items": { "type": "string" }
+                            },
+                            "created_at": { "type": "string" }
+                        }
+                    }
+                }
+            },
+            "AliasListResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "example": ["www.myapp.example.com", "alias.example.com"]
+                    }
+                }
+            },
+            "JobAcceptedResponse": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Background job UUID. Poll GET /api/jobs/{id} for status.",
+                        "example": "550e8400-e29b-41d4-a716-446655440000"
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["pending"],
+                        "example": "pending"
+                    }
+                }
+            },
+            "JobStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "format": "uuid"
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": ["app-create", "app-edit", "app-delete", "alias-create", "alias-delete", "ssl-install"],
+                                "example": "app-create"
+                            },
+                            "status": {
+                                "type": "string",
+                                "enum": ["pending", "running", "completed", "failed"],
+                                "example": "completed"
+                            },
+                            "output": {
+                                "type": "string",
+                                "description": "CLI output (only present when status is completed or failed)",
+                                "nullable": true
+                            },
+                            "exit_code": {
+                                "type": "integer",
+                                "description": "CLI exit code (only present when status is completed or failed)",
+                                "nullable": true,
+                                "example": 0
+                            },
+                            "created_at": {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            "updated_at": {
+                                "type": "string",
+                                "format": "date-time"
+                            }
+                        }
+                    }
+                }
+            },
+            "ErrorResponse": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "description": "Error message"
+                    }
+                }
+            }
+        },
+        "responses": {
+            "Unauthorized": {
+                "description": "Missing or invalid token",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": { "type": "string", "example": "Unauthenticated." }
+                            }
+                        }
+                    }
+                }
+            },
+            "Forbidden": {
+                "description": "Token lacks required ability",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": { "type": "string", "example": "Invalid ability provided." }
+                            }
+                        }
+                    }
+                }
+            },
+            "NotFound": {
+                "description": "Resource not found",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "Conflict": {
+                "description": "Resource conflict (domain or app already exists)",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "ValidationError": {
+                "description": "Validation error",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "message": { "type": "string" },
+                                "errors": {
+                                    "type": "object",
+                                    "additionalProperties": {
+                                        "type": "array",
+                                        "items": { "type": "string" }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "tags": [
+        { "name": "Apps", "description": "App management" },
+        { "name": "Aliases", "description": "Domain alias management" },
+        { "name": "SSL", "description": "SSL certificate management" },
+        { "name": "Jobs", "description": "Background job status polling" }
+    ]
+}
