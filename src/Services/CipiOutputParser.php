@@ -18,6 +18,12 @@ class CipiOutputParser
             'alias-create' => $this->parseAliasCreate($plain),
             'alias-delete' => $this->parseAliasDelete($plain),
             'ssl-install' => $this->parseSslInstall($plain),
+            'db-create' => $this->parseDbCreate($plain),
+            'db-list' => $this->parseDbList($plain),
+            'db-delete' => $this->parseDbDelete($plain),
+            'db-backup' => $this->parseDbBackup($plain),
+            'db-restore' => $this->parseDbRestore($plain),
+            'db-password' => $this->parseDbPassword($plain),
             default => null,
         };
 
@@ -207,6 +213,107 @@ class CipiOutputParser
         if (preg_match('/SSL\s+installed\s+for\s+(\S+)/', $text, $m)) {
             return ['domain' => trim($m[1]), 'installed' => true];
         }
+        return null;
+    }
+
+    protected function parseDbCreate(string $text): ?array
+    {
+        $name = $this->extractLabel($text, 'Database:') ?? $this->extractLabel($text, 'Name:');
+        $user = $this->extractLabel($text, 'Username:') ?? $this->extractLabel($text, 'User:');
+        $password = $this->extractLabel($text, 'Password:');
+        $url = $this->extractLabel($text, 'URL:');
+
+        if (! $name && ! $user) {
+            return null;
+        }
+
+        return array_filter([
+            'database' => $name,
+            'user' => $user,
+            'password' => $password,
+            'url' => $url,
+        ], fn ($v) => $v !== null);
+    }
+
+    protected function parseDbList(string $text): ?array
+    {
+        $databases = [];
+        $lines = explode("\n", $text);
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '' || str_starts_with($line, '─') || str_starts_with($line, '=') || str_contains($line, 'DATABASE') || str_contains($line, 'Name')) {
+                continue;
+            }
+            if (preg_match('/^(\S+)\s+(.+)$/', $line, $m)) {
+                $databases[] = ['name' => trim($m[1]), 'size' => trim($m[2])];
+            } elseif (preg_match('/^(\S+)$/', $line, $m)) {
+                $databases[] = ['name' => trim($m[1])];
+            }
+        }
+
+        return ! empty($databases) ? ['databases' => $databases] : null;
+    }
+
+    protected function parseDbDelete(string $text): ?array
+    {
+        if (preg_match("/'([^']+)'\s+deleted/i", $text, $m)) {
+            return ['database' => $m[1], 'deleted' => true];
+        }
+        if (preg_match('/deleted\s+(?:database\s+)?(\S+)/i', $text, $m)) {
+            return ['database' => trim($m[1]), 'deleted' => true];
+        }
+        return null;
+    }
+
+    protected function parseDbBackup(string $text): ?array
+    {
+        $file = $this->extractLabel($text, 'Backup:') ?? $this->extractLabel($text, 'File:');
+        if (! $file && preg_match('/([\/\w\-\.]+\.sql\.gz)/', $text, $m)) {
+            $file = trim($m[1]);
+        }
+
+        if ($file) {
+            return ['file' => $file];
+        }
+
+        if (preg_match('/backup\s+completed/i', $text)) {
+            return ['backed_up' => true];
+        }
+
+        return null;
+    }
+
+    protected function parseDbRestore(string $text): ?array
+    {
+        if (preg_match('/restore[d]?\s+(?:completed|successfully)/i', $text)) {
+            $name = null;
+            if (preg_match("/'([^']+)'\s+restored/i", $text, $m)) {
+                $name = $m[1];
+            }
+            return array_filter([
+                'database' => $name,
+                'restored' => true,
+            ], fn ($v) => $v !== null);
+        }
+        return null;
+    }
+
+    protected function parseDbPassword(string $text): ?array
+    {
+        $password = $this->extractLabel($text, 'Password:') ?? $this->extractLabel($text, 'New password:');
+        $user = $this->extractLabel($text, 'Username:') ?? $this->extractLabel($text, 'User:');
+
+        if ($password) {
+            return array_filter([
+                'user' => $user,
+                'password' => $password,
+            ], fn ($v) => $v !== null);
+        }
+
+        if (preg_match('/password\s+(?:updated|changed|regenerated)/i', $text)) {
+            return ['password_changed' => true];
+        }
+
         return null;
     }
 }

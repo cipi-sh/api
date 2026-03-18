@@ -2,6 +2,7 @@
 
 use CipiApi\Http\Controllers\AliasController;
 use CipiApi\Http\Controllers\AppController;
+use CipiApi\Http\Controllers\DbController;
 use CipiApi\Http\Controllers\DeployController;
 use CipiApi\Http\Controllers\JobController;
 use CipiApi\Http\Controllers\SslController;
@@ -27,6 +28,14 @@ Route::prefix('api')->middleware(['auth:sanctum'])->group(function () {
 
     // SSL
     Route::post('/apps/{name}/ssl', [SslController::class, 'install'])->middleware('ability:ssl-manage');
+
+    // Databases
+    Route::get('/dbs', [DbController::class, 'list'])->middleware('ability:dbs-view');
+    Route::post('/dbs', [DbController::class, 'create'])->middleware('ability:dbs-create');
+    Route::delete('/dbs/{name}', [DbController::class, 'delete'])->middleware('ability:dbs-delete');
+    Route::post('/dbs/{name}/backup', [DbController::class, 'backup'])->middleware('ability:dbs-manage');
+    Route::post('/dbs/{name}/restore', [DbController::class, 'restore'])->middleware('ability:dbs-manage');
+    Route::post('/dbs/{name}/password', [DbController::class, 'password'])->middleware('ability:dbs-manage');
 
     // Jobs
     Route::get('/jobs/{id}', [JobController::class, 'show']);

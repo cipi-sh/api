@@ -53,6 +53,8 @@ class AppController extends Controller
             'repository' => 'required|string',
             'branch' => 'nullable|string|max:64',
             'php' => 'nullable|string',
+            'custom' => 'nullable|boolean',
+            'docroot' => 'nullable|string|max:128',
         ]);
 
         if ($err = $this->validator->usernameError($validated['user'])) {
@@ -63,6 +65,9 @@ class AppController extends Controller
         }
         if ($err = $this->validator->phpVersionError($validated['php'] ?? null)) {
             return response()->json(['error' => $err], 422);
+        }
+        if (! empty($validated['docroot']) && ! preg_match('/^[a-zA-Z0-9_\-\/]+$/', $validated['docroot'])) {
+            return response()->json(['error' => 'Invalid docroot format. Use alphanumeric characters, dashes, underscores, and slashes only.'], 422);
         }
         if ($this->validator->appExists($validated['user'])) {
             return response()->json(['error' => "App '{$validated['user']}' already exists"], 409);
@@ -75,8 +80,16 @@ class AppController extends Controller
             return response()->json(['error' => "App '{$validated['user']}' is already being created"], 409);
         }
 
+        $isCustom = ! empty($validated['custom']);
+
         $args = ['app create'];
+        if ($isCustom) {
+            $args[] = '--custom';
+        }
         foreach ($validated as $k => $v) {
+            if ($k === 'custom') {
+                continue;
+            }
             if ($v !== null && $v !== '') {
                 $args[] = '--' . $k . '=' . escapeshellarg((string) $v);
             }

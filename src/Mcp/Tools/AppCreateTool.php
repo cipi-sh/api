@@ -29,6 +29,8 @@ class AppCreateTool extends Tool
         $repository = $request->get('repository');
         $branch = $request->get('branch', 'main');
         $php = $request->get('php', '8.4');
+        $custom = (bool) $request->get('custom', false);
+        $docroot = $request->get('docroot');
 
         if ($err = $this->validator->usernameError($user ?? '')) {
             return Response::text("Error: {$err}");
@@ -39,6 +41,9 @@ class AppCreateTool extends Tool
         if ($err = $this->validator->phpVersionError($php)) {
             return Response::text("Error: {$err}");
         }
+        if ($docroot && ! preg_match('/^[a-zA-Z0-9_\-\/]+$/', $docroot)) {
+            return Response::text('Error: Invalid docroot format. Use alphanumeric characters, dashes, underscores, and slashes only.');
+        }
         if ($this->validator->appExists($user)) {
             return Response::text("Error: App '{$user}' already exists");
         }
@@ -47,9 +52,15 @@ class AppCreateTool extends Tool
             return Response::text("Error: Domain '{$domain}' is already used by app '{$usedBy}'");
         }
 
-        $params = compact('user', 'domain', 'repository', 'branch', 'php');
+        $params = compact('user', 'domain', 'repository', 'branch', 'php', 'custom', 'docroot');
         $args = ['app create'];
+        if ($custom) {
+            $args[] = '--custom';
+        }
         foreach ($params as $k => $v) {
+            if ($k === 'custom') {
+                continue;
+            }
             if ($v !== null && $v !== '') {
                 $args[] = '--' . $k . '=' . escapeshellarg((string) $v);
             }
@@ -67,6 +78,8 @@ class AppCreateTool extends Tool
             'repository' => $schema->string()->description('Git repository URL (SSH)')->required(),
             'branch' => $schema->string()->description('Branch (default: main)'),
             'php' => $schema->string()->description('PHP version (default: 8.4)'),
+            'custom' => $schema->boolean()->description('Create a custom (non-Laravel) app with classic deploy (no zero-downtime)'),
+            'docroot' => $schema->string()->description('Document root path for custom apps (e.g. dist, www, public). Default: /'),
         ];
     }
 }
