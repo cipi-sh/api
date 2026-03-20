@@ -26,10 +26,18 @@ class AppCreateTool extends Tool
 
         $user = $request->get('user');
         $domain = $request->get('domain');
-        $repository = $request->get('repository');
-        $branch = $request->get('branch', 'main');
-        $php = $request->get('php', '8.4');
+        $repositoryRaw = $request->get('repository');
+        $repository = is_string($repositoryRaw) ? trim($repositoryRaw) : $repositoryRaw;
+        if ($repository === '') {
+            $repository = null;
+        }
         $custom = (bool) $request->get('custom', false);
+        $hasRepo = $repository !== null && $repository !== '';
+        $branch = $request->get('branch');
+        if ($branch === null && $hasRepo) {
+            $branch = 'main';
+        }
+        $php = $request->get('php', '8.4');
         $docroot = $request->get('docroot');
 
         if ($err = $this->validator->usernameError($user ?? '')) {
@@ -40,6 +48,9 @@ class AppCreateTool extends Tool
         }
         if ($err = $this->validator->phpVersionError($php)) {
             return Response::text("Error: {$err}");
+        }
+        if (! $custom && ! $hasRepo) {
+            return Response::text('Error: repository is required for Laravel apps (set custom=true for SFTP-only apps without Git)');
         }
         if ($docroot && ! preg_match('/^[a-zA-Z0-9_\-\/]+$/', $docroot)) {
             return Response::text('Error: Invalid docroot format. Use alphanumeric characters, dashes, underscores, and slashes only.');
@@ -75,8 +86,8 @@ class AppCreateTool extends Tool
         return [
             'user' => $schema->string()->description('App username (slug, 3-32 lowercase alphanumeric)')->required(),
             'domain' => $schema->string()->description('Primary domain')->required(),
-            'repository' => $schema->string()->description('Git repository URL (SSH)')->required(),
-            'branch' => $schema->string()->description('Branch (default: main)'),
+            'repository' => $schema->string()->description('Git repository URL (SSH). Required for Laravel apps; optional for custom apps (omit for SFTP-only / no Git, aligned with Cipi 4.4.4+)'),
+            'branch' => $schema->string()->description('Git branch when a repository is set (default: main). Omitted when no repository (SFTP-only custom apps)'),
             'php' => $schema->string()->description('PHP version (default: 8.4)'),
             'custom' => $schema->boolean()->description('Create a custom (non-Laravel) app with classic deploy (no zero-downtime)'),
             'docroot' => $schema->string()->description('Document root path for custom apps (e.g. dist, www, public). Default: /'),

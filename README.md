@@ -30,7 +30,7 @@ php artisan cipi:token-create
 
 ## Features
 
-- **REST API** — CRUD for apps, aliases, databases, SSL, and async jobs (`/api/*`), secured with Laravel Sanctum and token abilities.
+- **REST API** — CRUD for apps, aliases, databases, SSL, and async jobs (`/api/*`), secured with Laravel Sanctum and token abilities. App create supports optional Git for **custom** apps (SFTP-only), matching Cipi 4.4.4+.
 - **MCP Server** — Model Context Protocol endpoint at `/mcp` for AI-powered integrations.
 - **Swagger Docs** — Interactive API reference available at `/docs`.
 - **Artisan Commands** — `cipi:token-create`, `cipi:token-list`, `cipi:token-revoke`.
@@ -117,7 +117,7 @@ Once connected, the following tools are available to the AI agent:
 | ------------------- | ----------------------------------------------------- |
 | `AppList`           | List all apps with domains, PHP versions, and aliases |
 | `AppShow`           | Show details of a specific app                        |
-| `AppCreate`         | Create a new app (supports `--custom` for non-Laravel apps) |
+| `AppCreate`         | Create a new app (`custom` for non-Laravel apps; optional Git for custom SFTP-only sites, Cipi 4.4.4+) |
 | `AppEdit`           | Edit an existing app                                  |
 | `AppDelete`         | Delete an app                                         |
 | `AppDeploy`         | Deploy an app                                         |

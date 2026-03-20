@@ -8,6 +8,7 @@ use CipiApi\Services\CipiValidationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Validation\Rule;
 
 class AppController extends Controller
 {
@@ -50,12 +51,26 @@ class AppController extends Controller
         $validated = $request->validate([
             'user' => 'required|string',
             'domain' => 'required|string',
-            'repository' => 'required|string',
+            'repository' => [
+                Rule::requiredIf(fn () => ! $request->boolean('custom')),
+                'nullable',
+                'string',
+            ],
             'branch' => 'nullable|string|max:64',
             'php' => 'nullable|string',
             'custom' => 'nullable|boolean',
             'docroot' => 'nullable|string|max:128',
         ]);
+
+        if (isset($validated['repository'])) {
+            $validated['repository'] = trim((string) $validated['repository']);
+            if ($validated['repository'] === '') {
+                $validated['repository'] = null;
+            }
+        }
+        if ($request->boolean('custom') && empty($validated['repository'])) {
+            unset($validated['branch']);
+        }
 
         if ($err = $this->validator->usernameError($validated['user'])) {
             return response()->json(['error' => $err], 422);

@@ -3,7 +3,7 @@
     "info": {
         "title": "Cipi API",
         "description": "REST API for Cipi Server Control Panel. Manage Laravel apps, domain aliases, and SSL certificates.\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Write operations (create, edit, delete, SSL, alias add/remove) are dispatched as background jobs. The API responds immediately with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status.\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**MCP Server:** An MCP (Model Context Protocol) server is available at `/mcp` with the same authentication.",
-        "version": "2.0.0",
+        "version": "1.6.1",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -48,7 +48,7 @@
             "post": {
                 "tags": ["Apps"],
                 "summary": "Create app",
-                "description": "Create a new app. Validates domain/username synchronously (returns 409/422 on conflict). Dispatches CLI command as async job. Requires `apps-create` ability.",
+                "description": "Create a new app. Validates domain/username synchronously (returns 409/422 on conflict). Dispatches CLI command as async job. Requires `apps-create` ability.\n\nFor **Laravel** apps, `repository` is required. For **custom** apps (`custom: true`), `repository` is optional: omit it (or send empty) to create an SFTP-only site with no Git deploy, matching [Cipi 4.4.4+](https://github.com/cipi-sh/cipi). When no repository is set, do not send `branch`.",
                 "operationId": "appCreate",
                 "requestBody": {
                     "required": true,
@@ -415,7 +415,7 @@
         "schemas": {
             "AppCreateRequest": {
                 "type": "object",
-                "required": ["user", "domain", "repository"],
+                "required": ["user", "domain"],
                 "properties": {
                     "user": {
                         "type": "string",
@@ -432,13 +432,12 @@
                     },
                     "repository": {
                         "type": "string",
-                        "description": "Git repository URL (SSH)",
+                        "description": "Git repository URL (SSH). Required for Laravel apps; optional for custom apps when using SFTP-only hosting without Git (Cipi 4.4.4+).",
                         "example": "git@github.com:user/repo.git"
                     },
                     "branch": {
                         "type": "string",
-                        "description": "Git branch",
-                        "default": "main",
+                        "description": "Git branch when a repository is set. Omit when there is no repository (SFTP-only custom apps).",
                         "example": "main"
                     },
                     "php": {
@@ -447,6 +446,17 @@
                         "enum": ["7.4", "8.0", "8.1", "8.2", "8.3", "8.4", "8.5"],
                         "default": "8.4",
                         "example": "8.4"
+                    },
+                    "custom": {
+                        "type": "boolean",
+                        "description": "Create a custom (non-Laravel) app with classic deploy. When true, repository may be omitted for SFTP-only sites.",
+                        "default": false,
+                        "example": true
+                    },
+                    "docroot": {
+                        "type": "string",
+                        "description": "Document root path for custom apps (e.g. dist, public). Default: /",
+                        "example": "public"
                     }
                 }
             },
@@ -621,7 +631,7 @@
                             "password": { "type": "string" }
                         }
                     },
-                    "deploy_key": { "type": "string", "description": "SSH public key for Git" },
+                    "deploy_key": { "type": "string", "description": "SSH public key for Git (may be absent for SFTP-only custom apps without a repository)" },
                     "webhook": { "type": "string", "format": "uri" },
                     "webhook_token": { "type": "string" }
                 }
