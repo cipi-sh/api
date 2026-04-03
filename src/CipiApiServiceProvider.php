@@ -7,6 +7,8 @@ use CipiApi\Console\Commands\CipiTokenList;
 use CipiApi\Console\Commands\CipiTokenRevoke;
 use CipiApi\Console\Commands\SeedApiUser;
 use CipiApi\Exceptions\AppsJsonUnreadableException;
+use Illuminate\Auth\Middleware\Authenticate;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
@@ -20,6 +22,17 @@ class CipiApiServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // No web login page: guests see the public welcome/docs routes; APIs use tokens.
+        // Default auth middleware calls route('login') and throws if missing. For API/JSON,
+        // return 401. For browser requests without a login route, send guests to welcome (/).
+        Authenticate::redirectUsing(function ($request) {
+            if ($request->is('api/*') || $request->expectsJson()) {
+                return null;
+            }
+
+            return Route::has('login') ? route('login') : '/';
+        });
+
         $this->app->make(\Illuminate\Contracts\Debug\ExceptionHandler::class)->renderable(
             function (AppsJsonUnreadableException $e, $request) {
                 if ($request && ($request->expectsJson() || $request->is('api/*'))) {
