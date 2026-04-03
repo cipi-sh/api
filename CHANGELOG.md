@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.9] - 2026-04-03
+
+### Changed
+
+- **Welcome page (`/`):** Restyled to match Laravel’s default framework error-page layout (inline Tailwind-style utilities, two-column header: **Cipi** | **Easy Laravel Deployments**, **API Swagger** link below). Supports `prefers-color-scheme: dark` alongside the light theme.
+- **OpenAPI** `info.version` **1.6.9**.
+
 ## [1.6.8] - 2026-04-03
 
 ### Changed
