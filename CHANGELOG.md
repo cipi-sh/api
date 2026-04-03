@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.8] - 2026-04-03
+
+### Changed
+
+- **Welcome page (`/`):** Minimal landing with the title **Cipi - Easy Laravel Deployments** and a single link to **API Swagger** (`/docs`); removed marketing copy, theme toggle, and external links.
+- **OpenAPI** `info.version` **1.6.8**.
+
 ## [1.6.7] - 2026-04-03
 
 ### Added
