@@ -2,8 +2,8 @@
     "openapi": "3.0.3",
     "info": {
         "title": "Cipi API",
-        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps, domain aliases, and SSL certificates.\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Write operations (create, edit, delete, SSL, alias add/remove) are dispatched as background jobs. The API responds immediately with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status.\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**MCP Server:** An MCP (Model Context Protocol) server is available at `/mcp` with the same authentication.",
-        "version": "1.6.1",
+        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps, domain aliases, SSL certificates, and MySQL databases.\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Write operations (create, edit, delete, SSL, alias add/remove) are dispatched as background jobs. The API responds immediately with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status.\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**MCP Server:** An MCP (Model Context Protocol) server is available at `/mcp` with the same authentication.",
+        "version": "1.6.2",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -380,6 +380,171 @@
                     "404": { "$ref": "#/components/responses/NotFound" }
                 }
             }
+        },
+        "/dbs": {
+            "get": {
+                "tags": ["Databases"],
+                "summary": "List databases",
+                "description": "Dispatches `db list` as a background job. Poll `GET /api/jobs/{id}` for the parsed result (`databases` array). Requires `dbs-view` ability.",
+                "operationId": "dbList",
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            },
+            "post": {
+                "tags": ["Databases"],
+                "summary": "Create database",
+                "description": "Create a MySQL database and user. Validates `name` as a Cipi username. Returns 409 if a create job for the same name is already pending or running. Dispatches async job. Requires `dbs-create` ability.",
+                "operationId": "dbCreate",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DbCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "409": { "$ref": "#/components/responses/Conflict" },
+                    "422": { "$ref": "#/components/responses/ValidationError" }
+                }
+            }
+        },
+        "/dbs/{name}": {
+            "delete": {
+                "tags": ["Databases"],
+                "summary": "Delete database",
+                "description": "Delete a database. Dispatches async job. Requires `dbs-delete` ability.",
+                "operationId": "dbDelete",
+                "parameters": [
+                    { "$ref": "#/components/parameters/DbName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/dbs/{name}/backup": {
+            "post": {
+                "tags": ["Databases"],
+                "summary": "Backup database",
+                "description": "Create a compressed SQL backup. Dispatches async job. Requires `dbs-manage` ability.",
+                "operationId": "dbBackup",
+                "parameters": [
+                    { "$ref": "#/components/parameters/DbName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/dbs/{name}/restore": {
+            "post": {
+                "tags": ["Databases"],
+                "summary": "Restore database",
+                "description": "Restore from a `.sql.gz` backup file path on the server. Dispatches async job. Requires `dbs-manage` ability.",
+                "operationId": "dbRestore",
+                "parameters": [
+                    { "$ref": "#/components/parameters/DbName" }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/DbRestoreRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "422": { "$ref": "#/components/responses/ValidationError" }
+                }
+            }
+        },
+        "/dbs/{name}/password": {
+            "post": {
+                "tags": ["Databases"],
+                "summary": "Regenerate database password",
+                "description": "Regenerate the MySQL user password for this database. Dispatches async job. Requires `dbs-manage` ability.",
+                "operationId": "dbPassword",
+                "parameters": [
+                    { "$ref": "#/components/parameters/DbName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
         }
     },
     "components": {
@@ -409,6 +574,16 @@
                 "schema": {
                     "type": "string",
                     "format": "hostname"
+                }
+            },
+            "DbName": {
+                "name": "name",
+                "in": "path",
+                "required": true,
+                "description": "Database name (Cipi username rules: lowercase, 3–32 chars)",
+                "schema": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9]{2,31}$"
                 }
             }
         },
@@ -533,6 +708,29 @@
                     }
                 }
             },
+            "DbCreateRequest": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Database name (must satisfy Cipi username rules; invalid names return 422 with `{ \"error\": \"...\" }`)",
+                        "example": "mydb"
+                    }
+                }
+            },
+            "DbRestoreRequest": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                    "file": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "description": "Path to a `.sql.gz` backup on the server (safe path characters only). Invalid paths return 422 with `{ \"error\": \"...\" }`.",
+                        "example": "/home/cipi/backups/mydb_2026-03-19.sql.gz"
+                    }
+                }
+            },
             "JobAcceptedResponse": {
                 "type": "object",
                 "properties": {
@@ -561,7 +759,7 @@
                             },
                             "type": {
                                 "type": "string",
-                                "enum": ["app-create", "app-edit", "app-delete", "app-deploy", "app-deploy-rollback", "app-deploy-unlock", "alias-create", "alias-delete", "ssl-install"],
+                                "enum": ["app-create", "app-edit", "app-delete", "app-deploy", "app-deploy-rollback", "app-deploy-unlock", "alias-create", "alias-delete", "ssl-install", "db-list", "db-create", "db-delete", "db-backup", "db-restore", "db-password"],
                                 "example": "app-create"
                             },
                             "status": {
@@ -583,6 +781,12 @@
                                     { "$ref": "#/components/schemas/JobResultAliasCreate" },
                                     { "$ref": "#/components/schemas/JobResultAliasDelete" },
                                     { "$ref": "#/components/schemas/JobResultSslInstall" },
+                                    { "$ref": "#/components/schemas/JobResultDbList" },
+                                    { "$ref": "#/components/schemas/JobResultDbCreate" },
+                                    { "$ref": "#/components/schemas/JobResultDbDelete" },
+                                    { "$ref": "#/components/schemas/JobResultDbBackup" },
+                                    { "$ref": "#/components/schemas/JobResultDbRestore" },
+                                    { "$ref": "#/components/schemas/JobResultDbPassword" },
                                     { "$ref": "#/components/schemas/JobResultError" }
                                 ]
                             },
@@ -704,6 +908,65 @@
                     "installed": { "type": "boolean", "example": true }
                 }
             },
+            "JobResultDbList": {
+                "type": "object",
+                "description": "Result for db-list job",
+                "properties": {
+                    "databases": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": { "type": "string", "example": "mydb" },
+                                "size": { "type": "string", "description": "Human-readable size when reported by CLI", "example": "12M" }
+                            }
+                        }
+                    }
+                }
+            },
+            "JobResultDbCreate": {
+                "type": "object",
+                "description": "Result for db-create job",
+                "properties": {
+                    "database": { "type": "string", "example": "mydb" },
+                    "user": { "type": "string" },
+                    "password": { "type": "string" },
+                    "url": { "type": "string", "description": "Connection URL when provided by CLI" }
+                }
+            },
+            "JobResultDbDelete": {
+                "type": "object",
+                "description": "Result for db-delete job",
+                "properties": {
+                    "database": { "type": "string", "example": "mydb" },
+                    "deleted": { "type": "boolean", "example": true }
+                }
+            },
+            "JobResultDbBackup": {
+                "type": "object",
+                "description": "Result for db-backup job",
+                "properties": {
+                    "file": { "type": "string", "description": "Path to the generated .sql.gz backup" },
+                    "backed_up": { "type": "boolean", "example": true }
+                }
+            },
+            "JobResultDbRestore": {
+                "type": "object",
+                "description": "Result for db-restore job",
+                "properties": {
+                    "database": { "type": "string" },
+                    "restored": { "type": "boolean", "example": true }
+                }
+            },
+            "JobResultDbPassword": {
+                "type": "object",
+                "description": "Result for db-password job",
+                "properties": {
+                    "user": { "type": "string" },
+                    "password": { "type": "string" },
+                    "password_changed": { "type": "boolean", "example": true }
+                }
+            },
             "JobResultError": {
                 "type": "object",
                 "description": "Result when job failed and parsing could not extract structured data",
@@ -759,7 +1022,7 @@
                 }
             },
             "Conflict": {
-                "description": "Resource conflict (domain or app already exists)",
+                "description": "Resource conflict (e.g. domain or app already exists, or duplicate pending database create)",
                 "content": {
                     "application/json": {
                         "schema": {
@@ -795,6 +1058,7 @@
         { "name": "Deploy", "description": "App deploy management" },
         { "name": "Aliases", "description": "Domain alias management" },
         { "name": "SSL", "description": "SSL certificate management" },
-        { "name": "Jobs", "description": "Background job status polling" }
+        { "name": "Jobs", "description": "Background job status polling" },
+        { "name": "Databases", "description": "MySQL database management (async jobs; poll `/jobs/{id}`)" }
     ]
 }

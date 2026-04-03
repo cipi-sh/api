@@ -32,7 +32,7 @@ php artisan cipi:token-create
 
 - **REST API** — CRUD for apps, aliases, databases, SSL, and async jobs (`/api/*`), secured with Laravel Sanctum and token abilities. App create supports optional Git for **custom** apps (SFTP-only), matching Cipi 4.4.4+.
 - **MCP Server** — Model Context Protocol endpoint at `/mcp` for AI-powered integrations.
-- **Swagger Docs** — Interactive API reference available at `/docs`.
+- **Swagger Docs** — Interactive API reference at `/docs`, generated from `public/api-docs/openapi.json`. The spec covers apps, aliases, deploy, SSL, databases (`/api/dbs/*`), and job polling (including structured `result` types per job).
 - **Artisan Commands** — `cipi:token-create`, `cipi:token-list`, `cipi:token-revoke`.
 
 ## MCP Integration
