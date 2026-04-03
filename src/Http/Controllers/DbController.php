@@ -2,8 +2,10 @@
 
 namespace CipiApi\Http\Controllers;
 
+use CipiApi\Exceptions\MysqlDatabaseListingUnavailableException;
 use CipiApi\Models\CipiJob;
 use CipiApi\Services\CipiJobService;
+use CipiApi\Services\CipiMysqlDatabaseListService;
 use CipiApi\Services\CipiValidationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,14 +16,16 @@ class DbController extends Controller
     public function __construct(
         protected CipiJobService $jobs,
         protected CipiValidationService $validator,
+        protected CipiMysqlDatabaseListService $mysqlDatabases,
     ) {}
 
     public function list(): JsonResponse
     {
-        $command = 'db list';
-        $job = $this->jobs->dispatch('db-list', $command, []);
-
-        return response()->json(['job_id' => $job->id, 'status' => 'pending'], 202);
+        try {
+            return response()->json(['data' => $this->mysqlDatabases->list()], 200);
+        } catch (MysqlDatabaseListingUnavailableException $e) {
+            return response()->json(['error' => $e->getMessage()], 503);
+        }
     }
 
     public function create(Request $request): JsonResponse

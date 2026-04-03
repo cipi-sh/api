@@ -32,7 +32,7 @@ php artisan cipi:token-create
 
 - **REST API** — CRUD for apps, aliases, databases, SSL, and async jobs (`/api/*`), secured with Laravel Sanctum and token abilities. App create supports optional Git for **custom** apps (SFTP-only), matching Cipi 4.4.4+.
 - **MCP Server** — Model Context Protocol endpoint at `/mcp` for AI-powered integrations.
-- **Swagger Docs** — Interactive API reference at `/docs`, generated from `public/api-docs/openapi.json`. The spec covers apps, aliases, deploy, SSL, databases (`/api/dbs/*`), and job polling (including structured `result` types per job).
+- **Swagger Docs** — Interactive API reference at `/docs`, generated from `public/api-docs/openapi.json`. The spec covers apps, aliases, deploy, SSL, databases (`GET /api/dbs` lists synchronously; other `/api/dbs/*` actions use jobs), and job polling (including structured `result` types per job).
 - **Artisan Commands** — `cipi:token-create`, `cipi:token-list`, `cipi:token-revoke`.
 
 ## MCP Integration
@@ -139,6 +139,8 @@ Once connected, the following tools are available to the AI agent:
 This package is automatically installed and configured by `cipi api`. No manual setup is needed.
 
 The `CIPI_APPS_JSON` env variable defaults to `/etc/cipi/apps.json`.
+
+`GET /api/dbs` lists MySQL/MariaDB databases using the Laravel connection named by `CIPI_MYSQL_LIST_CONNECTION` (default `mysql`). On a standard Cipi host this matches the panel database credentials in `.env`.
 
 ## License
 

@@ -251,7 +251,7 @@ class CipiOutputParser
             }
         }
 
-        return ! empty($databases) ? ['databases' => $databases] : null;
+        return ['databases' => $databases];
     }
 
     protected function parseDbDelete(string $text): ?array

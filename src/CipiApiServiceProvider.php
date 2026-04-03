@@ -8,6 +8,7 @@ use CipiApi\Console\Commands\CipiTokenRevoke;
 use CipiApi\Console\Commands\SeedApiUser;
 use CipiApi\Exceptions\AppsJsonUnreadableException;
 use CipiApi\Exceptions\DisallowedCipiCommandException;
+use CipiApi\Exceptions\MysqlDatabaseListingUnavailableException;
 use Illuminate\Auth\Middleware\Authenticate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -48,6 +49,14 @@ class CipiApiServiceProvider extends ServiceProvider
             function (DisallowedCipiCommandException $e, $request) {
                 if ($request && ($request->expectsJson() || $request->is('api/*'))) {
                     return response()->json(['error' => $e->getMessage()], 500);
+                }
+            }
+        );
+
+        $exceptionHandler->renderable(
+            function (MysqlDatabaseListingUnavailableException $e, $request) {
+                if ($request && ($request->expectsJson() || $request->is('api/*'))) {
+                    return response()->json(['error' => $e->getMessage()], 503);
                 }
             }
         );

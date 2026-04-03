@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.5] - 2026-04-03
+
+### Fixed
+
+- **`GET /api/dbs` / `cipi-cli db list`:** Listing no longer uses the `db list` background job or `sudo cipi`, which could fail (exit code, sudo, CLI environment) even when MySQL was healthy. The endpoint now reads database names and approximate sizes from MySQL/MariaDB using the Laravel DB connection (`CIPI_MYSQL_LIST_CONNECTION`, default `mysql`), matching how `GET /api/apps` reads `apps.json`.
+
+### Added
+
+- **`CipiMysqlDatabaseListService`** and config keys `mysql_list_connection`, `mysql_system_databases` in `config/cipi.php`.
+- **`MysqlDatabaseListingUnavailableException`:** returned as JSON **503** when the configured connection is not mysql/mariadb or `SHOW DATABASES` fails.
+
+### Changed
+
+- **MCP `DbList`:** Returns the list inline (no job polling).
+- **`CipiOutputParser::parseDbList`:** Completed jobs with an empty list now return `databases: []` instead of `null`.
+- **OpenAPI:** `GET /api/dbs` documents **200** + `DbListResponse`, **503**, and `info.version` **1.6.5**.
+
 ## [1.6.4] - 2026-04-03
 
 ### Fixed

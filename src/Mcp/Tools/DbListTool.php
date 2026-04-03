@@ -2,18 +2,19 @@
 
 namespace CipiApi\Mcp\Tools;
 
-use CipiApi\Services\CipiJobService;
+use CipiApi\Exceptions\MysqlDatabaseListingUnavailableException;
+use CipiApi\Services\CipiMysqlDatabaseListService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('List all databases with their sizes. Dispatches async job. Returns job_id for polling.')]
+#[Description('List all MySQL/MariaDB databases with approximate sizes (same data as GET /api/dbs).')]
 class DbListTool extends Tool
 {
     public function __construct(
-        protected CipiJobService $jobs,
+        protected CipiMysqlDatabaseListService $mysqlDatabases,
     ) {}
 
     public function handle(Request $request): Response
@@ -22,9 +23,22 @@ class DbListTool extends Tool
             return Response::text('Permission denied: dbs-view required');
         }
 
-        $job = $this->jobs->dispatch('db-list', 'db list', []);
+        try {
+            $rows = $this->mysqlDatabases->list();
+        } catch (MysqlDatabaseListingUnavailableException $e) {
+            return Response::text('Error: ' . $e->getMessage());
+        }
 
-        return Response::text("Job dispatched: {$job->id} (status: pending). Poll GET /api/jobs/{$job->id} for result.");
+        if ($rows === []) {
+            return Response::text('No databases found (excluding system schemas).');
+        }
+
+        $lines = array_map(
+            fn (array $r) => ($r['name'] ?? '') . ' — ' . ($r['size'] ?? ''),
+            $rows
+        );
+
+        return Response::text(implode("\n", $lines));
     }
 
     public function schema(JsonSchema $schema): array
