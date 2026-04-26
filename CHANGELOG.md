@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.10] - 2026-04-27
+
+### Fixed
+
+- **Auth redirect for MCP:** `Authenticate::redirectUsing` in `CipiApiServiceProvider` now includes `/mcp` (and `mcp/*`) alongside `api/*`, so unauthenticated MCP traffic always uses the JSON **401** path instead of a browser redirect. This matches token-only auth for MCP and avoids edge cases where a non-JSON `Accept` header could still hit the web redirect branch (the same class of issue as the missing `login` route fixed in **1.6.2**).
+
 ## [1.6.9] - 2026-04-03
 
 ### Changed
