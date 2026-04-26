@@ -25,10 +25,11 @@ class CipiApiServiceProvider extends ServiceProvider
     public function boot(): void
     {
         // No web login page: guests see the public welcome/docs routes; APIs use tokens.
-        // Default auth middleware calls route('login') and throws if missing. For API/JSON,
-        // return 401. For browser requests without a login route, send guests to welcome (/).
+        // Default auth middleware calls route('login') and throws if missing. For api/*, /mcp,
+        // and JSON requests return 401. For other browser requests without a login route, use /.
         Authenticate::redirectUsing(function ($request) {
-            if ($request->is('api/*') || $request->expectsJson()) {
+            // API + MCP are token-only; never redirect to a (possibly missing) web login route.
+            if ($request->is('api/*', 'mcp', 'mcp/*') || $request->expectsJson()) {
                 return null;
             }
 
