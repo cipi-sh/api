@@ -3,7 +3,7 @@
     "info": {
         "title": "Cipi API",
         "description": "REST API for Cipi Server Control Panel. Manage Laravel apps, domain aliases, SSL certificates, and MySQL databases.\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias add/remove, database create/delete/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status. **Database listing** (`GET /api/dbs`) is synchronous (`200`) and runs `cipi db list` on the server (same as the Cipi CLI).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**MCP Server:** An MCP (Model Context Protocol) server is available at `/mcp` with the same authentication.",
-        "version": "1.6.9",
+        "version": "1.7.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -558,6 +558,504 @@
                     "403": { "$ref": "#/components/responses/Forbidden" }
                 }
             }
+        },
+        "/ping": {
+            "get": {
+                "tags": ["Health"],
+                "summary": "Public health probe",
+                "description": "Public endpoint (no auth) used by mobile apps to validate that a URL points to a Cipi server before login. Returns the detected Cipi version when available.",
+                "operationId": "ping",
+                "security": [],
+                "responses": {
+                    "200": {
+                        "description": "Cipi server reached",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/PingResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/server/status": {
+            "get": {
+                "tags": ["Server"],
+                "summary": "Server status snapshot",
+                "description": "Instant snapshot of CPU, memory, swap, disk, services and uptime. Cached for `CIPI_SERVER_STATUS_CACHE_TTL` seconds (default 15) to keep widgets cheap. Requires `server-view` ability.",
+                "operationId": "serverStatus",
+                "responses": {
+                    "200": {
+                        "description": "Server status",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/ServerStatusResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/server/metrics": {
+            "get": {
+                "tags": ["Server"],
+                "summary": "Time-series server metrics",
+                "description": "Returns minute-resolution metric samples captured by the `cipi:record-server-metrics` scheduled task. Use the `range` query (`1h`, `6h`, `24h`, `7d`, `30d`) to bound the window. Requires `server-view` ability.",
+                "operationId": "serverMetrics",
+                "parameters": [
+                    {
+                        "name": "range",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": ["1h", "6h", "24h", "7d", "30d"],
+                            "default": "24h"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Metrics",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/ServerMetricsResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "422": { "$ref": "#/components/responses/ValidationError" }
+                }
+            }
+        },
+        "/server/ssl/expiring": {
+            "get": {
+                "tags": ["SSL"],
+                "summary": "Certificates expiring soon",
+                "description": "Iterates apps + aliases, performs a TLS handshake against `CIPI_SSL_HOST:CIPI_SSL_PORT` (default `127.0.0.1:443`) with SNI, and returns certificates with `days_remaining <= days`. Requires `ssl-view` ability.",
+                "operationId": "serverSslExpiring",
+                "parameters": [
+                    {
+                        "name": "days",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 365,
+                            "default": 14
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Expiring certificates",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/SslExpiringResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/apps/{name}/ssl": {
+            "get": {
+                "tags": ["SSL"],
+                "summary": "Inspect app certificate",
+                "description": "Performs a TLS handshake against the app primary domain (and its aliases) and parses the X.509 certificate. Requires `ssl-view` ability.",
+                "operationId": "sslInfo",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Certificate details",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/SslInfoResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            },
+            "post": {
+                "tags": ["SSL"],
+                "summary": "Install SSL",
+                "description": "Install Let's Encrypt SSL certificate for an app. Validates app exists synchronously. Dispatches CLI command as async job. Requires `ssl-manage` ability.",
+                "operationId": "sslInstall",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/JobAcceptedResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/apps/{name}/ssl/renew": {
+            "post": {
+                "tags": ["SSL"],
+                "summary": "Renew SSL",
+                "description": "Alias of `POST /apps/{name}/ssl` for clients that prefer an explicit renew verb. Dispatches the same async `ssl install` job. Requires `ssl-manage` ability.",
+                "operationId": "sslRenew",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/JobAcceptedResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/apps/{name}/deploys": {
+            "get": {
+                "tags": ["Deploy"],
+                "summary": "Deploy history",
+                "description": "Cursor-paginated list of deploys (and rollbacks/unlocks) tracked in `cipi_jobs` for the app. Each item includes status, exit_code, duration and timing. Requires `deploy-view` ability.",
+                "operationId": "deployHistoryList",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": { "type": "string" },
+                        "description": "Opaque cursor returned in `meta.next_cursor`"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deploy history",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/DeployHistoryListResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/apps/{name}/deploys/{job}": {
+            "get": {
+                "tags": ["Deploy"],
+                "summary": "Deploy detail",
+                "description": "Show a single deploy by job UUID, scoped to the app for safe access checks. Includes parsed `result` if the job is finished. Requires `deploy-view` ability.",
+                "operationId": "deployHistoryShow",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" },
+                    { "$ref": "#/components/parameters/DeployJobId" }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Deploy detail",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/DeployHistoryShowResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/apps/{name}/deploys/{job}/log": {
+            "get": {
+                "tags": ["Deploy"],
+                "summary": "Deploy log (final)",
+                "description": "Returns the captured CLI output of a finished deploy. For live tailing while a deploy is running, use `GET /jobs/{id}/log/tail`. Requires `deploy-view` ability.",
+                "operationId": "deployHistoryLog",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" },
+                    { "$ref": "#/components/parameters/DeployJobId" }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Final deploy output",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/DeployHistoryLogResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/jobs/{id}/log/tail": {
+            "get": {
+                "tags": ["Jobs"],
+                "summary": "Tail job log",
+                "description": "Long-poll friendly endpoint to stream the live output of an async job. Pass `from_byte` to receive only the new bytes since the previous call; the response includes `next_byte` to feed back to the next request and `eof: true` once the job has finished and the file has been fully read.",
+                "operationId": "jobLogTail",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": { "type": "string", "format": "uuid" }
+                    },
+                    {
+                        "name": "from_byte",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 0, "default": 0 }
+                    },
+                    {
+                        "name": "max_bytes",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1024, "maximum": 1048576, "default": 65536 }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Log chunk",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/JobLogTailResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/devices": {
+            "get": {
+                "tags": ["Devices"],
+                "summary": "List my registered devices",
+                "description": "Lists devices registered against the current API token. Devices are isolated per token: a token only sees its own devices and only its devices receive push notifications dispatched for jobs it triggers.",
+                "operationId": "deviceList",
+                "responses": {
+                    "200": {
+                        "description": "Device list",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/DeviceListResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" }
+                }
+            },
+            "post": {
+                "tags": ["Devices"],
+                "summary": "Register a device",
+                "description": "Register or refresh a push device for the current API token. Idempotent: re-posting the same `push_token` updates metadata. The mobile app should call this on every cold start (or when FCM rotates the token) and again with `last_seen_at: true` periodically via PATCH.",
+                "operationId": "deviceRegister",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/DeviceRegisterRequest" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Device updated",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/DeviceResponse" }
+                            }
+                        }
+                    },
+                    "201": {
+                        "description": "Device created",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/DeviceResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "422": { "$ref": "#/components/responses/ValidationError" }
+                }
+            }
+        },
+        "/devices/{id}": {
+            "patch": {
+                "tags": ["Devices"],
+                "summary": "Update device preferences",
+                "description": "Update notification preferences, app/OS version, or refresh `last_seen_at`. Pass `last_seen_at: true` to update the heartbeat timestamp.",
+                "operationId": "deviceUpdate",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": { "type": "integer" }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/DeviceUpdateRequest" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Device updated",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/DeviceResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "422": { "$ref": "#/components/responses/ValidationError" }
+                }
+            },
+            "delete": {
+                "tags": ["Devices"],
+                "summary": "Unregister device",
+                "description": "Delete a device registration. Call this on logout or when the user disables notifications.",
+                "operationId": "deviceDelete",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": { "type": "integer" }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Device deleted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": { "deleted": { "type": "boolean", "example": true } }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/activity": {
+            "get": {
+                "tags": ["Activity"],
+                "summary": "Activity timeline",
+                "description": "Cursor-paginated activity timeline derived from `cipi_jobs`. Useful as a unified feed for the mobile dashboard. Filter with `type`, `app`, or `status`. Requires `activity-view` ability.",
+                "operationId": "activityList",
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 }
+                    },
+                    {
+                        "name": "cursor",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "type",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "app",
+                        "in": "query",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "schema": {
+                            "type": "string",
+                            "enum": ["pending", "running", "completed", "failed"]
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Activity timeline",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/ActivityListResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" }
+                }
+            }
+        },
+        "/search": {
+            "get": {
+                "tags": ["Search"],
+                "summary": "Global search",
+                "description": "Search across apps, aliases, and database names. Useful for the mobile spotlight on installs with many apps.",
+                "operationId": "search",
+                "parameters": [
+                    {
+                        "name": "q",
+                        "in": "query",
+                        "required": true,
+                        "schema": { "type": "string", "minLength": 1, "maxLength": 128 }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search results",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/SearchResponse" }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "422": { "$ref": "#/components/responses/ValidationError" }
+                }
+            }
         }
     },
     "components": {
@@ -598,6 +1096,13 @@
                     "type": "string",
                     "pattern": "^[a-z][a-z0-9]{2,31}$"
                 }
+            },
+            "DeployJobId": {
+                "name": "job",
+                "in": "path",
+                "required": true,
+                "description": "Deploy job UUID",
+                "schema": { "type": "string", "format": "uuid" }
             }
         },
         "schemas": {
@@ -795,11 +1300,15 @@
                                 "enum": ["app-create", "app-edit", "app-delete", "app-deploy", "app-deploy-rollback", "app-deploy-unlock", "alias-create", "alias-delete", "ssl-install", "db-list", "db-create", "db-delete", "db-backup", "db-restore", "db-password"],
                                 "example": "app-create"
                             },
+                            "app": { "type": "string", "nullable": true, "description": "Resolved app name when the job has an `app` or `user` parameter" },
                             "status": {
                                 "type": "string",
                                 "enum": ["pending", "running", "completed", "failed"],
                                 "example": "completed"
                             },
+                            "started_at": { "type": "string", "format": "date-time", "nullable": true },
+                            "finished_at": { "type": "string", "format": "date-time", "nullable": true },
+                            "duration_seconds": { "type": "integer", "nullable": true },
                             "result": {
                                 "type": "object",
                                 "description": "Parsed structured result from Cipi CLI (only when status is completed or failed). Structure varies by job type.",
@@ -1015,6 +1524,402 @@
                         "description": "Error message"
                     }
                 }
+            },
+            "PingResponse": {
+                "type": "object",
+                "properties": {
+                    "cipi": { "type": "boolean", "example": true },
+                    "version": { "type": "string", "nullable": true, "example": "4.4.17" },
+                    "time": { "type": "string", "format": "date-time" }
+                }
+            },
+            "ServerStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "hostname": { "type": "string" },
+                            "uptime_seconds": { "type": "integer", "nullable": true },
+                            "cipi_version": { "type": "string", "nullable": true },
+                            "os": { "type": "string" },
+                            "kernel": { "type": "string" },
+                            "cpu": {
+                                "type": "object",
+                                "properties": {
+                                    "cores": { "type": "integer", "nullable": true },
+                                    "load_1m": { "type": "number", "nullable": true },
+                                    "load_5m": { "type": "number", "nullable": true },
+                                    "load_15m": { "type": "number", "nullable": true },
+                                    "usage_percent": { "type": "number", "nullable": true }
+                                }
+                            },
+                            "memory": {
+                                "type": "object",
+                                "properties": {
+                                    "total_mb": { "type": "integer" },
+                                    "used_mb": { "type": "integer" },
+                                    "free_mb": { "type": "integer" },
+                                    "usage_percent": { "type": "number", "nullable": true }
+                                }
+                            },
+                            "swap": {
+                                "type": "object",
+                                "properties": {
+                                    "total_mb": { "type": "integer" },
+                                    "used_mb": { "type": "integer" },
+                                    "usage_percent": { "type": "number", "nullable": true }
+                                }
+                            },
+                            "disk": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "mount": { "type": "string" },
+                                        "source": { "type": "string" },
+                                        "total_mb": { "type": "integer" },
+                                        "used_mb": { "type": "integer" },
+                                        "available_mb": { "type": "integer" },
+                                        "usage_percent": { "type": "number", "nullable": true }
+                                    }
+                                }
+                            },
+                            "services": {
+                                "type": "object",
+                                "additionalProperties": { "type": "string", "example": "active" },
+                                "description": "Map of systemd unit names to `systemctl is-active` output"
+                            },
+                            "measured_at": { "type": "string", "format": "date-time" }
+                        }
+                    }
+                }
+            },
+            "ServerMetricsResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "recorded_at": { "type": "string", "format": "date-time" },
+                                "load_1m": { "type": "number", "nullable": true },
+                                "load_5m": { "type": "number", "nullable": true },
+                                "load_15m": { "type": "number", "nullable": true },
+                                "cpu_usage_percent": { "type": "number", "nullable": true },
+                                "memory_total_mb": { "type": "integer", "nullable": true },
+                                "memory_used_mb": { "type": "integer", "nullable": true },
+                                "memory_usage_percent": { "type": "number", "nullable": true },
+                                "swap_total_mb": { "type": "integer", "nullable": true },
+                                "swap_used_mb": { "type": "integer", "nullable": true },
+                                "disk_root_usage_percent": { "type": "number", "nullable": true }
+                            }
+                        }
+                    },
+                    "range": { "type": "string" },
+                    "since": { "type": "string", "format": "date-time" },
+                    "count": { "type": "integer" }
+                }
+            },
+            "SslCertificate": {
+                "type": "object",
+                "properties": {
+                    "domain": { "type": "string" },
+                    "available": { "type": "boolean" },
+                    "subject": { "type": "string" },
+                    "issuer": { "type": "string" },
+                    "serial": { "type": "string" },
+                    "valid_from": { "type": "string", "format": "date-time", "nullable": true },
+                    "valid_until": { "type": "string", "format": "date-time", "nullable": true },
+                    "days_remaining": { "type": "integer", "nullable": true },
+                    "expired": { "type": "boolean", "nullable": true },
+                    "san": { "type": "array", "items": { "type": "string" } },
+                    "self_signed": { "type": "boolean" },
+                    "error": { "type": "string", "nullable": true }
+                }
+            },
+            "SslInfoResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": { "type": "string" },
+                            "domain": { "type": "string" },
+                            "certificate": { "$ref": "#/components/schemas/SslCertificate" },
+                            "aliases": {
+                                "type": "array",
+                                "items": { "$ref": "#/components/schemas/SslCertificate" }
+                            }
+                        }
+                    }
+                }
+            },
+            "SslExpiringResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "app": { "type": "string" },
+                                "domain": { "type": "string" },
+                                "issuer": { "type": "string", "nullable": true },
+                                "valid_until": { "type": "string", "format": "date-time", "nullable": true },
+                                "days_remaining": { "type": "integer" },
+                                "expired": { "type": "boolean" }
+                            }
+                        }
+                    },
+                    "threshold_days": { "type": "integer" },
+                    "count": { "type": "integer" }
+                }
+            },
+            "DeployHistoryItem": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "format": "uuid" },
+                    "type": {
+                        "type": "string",
+                        "enum": ["app-deploy", "app-deploy-rollback", "app-deploy-unlock"]
+                    },
+                    "app": { "type": "string", "nullable": true },
+                    "status": {
+                        "type": "string",
+                        "enum": ["pending", "running", "completed", "failed"]
+                    },
+                    "exit_code": { "type": "integer", "nullable": true },
+                    "started_at": { "type": "string", "format": "date-time", "nullable": true },
+                    "finished_at": { "type": "string", "format": "date-time", "nullable": true },
+                    "duration_seconds": { "type": "integer", "nullable": true },
+                    "triggered_by": { "type": "string", "nullable": true },
+                    "created_at": { "type": "string", "format": "date-time" }
+                }
+            },
+            "DeployHistoryListResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/DeployHistoryItem" }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "properties": {
+                            "count": { "type": "integer" },
+                            "limit": { "type": "integer" },
+                            "next_cursor": { "type": "string", "nullable": true }
+                        }
+                    }
+                }
+            },
+            "DeployHistoryShowResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "allOf": [
+                            { "$ref": "#/components/schemas/DeployHistoryItem" },
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "result": {
+                                        "type": "object",
+                                        "nullable": true,
+                                        "description": "Parsed CLI result when finished"
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            "DeployHistoryLogResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "job_id": { "type": "string", "format": "uuid" },
+                            "status": { "type": "string" },
+                            "exit_code": { "type": "integer", "nullable": true },
+                            "output": { "type": "string", "nullable": true }
+                        }
+                    }
+                }
+            },
+            "JobLogTailResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "job_id": { "type": "string", "format": "uuid" },
+                            "status": { "type": "string" },
+                            "exit_code": { "type": "integer", "nullable": true },
+                            "log_size": { "type": "integer", "description": "Total bytes written so far" },
+                            "next_byte": { "type": "integer", "description": "Pass back as `from_byte` next call" },
+                            "eof": { "type": "boolean", "description": "True when job finished and log fully consumed" },
+                            "chunk": { "type": "string", "description": "Raw bytes between from_byte..next_byte" }
+                        }
+                    }
+                }
+            },
+            "DeviceResponse": {
+                "type": "object",
+                "properties": {
+                    "data": { "$ref": "#/components/schemas/Device" }
+                }
+            },
+            "DeviceListResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/Device" }
+                    }
+                }
+            },
+            "Device": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer" },
+                    "platform": { "type": "string", "enum": ["ios", "android", "web"] },
+                    "device_name": { "type": "string", "nullable": true },
+                    "app_version": { "type": "string", "nullable": true },
+                    "os_version": { "type": "string", "nullable": true },
+                    "notification_preferences": {
+                        "type": "object",
+                        "nullable": true,
+                        "additionalProperties": { "type": "boolean" }
+                    },
+                    "last_seen_at": { "type": "string", "format": "date-time", "nullable": true },
+                    "created_at": { "type": "string", "format": "date-time" },
+                    "updated_at": { "type": "string", "format": "date-time" }
+                }
+            },
+            "DeviceRegisterRequest": {
+                "type": "object",
+                "required": ["platform", "push_token"],
+                "properties": {
+                    "platform": { "type": "string", "enum": ["ios", "android", "web"] },
+                    "push_token": { "type": "string", "minLength": 8, "maxLength": 512 },
+                    "device_name": { "type": "string", "maxLength": 255, "nullable": true },
+                    "app_version": { "type": "string", "maxLength": 64, "nullable": true },
+                    "os_version": { "type": "string", "maxLength": 64, "nullable": true },
+                    "notification_preferences": {
+                        "type": "object",
+                        "nullable": true,
+                        "additionalProperties": { "type": "boolean" },
+                        "example": {
+                            "deploy.success": true,
+                            "deploy.failed": true,
+                            "ssl.installed": true,
+                            "ssl.failed": true,
+                            "db.backup_completed": false
+                        }
+                    }
+                }
+            },
+            "DeviceUpdateRequest": {
+                "type": "object",
+                "properties": {
+                    "device_name": { "type": "string", "maxLength": 255, "nullable": true },
+                    "app_version": { "type": "string", "maxLength": 64, "nullable": true },
+                    "os_version": { "type": "string", "maxLength": 64, "nullable": true },
+                    "notification_preferences": {
+                        "type": "object",
+                        "nullable": true,
+                        "additionalProperties": { "type": "boolean" }
+                    },
+                    "last_seen_at": {
+                        "type": "boolean",
+                        "description": "When true, refresh the heartbeat timestamp to now()."
+                    }
+                }
+            },
+            "ActivityListResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "string", "format": "uuid" },
+                                "type": {
+                                    "type": "string",
+                                    "description": "Event-style type, e.g. `app-deploy.success`"
+                                },
+                                "job_type": { "type": "string" },
+                                "status": { "type": "string" },
+                                "subject": {
+                                    "type": "object",
+                                    "properties": {
+                                        "type": { "type": "string", "enum": ["app", "alias", "database", "ssl", "job"] },
+                                        "id": { "type": "string", "nullable": true }
+                                    }
+                                },
+                                "metadata": { "type": "object", "additionalProperties": true },
+                                "created_at": { "type": "string", "format": "date-time" },
+                                "finished_at": { "type": "string", "format": "date-time", "nullable": true }
+                            }
+                        }
+                    },
+                    "meta": {
+                        "type": "object",
+                        "properties": {
+                            "count": { "type": "integer" },
+                            "limit": { "type": "integer" },
+                            "next_cursor": { "type": "string", "nullable": true }
+                        }
+                    }
+                }
+            },
+            "SearchResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "apps": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "app": { "type": "string" },
+                                        "domain": { "type": "string" },
+                                        "aliases": { "type": "array", "items": { "type": "string" } },
+                                        "php": { "type": "string", "nullable": true }
+                                    }
+                                }
+                            },
+                            "aliases": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "app": { "type": "string" },
+                                        "alias": { "type": "string" }
+                                    }
+                                }
+                            },
+                            "databases": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": { "type": "string" },
+                                        "size": { "type": "string" }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "query": { "type": "string" },
+                    "count": { "type": "integer" }
+                }
             }
         },
         "responses": {
@@ -1088,10 +1993,15 @@
     },
     "tags": [
         { "name": "Apps", "description": "App management" },
-        { "name": "Deploy", "description": "App deploy management" },
+        { "name": "Deploy", "description": "App deploy management and history" },
         { "name": "Aliases", "description": "Domain alias management" },
-        { "name": "SSL", "description": "SSL certificate management" },
-        { "name": "Jobs", "description": "Background job status polling" },
-        { "name": "Databases", "description": "MySQL databases: `GET /dbs` runs `cipi db list` (sync); create/delete/backup/restore/password are async jobs — poll `/jobs/{id}`" }
+        { "name": "SSL", "description": "SSL certificate inspection, install and renewal" },
+        { "name": "Jobs", "description": "Background job status polling and live log tailing" },
+        { "name": "Databases", "description": "MySQL databases: `GET /dbs` runs `cipi db list` (sync); create/delete/backup/restore/password are async jobs — poll `/jobs/{id}`" },
+        { "name": "Server", "description": "Server status snapshots and time-series metrics for dashboards/widgets" },
+        { "name": "Devices", "description": "Mobile device registration for push notifications" },
+        { "name": "Activity", "description": "Unified activity timeline derived from `cipi_jobs`" },
+        { "name": "Search", "description": "Global search across apps, aliases and databases" },
+        { "name": "Health", "description": "Public probe used by mobile apps to validate the URL during onboarding" }
     ]
 }

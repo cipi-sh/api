@@ -134,6 +134,38 @@ Once connected, the following tools are available to the AI agent:
 | `DbPassword`        | Regenerate database password and update `.env`        |
 | `SslInstall`        | Install an SSL certificate for an app                 |
 
+## Mobile companion app
+
+Since `1.7.0` the package ships every endpoint a Flutter/SwiftUI/Kotlin companion app needs to drive a Cipi server: server snapshot, time-series metrics, deploy history, live log tail, SSL inspection, push device registration, activity timeline, global search, and a public health probe.
+
+| Endpoint | Purpose |
+| -------- | ------- |
+| `GET /api/ping` (public) | Validate that an URL is a Cipi server during onboarding |
+| `GET /api/server/status` | Dashboard snapshot (CPU, RAM, swap, disk, services, uptime) |
+| `GET /api/server/metrics?range=24h` | Time-series for charts (cron-fed, retention configurable) |
+| `GET /api/server/ssl/expiring?days=14` | Radar of certificates close to expiry |
+| `GET /api/apps/{app}/ssl` | Inspect the TLS handshake of an app's domain + aliases |
+| `POST /api/apps/{app}/ssl/renew` | Explicit renew verb (same job as `POST /apps/{app}/ssl`) |
+| `GET /api/apps/{app}/deploys` | Cursor-paginated deploy history |
+| `GET /api/apps/{app}/deploys/{job}` | Deploy detail with parsed result |
+| `GET /api/apps/{app}/deploys/{job}/log` | Final deploy output |
+| `GET /api/jobs/{id}/log/tail?from_byte=N` | Long-poll live tail of a running job |
+| `GET /api/devices` / `POST` / `PATCH` / `DELETE` | Per-token push device registry |
+| `GET /api/activity` | Unified timeline across deploy / db / ssl / app events |
+| `GET /api/search?q=...` | Search apps, aliases, databases |
+
+**Token abilities introduced for mobile:** `server-view`, `ssl-view`, `deploy-view`, `activity-view`. A typical mobile token uses `apps-view,deploy-manage,deploy-view,ssl-view,ssl-manage,server-view,activity-view,dbs-view,dbs-manage`.
+
+**Server metrics scheduling.** Make sure Laravel's scheduler is running on the host (`* * * * * cd /path && php artisan schedule:run`). The package registers `cipi:record-server-metrics --prune` every minute and `cipi:prune-job-logs` daily at 03:30.
+
+**Push notifications.** The package emits a `CipiApi\Events\JobStateChanged` event from the queued runner and a default listener fans out a payload via the `CipiApi\Notifications\PushDriverContract`. The default `LogPushDriver` writes payloads to the Laravel log so you can verify the flow without FCM credentials. Plug your own implementation by binding a singleton in your application's `AppServiceProvider`:
+
+```php
+$this->app->singleton(\CipiApi\Notifications\PushDriverContract::class, MyFcmDriver::class);
+```
+
+and setting `CIPI_PUSH_DRIVER=fcm` (or any non-`log` value) in `.env`.
+
 ## Configuration
 
 This package is automatically installed and configured by `cipi api`. No manual setup is needed.

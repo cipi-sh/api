@@ -2,6 +2,55 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-05-04
+
+Mobile-app friendly surface area: server telemetry, device registration for push, deploy history and live log tailing, SSL inspection, activity timeline, global search, and a public health probe.
+
+### Added
+
+- **Public health probe `GET /api/ping`:** unauthenticated endpoint returning `{ cipi: true, version, time }`. Lets mobile apps validate that a URL belongs to a Cipi server during onboarding before asking the user for a token.
+- **Server telemetry**
+  - `GET /api/server/status` — instant snapshot of CPU (cores, load avg, usage %), memory, swap, disks, uptime, OS, kernel, Cipi version, and `systemctl is-active` for a configurable list of services. Cached for `CIPI_SERVER_STATUS_CACHE_TTL` seconds (default 15).
+  - `GET /api/server/metrics?range=1h|6h|24h|7d|30d` — minute-resolution time series captured by the new scheduled command.
+  - `cipi:record-server-metrics --prune` — Artisan command, registered with the Laravel scheduler at `everyMinute()->withoutOverlapping()` automatically (controlled by `CIPI_METRICS_ENABLED` and `CIPI_METRICS_RETENTION_DAYS`).
+  - Migration `cipi_server_metrics` storing CPU/memory/swap/disk samples plus a JSON snapshot of disks and services.
+  - `ServerStatusService` reads `/proc/loadavg`, `/proc/meminfo`, `/proc/cpuinfo`, `/proc/stat`, `df -PBM`, and `systemctl is-active` (no sudo needed for these); falls back to PHP `disk_total_space()` if `df` is unavailable.
+- **Device registration for push notifications**
+  - Migration `cipi_devices` (per-token unique on `push_token`) plus `Device` model with notification preferences map.
+  - `GET /api/devices`, `POST /api/devices`, `PATCH /api/devices/{id}`, `DELETE /api/devices/{id}` — devices are scoped to the API token that registered them; rotating the token invalidates its devices automatically (cascade is enforced at the application layer).
+  - `JobStateChanged` event dispatched by `RunCipiCommand` on `started/completed/failed`, plus `SendJobNotifications` listener fan-outing pushes to the registering token's devices.
+  - Pluggable push driver via `CipiApi\Notifications\PushDriverContract`. Default driver (`log`) writes to the Laravel log; bind your own implementation (FCM/APNs) in the container under `PushDriverContract::class` and set `CIPI_PUSH_DRIVER` accordingly.
+  - Notification preferences honor exact event types (`deploy.success`) and prefixes (`deploy`). Empty preferences mean "everything on".
+- **Deploy history & live log tail**
+  - `GET /api/apps/{name}/deploys` — cursor-paginated list of `app-deploy*` jobs for the app (status, exit_code, duration, timing, triggered_by). Cursors are opaque base64.
+  - `GET /api/apps/{name}/deploys/{job}` — single deploy detail, with parsed `result` when finished.
+  - `GET /api/apps/{name}/deploys/{job}/log` — final captured CLI output.
+  - `GET /api/jobs/{id}/log/tail?from_byte=N&max_bytes=M` — long-poll log tail. The app sends `from_byte`, the server returns `{chunk, next_byte, log_size, eof}`. Set `eof:true` once the job finished and the file has been fully read.
+  - `RunCipiCommand` was rewritten on top of `proc_open` (with non-blocking `stream_select`) so stdout/stderr stream to a per-job log file at `storage/app/cipi-job-logs/{uuid}.log` while the command runs, instead of being captured only at the end.
+  - New `JobLogService` with `tail()`, `purgeOlderThan()`, and `cipi:prune-job-logs` Artisan command (scheduled daily at 03:30, `CIPI_JOB_LOGS_RETENTION_DAYS` default 14).
+  - `cipi_jobs` migration adds `app`, `log_path`, `started_at`, `finished_at`, `duration_seconds`, `triggered_by`, `token_id` columns. The `app` column is populated automatically from `params.app`/`params.user`. New `forApp()` and `ofTypes()` Eloquent scopes.
+- **SSL inspection & expiration radar**
+  - `GET /api/apps/{name}/ssl` — TLS handshake against `CIPI_SSL_HOST:CIPI_SSL_PORT` (default `127.0.0.1:443`) with SNI for the app's domain (and aliases). Returns issuer, subject, validity window, days remaining, SAN list, self-signed flag, and a clear `error` field when the handshake fails.
+  - `POST /api/apps/{name}/ssl/renew` — explicit renew verb (alias of `POST /apps/{name}/ssl`) for clients that prefer a separate route.
+  - `GET /api/server/ssl/expiring?days=14` — returns every domain whose certificate has `days_remaining <= days`, sorted ascending. Implementation iterates `apps.json` and reuses the cached SSL inspector. Useful for the "renewal due" widget and for triggering scheduled push notifications.
+  - `SslInspectorService` — caches results for `CIPI_SSL_CACHE_TTL` seconds (default 300).
+- **Activity & search**
+  - `GET /api/activity?limit=50&type=...&app=...&status=...&cursor=...` — unified timeline derived from `cipi_jobs`, mapping each row to an event-style payload (`type: deploy.success`, `subject.type: app`, `metadata`, etc.).
+  - `GET /api/search?q=...` — single-shot search across apps, aliases, and database names. Database listing is best-effort: the endpoint still returns app/alias matches when `cipi db list` is unavailable.
+- **OpenAPI** — `info.version` bumped to **1.7.0**. New tags (`Server`, `Devices`, `Activity`, `Search`, `Health`); paths and schemas added for every new endpoint listed above. `JobStatusResponse` now includes `app`, `started_at`, `finished_at`, `duration_seconds`.
+- **Token abilities** — three new abilities required by the new endpoints: `server-view`, `ssl-view`, `deploy-view`, `activity-view`. Existing abilities are unchanged.
+- **Rate limits** — per-route throttles on the new surface (status `120/min`, metrics `60/min`, ssl/expiring `30/min`, log-tail `120/min`, devices register `30/min`, search `60/min`, ping `60/min`).
+
+### Changed
+
+- **Configuration** — `config/cipi.php` introduces `cipi_binary`, `version_file`, `job_logs.*`, `server.*` (services + cache TTL), `metrics.*`, `ssl.*`, `db_backups.path`, and `push.*`. All keys are env-overridable (`CIPI_*`).
+- **`CipiCliService`** — adds `runStreaming(command, $logFile)` so the queued job can tee output to a file as it runs while keeping the same `commandIsPermitted()` whitelist. The `cipi` binary path is now resolved from `cipi.cipi_binary` (default `/usr/local/bin/cipi`).
+- **`CipiJobService::dispatch()`** — auto-populates `app`, `triggered_by`, and `token_id` (when called inside an authenticated request) on the `cipi_jobs` row.
+
+### Notes for the main Cipi package
+
+These changes work end-to-end with the current Cipi server; nothing more is *required* on the Cipi side. The follow-up items below would unlock the last bits of telemetry that this package can't safely synthesize on its own — see the README "Mobile companion app" section for the full request list.
+
 ## [1.6.10] - 2026-04-27
 
 ### Fixed

@@ -32,6 +32,12 @@ class CipiCliService
         return $this->isAllowed($command);
     }
 
+    public function fullCommand(string $command): string
+    {
+        $binary = (string) config('cipi.cipi_binary', '/usr/local/bin/cipi');
+        return 'sudo ' . $binary . ' ' . $command;
+    }
+
     public function run(string $command): array
     {
         if (! $this->commandIsPermitted($command)) {
@@ -42,7 +48,7 @@ class CipiCliService
             ];
         }
 
-        $fullCommand = 'sudo /usr/local/bin/cipi ' . $command . ' 2>&1';
+        $fullCommand = $this->fullCommand($command) . ' 2>&1';
         $output = [];
         exec($fullCommand, $output, $exitCode);
 
@@ -50,6 +56,92 @@ class CipiCliService
             'output' => implode("\n", $output),
             'exit_code' => $exitCode,
             'success' => $exitCode === 0,
+        ];
+    }
+
+    /**
+     * Run a Cipi CLI command streaming stdout/stderr to the given log file.
+     * Returns the final captured output and exit code, mirroring {@see run()}.
+     *
+     * @param string|null $logFile Absolute path to a writable log file, or null to discard streaming.
+     */
+    public function runStreaming(string $command, ?string $logFile): array
+    {
+        if (! $this->commandIsPermitted($command)) {
+            $msg = "Command not allowed: {$command}";
+            if ($logFile) {
+                @file_put_contents($logFile, $msg . "\n", FILE_APPEND);
+            }
+            return [
+                'output' => $msg,
+                'exit_code' => 1,
+                'success' => false,
+            ];
+        }
+
+        $descriptors = [
+            0 => ['pipe', 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        $process = @proc_open($this->fullCommand($command), $descriptors, $pipes);
+        if (! is_resource($process)) {
+            return $this->run($command);
+        }
+
+        @fclose($pipes[0]);
+        @stream_set_blocking($pipes[1], false);
+        @stream_set_blocking($pipes[2], false);
+
+        $logHandle = null;
+        if ($logFile) {
+            $logHandle = @fopen($logFile, 'ab');
+        }
+
+        $captured = '';
+        $open = [$pipes[1], $pipes[2]];
+
+        while ($open) {
+            $read = $open;
+            $write = null;
+            $except = null;
+            $changed = @stream_select($read, $write, $except, 1);
+            if ($changed === false) {
+                break;
+            }
+            foreach ($read as $stream) {
+                $data = @fread($stream, 8192);
+                if ($data === false || $data === '') {
+                    if (@feof($stream)) {
+                        @fclose($stream);
+                        $open = array_filter($open, static fn ($s) => $s !== $stream);
+                    }
+                    continue;
+                }
+                $captured .= $data;
+                if ($logHandle) {
+                    @fwrite($logHandle, $data);
+                    @fflush($logHandle);
+                }
+            }
+        }
+
+        foreach ([$pipes[1] ?? null, $pipes[2] ?? null] as $stream) {
+            if (is_resource($stream)) {
+                @fclose($stream);
+            }
+        }
+        if ($logHandle) {
+            @fclose($logHandle);
+        }
+
+        $exitCode = proc_close($process);
+
+        return [
+            'output' => $captured,
+            'exit_code' => (int) $exitCode,
+            'success' => (int) $exitCode === 0,
         ];
     }
 
