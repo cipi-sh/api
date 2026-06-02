@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.7.0] - 2026-06-02
+## [1.8.1] - 2026-06-02
 
 App suspend / unsuspend support, wiring the REST API and MCP server to the Cipi 4.5.8 lifecycle commands so apps can be taken offline (HTTP 503) without being deleted.
 
@@ -16,7 +16,7 @@ App suspend / unsuspend support, wiring the REST API and MCP server to the Cipi 
 - **MCP tools** — `AppSuspend` and `AppUnsuspend`, secured with the `apps-suspend` ability and mirroring the REST validation.
 - **Token ability** — new `apps-suspend` ability gates both the REST routes and the MCP tools.
 - **Job result parsing** — `CipiOutputParser` parses `app-suspend` / `app-unsuspend` CLI output into structured `{ app, suspended }` results.
-- **OpenAPI** — `info.version` bumped to **1.7.0**; new paths and `JobResultAppSuspend` / `JobResultAppUnsuspend` schemas; `app-suspend` / `app-unsuspend` added to the job-type enum; `suspended` added to the app list/show schemas.
+- **OpenAPI** — `info.version` bumped to **1.8.1**; new paths and `JobResultAppSuspend` / `JobResultAppUnsuspend` schemas; `app-suspend` / `app-unsuspend` added to the job-type enum; `suspended` added to the app list/show schemas.
 
 ### Changed
 
