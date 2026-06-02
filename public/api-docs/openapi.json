@@ -3,7 +3,7 @@
     "info": {
         "title": "Cipi API",
         "description": "REST API for Cipi Server Control Panel. Manage Laravel apps, domain aliases, SSL certificates, and MySQL databases.\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias add/remove, database create/delete/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status. **Database listing** (`GET /api/dbs`) is synchronous (`200`) and runs `cipi db list` on the server (same as the Cipi CLI).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**MCP Server:** An MCP (Model Context Protocol) server is available at `/mcp` with the same authentication.",
-        "version": "1.6.9",
+        "version": "1.7.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -160,6 +160,60 @@
                     "401": { "$ref": "#/components/responses/Unauthorized" },
                     "403": { "$ref": "#/components/responses/Forbidden" },
                     "404": { "$ref": "#/components/responses/NotFound" }
+                }
+            }
+        },
+        "/apps/{name}/suspend": {
+            "post": {
+                "tags": ["Apps"],
+                "summary": "Suspend app",
+                "description": "Take an app offline without deleting it. Replaces the app's Nginx vhost with a generic static suspension page served as HTTP 503 (HTTPS included). Validates app exists synchronously and returns 409 if the app is already suspended. Dispatches CLI command as async job. Requires `apps-suspend` ability.",
+                "operationId": "appSuspend",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "409": { "$ref": "#/components/responses/Conflict" }
+                }
+            }
+        },
+        "/apps/{name}/unsuspend": {
+            "post": {
+                "tags": ["Apps"],
+                "summary": "Unsuspend app",
+                "description": "Bring a suspended app back online by restoring its normal Nginx vhost. Validates app exists synchronously and returns 409 if the app is not suspended. Dispatches CLI command as async job. Requires `apps-suspend` ability.",
+                "operationId": "appUnsuspend",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "409": { "$ref": "#/components/responses/Conflict" }
                 }
             }
         },
@@ -685,6 +739,7 @@
                                     "items": { "type": "string" },
                                     "example": ["www.myapp.example.com"]
                                 },
+                                "suspended": { "type": "boolean", "example": false },
                                 "created_at": { "type": "string", "example": "2026-03-05" }
                             }
                         }
@@ -706,6 +761,7 @@
                                 "type": "array",
                                 "items": { "type": "string" }
                             },
+                            "suspended": { "type": "boolean" },
                             "created_at": { "type": "string" }
                         }
                     }
@@ -792,7 +848,7 @@
                             },
                             "type": {
                                 "type": "string",
-                                "enum": ["app-create", "app-edit", "app-delete", "app-deploy", "app-deploy-rollback", "app-deploy-unlock", "alias-create", "alias-delete", "ssl-install", "db-list", "db-create", "db-delete", "db-backup", "db-restore", "db-password"],
+                                "enum": ["app-create", "app-edit", "app-delete", "app-suspend", "app-unsuspend", "app-deploy", "app-deploy-rollback", "app-deploy-unlock", "alias-create", "alias-delete", "ssl-install", "db-list", "db-create", "db-delete", "db-backup", "db-restore", "db-password"],
                                 "example": "app-create"
                             },
                             "status": {
@@ -808,6 +864,8 @@
                                     { "$ref": "#/components/schemas/JobResultAppCreate" },
                                     { "$ref": "#/components/schemas/JobResultAppEdit" },
                                     { "$ref": "#/components/schemas/JobResultAppDelete" },
+                                    { "$ref": "#/components/schemas/JobResultAppSuspend" },
+                                    { "$ref": "#/components/schemas/JobResultAppUnsuspend" },
                                     { "$ref": "#/components/schemas/JobResultAppDeploy" },
                                     { "$ref": "#/components/schemas/JobResultAppDeployRollback" },
                                     { "$ref": "#/components/schemas/JobResultAppDeployUnlock" },
@@ -891,6 +949,22 @@
                 "properties": {
                     "app": { "type": "string" },
                     "deleted": { "type": "boolean", "example": true }
+                }
+            },
+            "JobResultAppSuspend": {
+                "type": "object",
+                "description": "Result for app-suspend job",
+                "properties": {
+                    "app": { "type": "string", "example": "myapp" },
+                    "suspended": { "type": "boolean", "example": true }
+                }
+            },
+            "JobResultAppUnsuspend": {
+                "type": "object",
+                "description": "Result for app-unsuspend job",
+                "properties": {
+                    "app": { "type": "string", "example": "myapp" },
+                    "suspended": { "type": "boolean", "example": false }
                 }
             },
             "JobResultAppDeploy": {

@@ -30,7 +30,7 @@ php artisan cipi:token-create
 
 ## Features
 
-- **REST API** — CRUD for apps, aliases, databases, SSL, and async jobs (`/api/*`), secured with Laravel Sanctum and token abilities. App create supports optional Git for **custom** apps (SFTP-only), matching Cipi 4.4.4+.
+- **REST API** — CRUD for apps, aliases, databases, SSL, and async jobs (`/api/*`), secured with Laravel Sanctum and token abilities. App create supports optional Git for **custom** apps (SFTP-only), matching Cipi 4.4.4+. Apps can also be taken offline and restored with **suspend / unsuspend** (HTTP 503 maintenance page), matching Cipi 4.5.8+.
 - **MCP Server** — Model Context Protocol endpoint at `/mcp` for AI-powered integrations.
 - **Swagger Docs** — Interactive API reference at `/docs`, generated from `public/api-docs/openapi.json`. The spec covers apps, aliases, deploy, SSL, databases (`GET /api/dbs` via `cipi db list`; other `/api/dbs/*` actions use jobs), and job polling (including structured `result` types per job).
 - **Artisan Commands** — `cipi:token-create`, `cipi:token-list`, `cipi:token-revoke`.
@@ -123,6 +123,8 @@ Once connected, the following tools are available to the AI agent:
 | `AppDeploy`         | Deploy an app                                         |
 | `AppDeployRollback` | Rollback the last deploy                              |
 | `AppDeployUnlock`   | Unlock a stuck deploy                                 |
+| `AppSuspend`        | Take an app offline (HTTP 503) without deleting it    |
+| `AppUnsuspend`      | Bring a suspended app back online                     |
 | `AliasList`         | List aliases for an app                               |
 | `AliasAdd`          | Add an alias to an app                                |
 | `AliasRemove`       | Remove an alias from an app                           |

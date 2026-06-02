@@ -13,6 +13,8 @@ use CipiApi\Mcp\Tools\AppDeployUnlockTool;
 use CipiApi\Mcp\Tools\AppEditTool;
 use CipiApi\Mcp\Tools\AppListTool;
 use CipiApi\Mcp\Tools\AppShowTool;
+use CipiApi\Mcp\Tools\AppSuspendTool;
+use CipiApi\Mcp\Tools\AppUnsuspendTool;
 use CipiApi\Mcp\Tools\DbBackupTool;
 use CipiApi\Mcp\Tools\DbCreateTool;
 use CipiApi\Mcp\Tools\DbDeleteTool;
@@ -39,6 +41,8 @@ class CipiServer extends Server
         AppDeployTool::class,
         AppDeployRollbackTool::class,
         AppDeployUnlockTool::class,
+        AppSuspendTool::class,
+        AppUnsuspendTool::class,
         AliasListTool::class,
         AliasAddTool::class,
         AliasRemoveTool::class,

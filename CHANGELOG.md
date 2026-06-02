@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-06-02
+
+App suspend / unsuspend support, wiring the REST API and MCP server to the Cipi 4.5.8 lifecycle commands so apps can be taken offline (HTTP 503) without being deleted.
+
+### Added
+
+- **Suspend / unsuspend endpoints**
+  - `POST /api/apps/{name}/suspend` — replaces the app's Nginx vhost with a generic static suspension page served as **HTTP 503** (HTTPS included). Validates the app exists synchronously and returns **409** if it is already suspended. Dispatches an `app-suspend` async job. Requires the new `apps-suspend` ability.
+  - `POST /api/apps/{name}/unsuspend` — restores the normal vhost to bring the app back online. Validates the app exists synchronously and returns **409** if it is not currently suspended. Dispatches an `app-unsuspend` async job. Requires `apps-suspend`.
+  - Both wrap the Cipi `cipi app suspend <app>` / `cipi app unsuspend <app>` commands from [Cipi 4.5.8](https://github.com/cipi-sh/cipi/releases/tag/4.5.8); suspension state lives in `apps.json` (`suspended`) and survives vhost regeneration.
+- **`suspended` flag** — `GET /api/apps` and `GET /api/apps/{name}` now expose a boolean `suspended` field per app.
+- **MCP tools** — `AppSuspend` and `AppUnsuspend`, secured with the `apps-suspend` ability and mirroring the REST validation.
+- **Token ability** — new `apps-suspend` ability gates both the REST routes and the MCP tools.
+- **Job result parsing** — `CipiOutputParser` parses `app-suspend` / `app-unsuspend` CLI output into structured `{ app, suspended }` results.
+- **OpenAPI** — `info.version` bumped to **1.7.0**; new paths and `JobResultAppSuspend` / `JobResultAppUnsuspend` schemas; `app-suspend` / `app-unsuspend` added to the job-type enum; `suspended` added to the app list/show schemas.
+
+### Changed
+
+- **`CipiCliService`** — `app suspend` and `app unsuspend` added to the `ALLOWED_COMMANDS` whitelist.
+- **`CipiValidationService`** — adds `isSuspended(name)` helper reading the `suspended` flag from `apps.json`.
+
 ## [1.6.10] - 2026-04-27
 
 ### Fixed

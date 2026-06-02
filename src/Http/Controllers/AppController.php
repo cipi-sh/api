@@ -29,6 +29,7 @@ class AppController extends Controller
                 'branch' => $app['branch'] ?? '',
                 'repository' => $app['repository'] ?? '',
                 'aliases' => $app['aliases'] ?? [],
+                'suspended' => (bool) ($app['suspended'] ?? false),
                 'created_at' => $app['created_at'] ?? '',
             ];
         }
@@ -154,6 +155,34 @@ class AppController extends Controller
 
         $command = 'app delete ' . escapeshellarg($name) . ' --force';
         $job = $this->jobs->dispatch('app-delete', $command, ['app' => $name]);
+        return response()->json(['job_id' => $job->id, 'status' => 'pending'], 202);
+    }
+
+    public function suspend(string $name): JsonResponse
+    {
+        if (! $this->validator->appExists($name)) {
+            return response()->json(['error' => "App '{$name}' not found"], 404);
+        }
+        if ($this->validator->isSuspended($name)) {
+            return response()->json(['error' => "App '{$name}' is already suspended"], 409);
+        }
+
+        $command = 'app suspend ' . escapeshellarg($name);
+        $job = $this->jobs->dispatch('app-suspend', $command, ['app' => $name]);
+        return response()->json(['job_id' => $job->id, 'status' => 'pending'], 202);
+    }
+
+    public function unsuspend(string $name): JsonResponse
+    {
+        if (! $this->validator->appExists($name)) {
+            return response()->json(['error' => "App '{$name}' not found"], 404);
+        }
+        if (! $this->validator->isSuspended($name)) {
+            return response()->json(['error' => "App '{$name}' is not suspended"], 409);
+        }
+
+        $command = 'app unsuspend ' . escapeshellarg($name);
+        $job = $this->jobs->dispatch('app-unsuspend', $command, ['app' => $name]);
         return response()->json(['job_id' => $job->id, 'status' => 'pending'], 202);
     }
 

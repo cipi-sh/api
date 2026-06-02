@@ -12,6 +12,8 @@ class CipiCliService
         'app create',
         'app edit',
         'app delete',
+        'app suspend',
+        'app unsuspend',
         'deploy ',
         'alias add',
         'alias remove',

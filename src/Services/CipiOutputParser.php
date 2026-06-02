@@ -12,6 +12,8 @@ class CipiOutputParser
             'app-create' => $this->parseAppCreate($plain),
             'app-edit' => $this->parseAppEdit($plain),
             'app-delete' => $this->parseAppDelete($plain),
+            'app-suspend' => $this->parseAppSuspend($plain),
+            'app-unsuspend' => $this->parseAppUnsuspend($plain),
             'app-deploy' => $this->parseAppDeploy($plain),
             'app-deploy-rollback' => $this->parseAppDeployRollback($plain),
             'app-deploy-unlock' => $this->parseAppDeployUnlock($plain),
@@ -137,6 +139,39 @@ class CipiOutputParser
     {
         if (preg_match("/'([^']+)'\s+deleted/", $text, $m)) {
             return ['app' => $m[1], 'deleted' => true];
+        }
+        return null;
+    }
+
+    protected function parseAppSuspend(string $text): ?array
+    {
+        if (preg_match('/unsuspend/i', $text)) {
+            return null;
+        }
+        if (preg_match('/suspend(?:ed)?/i', $text)) {
+            $app = null;
+            if (preg_match("/'([^']+)'\s+suspended/i", $text, $m)) {
+                $app = $m[1];
+            }
+            return array_filter([
+                'app' => $app,
+                'suspended' => true,
+            ], fn ($v) => $v !== null);
+        }
+        return null;
+    }
+
+    protected function parseAppUnsuspend(string $text): ?array
+    {
+        if (preg_match('/unsuspend(?:ed)?/i', $text) || preg_match('/restored/i', $text)) {
+            $app = null;
+            if (preg_match("/'([^']+)'\s+(?:unsuspended|restored)/i", $text, $m)) {
+                $app = $m[1];
+            }
+            return array_filter([
+                'app' => $app,
+                'suspended' => false,
+            ], fn ($v) => $v !== null);
         }
         return null;
     }

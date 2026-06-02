@@ -135,4 +135,10 @@ class CipiValidationService
         $apps = $this->getApps();
         return $apps[$name]['domain'] ?? null;
     }
+
+    public function isSuspended(string $name): bool
+    {
+        $apps = $this->getApps();
+        return (bool) ($apps[$name]['suspended'] ?? false);
+    }
 }

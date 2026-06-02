@@ -15,6 +15,8 @@ Route::prefix('api')->middleware(['auth:sanctum'])->group(function () {
     Route::post('/apps', [AppController::class, 'create'])->middleware('ability:apps-create');
     Route::put('/apps/{name}', [AppController::class, 'edit'])->middleware('ability:apps-edit');
     Route::delete('/apps/{name}', [AppController::class, 'delete'])->middleware('ability:apps-delete');
+    Route::post('/apps/{name}/suspend', [AppController::class, 'suspend'])->middleware('ability:apps-suspend');
+    Route::post('/apps/{name}/unsuspend', [AppController::class, 'unsuspend'])->middleware('ability:apps-suspend');
 
     // Aliases
     Route::get('/apps/{name}/aliases', [AliasController::class, 'list'])->middleware('ability:aliases-view');
