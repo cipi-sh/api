@@ -3,7 +3,7 @@
     "info": {
         "title": "Cipi API",
         "description": "REST API for Cipi Server Control Panel. Manage Laravel apps, domain aliases, SSL certificates, and MySQL databases.\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias add/remove, database create/delete/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status. **Database listing** (`GET /api/dbs`) is synchronous (`200`) and runs `cipi db list` on the server (same as the Cipi CLI).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**MCP Server:** An MCP (Model Context Protocol) server is available at `/mcp` with the same authentication.",
-        "version": "1.9.0",
+        "version": "1.10.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -215,6 +215,99 @@
                     "403": { "$ref": "#/components/responses/Forbidden" },
                     "404": { "$ref": "#/components/responses/NotFound" },
                     "409": { "$ref": "#/components/responses/Conflict" }
+                }
+            }
+        },
+        "/apps/{name}/basicauth": {
+            "get": {
+                "tags": ["Apps"],
+                "summary": "Basic auth status",
+                "description": "Show HTTP Basic Auth status for an app (enabled/disabled and configured usernames). Runs `cipi basicauth status` synchronously. Requires `apps-basicauth` ability.",
+                "operationId": "appBasicAuthStatus",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Basic auth status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BasicAuthStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+                }
+            }
+        },
+        "/apps/{name}/basicauth/enable": {
+            "post": {
+                "tags": ["Apps"],
+                "summary": "Enable basic auth",
+                "description": "Protect an app with Nginx HTTP Basic Auth (RFC 7617). Optional `user` and `password`; when `password` is omitted Cipi auto-generates one and returns it once in the response. Regenerates the vhost and re-applies SSL when a certificate exists. Runs `cipi basicauth enable` synchronously. Requires `apps-basicauth` ability.",
+                "operationId": "appBasicAuthEnable",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/BasicAuthEnableRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Basic auth enabled",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BasicAuthEnableResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "422": { "$ref": "#/components/responses/ValidationError" },
+                    "503": { "$ref": "#/components/responses/ServiceUnavailable" }
+                }
+            }
+        },
+        "/apps/{name}/basicauth/disable": {
+            "post": {
+                "tags": ["Apps"],
+                "summary": "Disable basic auth",
+                "description": "Remove HTTP Basic Auth from an app and restore the normal Nginx vhost. Validates app exists synchronously and returns 409 if basic auth is not enabled. Runs `cipi basicauth disable` synchronously. Requires `apps-basicauth` ability.",
+                "operationId": "appBasicAuthDisable",
+                "parameters": [
+                    { "$ref": "#/components/parameters/AppName" }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Basic auth disabled",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BasicAuthDisableResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": { "$ref": "#/components/responses/Unauthorized" },
+                    "403": { "$ref": "#/components/responses/Forbidden" },
+                    "404": { "$ref": "#/components/responses/NotFound" },
+                    "409": { "$ref": "#/components/responses/Conflict" },
+                    "503": { "$ref": "#/components/responses/ServiceUnavailable" }
                 }
             }
         },
@@ -746,6 +839,7 @@
                                     "example": ["www.myapp.example.com"]
                                 },
                                 "suspended": { "type": "boolean", "example": false },
+                                "basic_auth": { "type": "boolean", "example": false, "description": "Whether HTTP Basic Auth is enabled on the app vhost" },
                                 "created_at": { "type": "string", "example": "2026-03-05" }
                             }
                         }
@@ -768,7 +862,74 @@
                                 "items": { "type": "string" }
                             },
                             "suspended": { "type": "boolean" },
+                            "basic_auth": { "type": "boolean", "description": "Whether HTTP Basic Auth is enabled on the app vhost" },
                             "created_at": { "type": "string" }
+                        }
+                    }
+                }
+            },
+            "BasicAuthStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "enabled": { "type": "boolean", "example": true },
+                            "users": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "example": ["admin"]
+                            }
+                        }
+                    }
+                }
+            },
+            "BasicAuthEnableRequest": {
+                "type": "object",
+                "properties": {
+                    "user": {
+                        "type": "string",
+                        "description": "HTTP basic auth username (default: admin)",
+                        "example": "admin"
+                    },
+                    "password": {
+                        "type": "string",
+                        "description": "Password (auto-generated when omitted; returned once in the response)",
+                        "example": "s3cret-p@ss"
+                    }
+                }
+            },
+            "BasicAuthEnableResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": { "type": "string", "example": "myapp" },
+                            "enabled": { "type": "boolean", "example": true },
+                            "user": { "type": "string", "example": "admin" },
+                            "users": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "example": ["admin"]
+                            },
+                            "password": {
+                                "type": "string",
+                                "description": "Present only when Cipi auto-generated the password",
+                                "example": "xK9mP2nQvR4wL8sT1uY3zA"
+                            }
+                        }
+                    }
+                }
+            },
+            "BasicAuthDisableResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": { "type": "string", "example": "myapp" },
+                            "enabled": { "type": "boolean", "example": false }
                         }
                     }
                 }
@@ -1160,6 +1321,16 @@
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            },
+            "ServiceUnavailable": {
+                "description": "Upstream Cipi CLI command failed or is unavailable",
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "$ref": "#/components/schemas/ErrorResponse"
                         }
                     }
                 }

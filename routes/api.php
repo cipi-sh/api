@@ -2,6 +2,7 @@
 
 use CipiApi\Http\Controllers\AliasController;
 use CipiApi\Http\Controllers\AppController;
+use CipiApi\Http\Controllers\BasicAuthController;
 use CipiApi\Http\Controllers\DbController;
 use CipiApi\Http\Controllers\DeployController;
 use CipiApi\Http\Controllers\JobController;
@@ -17,6 +18,9 @@ Route::prefix('api')->middleware(['auth:sanctum'])->group(function () {
     Route::delete('/apps/{name}', [AppController::class, 'delete'])->middleware('ability:apps-delete');
     Route::post('/apps/{name}/suspend', [AppController::class, 'suspend'])->middleware('ability:apps-suspend');
     Route::post('/apps/{name}/unsuspend', [AppController::class, 'unsuspend'])->middleware('ability:apps-suspend');
+    Route::get('/apps/{name}/basicauth', [BasicAuthController::class, 'status'])->middleware('ability:apps-basicauth');
+    Route::post('/apps/{name}/basicauth/enable', [BasicAuthController::class, 'enable'])->middleware('ability:apps-basicauth');
+    Route::post('/apps/{name}/basicauth/disable', [BasicAuthController::class, 'disable'])->middleware('ability:apps-basicauth');
 
     // Aliases
     Route::get('/apps/{name}/aliases', [AliasController::class, 'list'])->middleware('ability:aliases-view');

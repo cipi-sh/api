@@ -26,6 +26,9 @@ class CipiOutputParser
             'db-backup' => $this->parseDbBackup($plain),
             'db-restore' => $this->parseDbRestore($plain),
             'db-password' => $this->parseDbPassword($plain),
+            'basicauth-enable' => $this->parseBasicAuthEnable($plain),
+            'basicauth-disable' => $this->parseBasicAuthDisable($plain),
+            'basicauth-status' => $this->parseBasicAuthStatus($plain),
             default => null,
         };
 
@@ -331,6 +334,57 @@ class CipiOutputParser
             ], fn ($v) => $v !== null);
         }
         return null;
+    }
+
+    protected function parseBasicAuthEnable(string $text): ?array
+    {
+        if (! preg_match('/Basic auth.*enabled/i', $text)) {
+            return null;
+        }
+
+        $user = $this->extractLabel($text, 'User');
+        $password = $this->extractLabel($text, 'Password');
+        $users = $user ? [$user] : [];
+
+        return array_filter([
+            'enabled' => true,
+            'user' => $user,
+            'password' => $password,
+            'users' => $users,
+        ], fn ($v) => $v !== null && $v !== []);
+    }
+
+    protected function parseBasicAuthDisable(string $text): ?array
+    {
+        if (preg_match('/Basic auth.*disabled/i', $text)) {
+            return ['enabled' => false, 'users' => []];
+        }
+
+        return null;
+    }
+
+    protected function parseBasicAuthStatus(string $text): ?array
+    {
+        $enabled = null;
+        if (preg_match('/Status\s+enabled/i', $text)) {
+            $enabled = true;
+        } elseif (preg_match('/Status\s+disabled/i', $text)) {
+            $enabled = false;
+        }
+
+        $users = [];
+        if (preg_match('/Users\s+([^\n]+)/', $text, $m)) {
+            $users = array_values(array_filter(array_map('trim', explode(',', trim($m[1])))));
+        }
+
+        if ($enabled === null && empty($users)) {
+            return null;
+        }
+
+        return [
+            'enabled' => $enabled ?? false,
+            'users' => $users,
+        ];
     }
 
     protected function parseDbPassword(string $text): ?array

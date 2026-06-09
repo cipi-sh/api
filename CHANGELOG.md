@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.0] - 2026-06-09
+
+HTTP Basic Auth management for apps, wiring the REST API and MCP server to Cipi `cipi basicauth` commands (Nginx gatekeeper — unrelated to `cipi auth` / `auth.json`).
+
+### Added
+
+- **Basic auth endpoints**
+  - `GET /api/apps/{name}/basicauth` — returns `{ enabled, users }` synchronously via `cipi basicauth status`. Requires `apps-basicauth`.
+  - `POST /api/apps/{name}/basicauth/enable` — enables HTTP Basic Auth with optional `user` and `password` (auto-generated when omitted; returned once in the response). Runs `cipi basicauth enable` synchronously. Requires `apps-basicauth`.
+  - `POST /api/apps/{name}/basicauth/disable` — removes basic auth and restores the normal vhost. Returns **409** when not enabled. Runs `cipi basicauth disable` synchronously. Requires `apps-basicauth`.
+- **`basic_auth` flag** — `GET /api/apps` now exposes a boolean `basic_auth` field per app (from `apps.json`).
+- **MCP tools** — `AppBasicAuthStatus`, `AppBasicAuthEnable`, and `AppBasicAuthDisable`, secured with `apps-basicauth`.
+- **Token ability** — new `apps-basicauth` ability gates the REST routes and MCP tools.
+- **OpenAPI** — `info.version` bumped to **1.10.0**; new paths and `BasicAuth*` schemas; `basic_auth` on app list schema.
+
+### Changed
+
+- **`CipiCliService`** — `basicauth enable`, `basicauth disable`, and `basicauth status` added to `ALLOWED_COMMANDS`.
+- **`CipiValidationService`** — adds `isBasicAuthEnabled(name)` helper reading the `basic_auth` flag from `apps.json`.
+
 ## [1.9.0] - 2026-06-09
 
 Primary domain change via app edit, aligned with [Cipi 4.6.2](https://github.com/cipi-sh/cipi/releases/tag/4.6.2) (`cipi app edit <app> --domain=<new>`).

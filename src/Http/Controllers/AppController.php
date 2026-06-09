@@ -30,6 +30,7 @@ class AppController extends Controller
                 'repository' => $app['repository'] ?? '',
                 'aliases' => $app['aliases'] ?? [],
                 'suspended' => (bool) ($app['suspended'] ?? false),
+                'basic_auth' => $this->validator->isBasicAuthEnabled($name),
                 'created_at' => $app['created_at'] ?? '',
             ];
         }

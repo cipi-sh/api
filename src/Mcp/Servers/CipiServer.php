@@ -13,6 +13,9 @@ use CipiApi\Mcp\Tools\AppDeployUnlockTool;
 use CipiApi\Mcp\Tools\AppEditTool;
 use CipiApi\Mcp\Tools\AppListTool;
 use CipiApi\Mcp\Tools\AppShowTool;
+use CipiApi\Mcp\Tools\AppBasicAuthDisableTool;
+use CipiApi\Mcp\Tools\AppBasicAuthEnableTool;
+use CipiApi\Mcp\Tools\AppBasicAuthStatusTool;
 use CipiApi\Mcp\Tools\AppSuspendTool;
 use CipiApi\Mcp\Tools\AppUnsuspendTool;
 use CipiApi\Mcp\Tools\DbBackupTool;
@@ -43,6 +46,9 @@ class CipiServer extends Server
         AppDeployUnlockTool::class,
         AppSuspendTool::class,
         AppUnsuspendTool::class,
+        AppBasicAuthStatusTool::class,
+        AppBasicAuthEnableTool::class,
+        AppBasicAuthDisableTool::class,
         AliasListTool::class,
         AliasAddTool::class,
         AliasRemoveTool::class,
