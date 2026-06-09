@@ -125,16 +125,26 @@ class AppController extends Controller
             'php' => 'nullable|string',
             'branch' => 'nullable|string|max:64',
             'repository' => 'nullable|string',
+            'domain' => 'nullable|string',
         ]);
 
         $filtered = array_filter($validated, fn ($v) => $v !== null && $v !== '');
         if (empty($filtered)) {
-            return response()->json(['error' => 'Nothing to change. Provide php, branch, or repository.'], 422);
+            return response()->json(['error' => 'Nothing to change. Provide php, branch, repository, or domain.'], 422);
         }
 
         if (isset($filtered['php'])) {
             if ($err = $this->validator->phpVersionError($filtered['php'])) {
                 return response()->json(['error' => $err], 422);
+            }
+        }
+        if (isset($filtered['domain'])) {
+            if ($err = $this->validator->domainError($filtered['domain'])) {
+                return response()->json(['error' => $err], 422);
+            }
+            $usedBy = $this->validator->domainUsedBy($filtered['domain'], $name);
+            if ($usedBy) {
+                return response()->json(['error' => "Domain '{$filtered['domain']}' is already used by app '{$usedBy}'"], 409);
             }
         }
 

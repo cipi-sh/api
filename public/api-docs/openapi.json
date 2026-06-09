@@ -3,7 +3,7 @@
     "info": {
         "title": "Cipi API",
         "description": "REST API for Cipi Server Control Panel. Manage Laravel apps, domain aliases, SSL certificates, and MySQL databases.\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias add/remove, database create/delete/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status. **Database listing** (`GET /api/dbs`) is synchronous (`200`) and runs `cipi db list` on the server (same as the Cipi CLI).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**MCP Server:** An MCP (Model Context Protocol) server is available at `/mcp` with the same authentication.",
-        "version": "1.8.1",
+        "version": "1.9.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -106,7 +106,7 @@
             "put": {
                 "tags": ["Apps"],
                 "summary": "Edit app",
-                "description": "Edit an app (PHP version, branch, repository). Validates app exists synchronously. Dispatches CLI command as async job. Requires `apps-edit` ability.",
+                "description": "Edit an app (PHP version, branch, repository, or primary domain). Validates app exists synchronously; validates domain format and uniqueness (excluding the current app's aliases) before dispatch. Changing the primary domain moves the old one to aliases, updates Nginx, `APP_URL`, webhooks, and re-issues SSL when applicable — requires [Cipi 4.6.2+](https://github.com/cipi-sh/cipi/releases/tag/4.6.2). Dispatches CLI command as async job. Requires `apps-edit` ability.",
                 "operationId": "appEdit",
                 "parameters": [
                     { "$ref": "#/components/parameters/AppName" }
@@ -135,6 +135,7 @@
                     "401": { "$ref": "#/components/responses/Unauthorized" },
                     "403": { "$ref": "#/components/responses/Forbidden" },
                     "404": { "$ref": "#/components/responses/NotFound" },
+                    "409": { "$ref": "#/components/responses/Conflict" },
                     "422": { "$ref": "#/components/responses/ValidationError" }
                 }
             },
@@ -718,6 +719,11 @@
                     "repository": {
                         "type": "string",
                         "description": "Git repository URL"
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "New primary domain. The previous primary becomes an alias; promoting an existing alias to primary is supported. Requires Cipi 4.6.2+.",
+                        "example": "new.example.com"
                     }
                 }
             },
@@ -938,7 +944,7 @@
                     "changes": {
                         "type": "object",
                         "additionalProperties": { "type": "string" },
-                        "example": { "php": "8.5", "branch": "develop" }
+                        "example": { "php": "8.5", "branch": "develop", "domain": "new.example.com" }
                     },
                     "message": { "type": "string", "example": "Nothing changed" }
                 }

@@ -10,7 +10,7 @@ use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Edit an app. Validates app exists and PHP version synchronously, dispatches async job. Returns job_id for polling.')]
+#[Description('Edit an app (PHP, branch, repository, or primary domain). Validates app exists, PHP version, and domain format/uniqueness synchronously, dispatches async job. Returns job_id for polling.')]
 class AppEditTool extends Tool
 {
     public function __construct(
@@ -33,13 +33,23 @@ class AppEditTool extends Tool
             'php' => $request->get('php'),
             'branch' => $request->get('branch'),
             'repository' => $request->get('repository'),
+            'domain' => $request->get('domain'),
         ]);
         if (empty($params)) {
-            return Response::text('Error: Nothing to change. Provide php, branch, or repository.');
+            return Response::text('Error: Nothing to change. Provide php, branch, repository, or domain.');
         }
         if (isset($params['php'])) {
             if ($err = $this->validator->phpVersionError($params['php'])) {
                 return Response::text("Error: {$err}");
+            }
+        }
+        if (isset($params['domain'])) {
+            if ($err = $this->validator->domainError($params['domain'])) {
+                return Response::text("Error: {$err}");
+            }
+            $usedBy = $this->validator->domainUsedBy($params['domain'], $name);
+            if ($usedBy) {
+                return Response::text("Error: Domain '{$params['domain']}' is already used by app '{$usedBy}'");
             }
         }
 
@@ -59,6 +69,7 @@ class AppEditTool extends Tool
             'php' => $schema->string()->description('PHP version'),
             'branch' => $schema->string()->description('Branch'),
             'repository' => $schema->string()->description('Repository URL'),
+            'domain' => $schema->string()->description('New primary domain (previous primary becomes an alias; promoting an existing alias works too). Requires Cipi 4.6.2+'),
         ];
     }
 }

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-06-09
+
+Primary domain change via app edit, aligned with [Cipi 4.6.2](https://github.com/cipi-sh/cipi/releases/tag/4.6.2) (`cipi app edit <app> --domain=<new>`).
+
+### Added
+
+- **`domain` on app edit** — `PUT /api/apps/{name}` accepts an optional `domain` field to rename the app's primary domain. Validates format synchronously and returns **409** if the domain is already used by another app (aliases of the current app are allowed, so promoting an alias to primary works). Dispatches `cipi app edit --domain=` as an `app-edit` async job. Composable with existing `php`, `branch`, and `repository` fields.
+- **MCP `AppEdit` tool** — adds optional `domain` parameter with the same validation.
+- **OpenAPI** — `info.version` bumped to **1.9.0**; `AppEditRequest.domain` schema, updated endpoint description, **409** response on edit, and `domain` in the `JobResultAppEdit` example.
+
 ## [1.8.1] - 2026-06-02
 
 App suspend / unsuspend support, wiring the REST API and MCP server to the Cipi 4.5.8 lifecycle commands so apps can be taken offline (HTTP 503) without being deleted.
