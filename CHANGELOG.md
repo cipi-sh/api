@@ -2,13 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.2] - 2026-06-10
+
+Drop the unused `logs-view` token ability from the documented ability set.
+
+### Removed
+
+- **`logs-view` token ability** — never used on REST routes; `ApiLogShow` is available with `mcp-access` only (same as all other MCP tools).
+
+### Changed
+
+- **OpenAPI** — `info.version` bumped to **1.11.2**.
+
 ## [1.11.1] - 2026-06-10
 
 Simplified MCP authorization: one ability for all tools.
 
 ### Changed
 
-- **MCP authorization** — all MCP tools are gated only by the `mcp-access` token ability. Per-tool REST abilities (`apps-view`, `deploy-manage`, `logs-view`, `apps-artisan`, etc.) are no longer checked on `/mcp`.
+- **MCP authorization** — all MCP tools are gated only by the `mcp-access` token ability. Per-tool REST abilities (`apps-view`, `deploy-manage`, etc.) are no longer checked on `/mcp`.
 - **OpenAPI** — `info.version` bumped to **1.11.1**; MCP description updated accordingly.
 
 ## [1.11.0] - 2026-06-10
@@ -20,11 +32,10 @@ MCP job polling, log reading, Artisan, and server monitoring tools.
 - **MCP tools**
   - `JobShow` — poll background job status, parsed `result`, and CLI `output` (same data as `GET /api/jobs/{id}`).
   - `AppLogs` — read recent app log snapshots by type (`all`, `nginx`, `php`, `worker`, `deploy`, `laravel`), matching [`cipi app logs`](https://cipi.sh/docs/apps#cli-app-logs). Requires `apps-view`.
-  - `ApiLogShow` — read recent Laravel logs for the Cipi API host app (`storage/logs/`). Requires `logs-view`.
-  - `AppArtisan` — run Artisan on a Laravel app synchronously (same as [`cipi app artisan`](https://cipi.sh/docs/apps#cli-app-artisan)). Requires `apps-artisan`. Custom apps and `tinker` are rejected.
+  - `ApiLogShow` — read recent Laravel logs for the Cipi API host app (`storage/logs/`).
+  - `AppArtisan` — run Artisan on a Laravel app synchronously (same as [`cipi app artisan`](https://cipi.sh/docs/apps#cli-app-artisan)). Custom apps and `tinker` are rejected.
   - `ServerStatus` — server snapshot via `cipi status` (CPU, RAM, disk, services). Gated only by `mcp-access`.
   - `ServiceList` — system service status via `cipi service list [service]`. Gated only by `mcp-access`.
-- **Token abilities** — new `logs-view` ability gates `ApiLogShow`; new `apps-artisan` ability gates `AppArtisan`.
 - **Services** — `CipiJobStatusService`, `CipiLogReader`, `CipiAppLogsService`, `CipiApiLogService`, `CipiAppArtisanService`, and `CipiServerMonitorService`.
 
 ### Changed
