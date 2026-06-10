@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.7] - 2026-06-10
+
+Canonical token ability list for `cipi api token create`.
+
+### Added
+
+- **`config/cipi.php` → `token_abilities`** — canonical ability list for REST routes (includes `status-view`, `apps-suspend`, `apps-basicauth`, and all other route abilities).
+- **`php artisan cipi:token-abilities`** — prints `ability|description` lines; `cipi api token create` reads this list (requires matching Cipi CLI update in `lib/api.sh`).
+
+### Changed
+
+- **OpenAPI** — `info.version` bumped to **1.11.7**.
+
 ## [1.11.6] - 2026-06-10
 
 Structured server status over REST and MCP.

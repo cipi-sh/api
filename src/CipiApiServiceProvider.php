@@ -2,6 +2,7 @@
 
 namespace CipiApi;
 
+use CipiApi\Console\Commands\CipiTokenAbilities;
 use CipiApi\Console\Commands\CipiTokenCreate;
 use CipiApi\Console\Commands\CipiTokenList;
 use CipiApi\Console\Commands\CipiTokenRevoke;
@@ -73,6 +74,7 @@ class CipiApiServiceProvider extends ServiceProvider
 
         if ($this->app->runningInConsole()) {
             $this->commands([
+                CipiTokenAbilities::class,
                 CipiTokenCreate::class,
                 CipiTokenList::class,
                 CipiTokenRevoke::class,
