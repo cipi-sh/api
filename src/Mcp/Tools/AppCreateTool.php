@@ -2,6 +2,7 @@
 
 namespace CipiApi\Mcp\Tools;
 
+use CipiApi\Mcp\Support\McpArgValidator;
 use CipiApi\Services\CipiJobService;
 use CipiApi\Services\CipiValidationService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -20,8 +21,15 @@ class AppCreateTool extends Tool
 
     public function handle(Request $request): Response
     {
-        $user = $request->get('user');
-        $domain = $request->get('domain');
+        [$user, $error] = McpArgValidator::requiredString($request, 'user');
+        if ($error !== null) {
+            return $error;
+        }
+        [$domain, $error] = McpArgValidator::requiredString($request, 'domain');
+        if ($error !== null) {
+            return $error;
+        }
+
         $repositoryRaw = $request->get('repository');
         $repository = is_string($repositoryRaw) ? trim($repositoryRaw) : $repositoryRaw;
         if ($repository === '') {

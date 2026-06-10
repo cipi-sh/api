@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.4] - 2026-06-10
+
+Graceful MCP errors when required tool arguments are missing.
+
+### Fixed
+
+- **MCP argument validation** — new `McpArgValidator` applied across MCP tools; missing required parameters return `Error: … is required` instead of `TypeError` in `production.ERROR` (e.g. probe calls to `JobShow`, `AliasAdd`, `AppLogs`).
+
+### Changed
+
+- **OpenAPI** — `info.version` bumped to **1.11.4**.
+
 ## [1.11.3] - 2026-06-10
 
 Fix MCP clients (e.g. Cursor) only discovering the first 15 tools.

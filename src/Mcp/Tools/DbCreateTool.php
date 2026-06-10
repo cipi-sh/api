@@ -2,6 +2,7 @@
 
 namespace CipiApi\Mcp\Tools;
 
+use CipiApi\Mcp\Support\McpArgValidator;
 use CipiApi\Services\CipiJobService;
 use CipiApi\Services\CipiValidationService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -20,7 +21,11 @@ class DbCreateTool extends Tool
 
     public function handle(Request $request): Response
     {
-        $name = $request->get('name');
+        [$name, $error] = McpArgValidator::requiredString($request, 'name');
+        if ($error !== null) {
+            return $error;
+        }
+
         if ($err = $this->validator->usernameError($name ?? '')) {
             return Response::text("Error: {$err}");
         }

@@ -2,6 +2,7 @@
 
 namespace CipiApi\Mcp\Tools;
 
+use CipiApi\Mcp\Support\McpArgValidator;
 use CipiApi\Services\CipiJobService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -20,8 +21,15 @@ class DbRestoreTool extends Tool
 
     public function handle(Request $request): Response
     {
-        $name = $request->get('name');
-        $file = $request->get('file');
+        [$name, $error] = McpArgValidator::requiredString($request, 'name');
+        if ($error !== null) {
+            return $error;
+        }
+
+        [$file, $error] = McpArgValidator::requiredString($request, 'file');
+        if ($error !== null) {
+            return $error;
+        }
 
         if (! preg_match('/^[a-zA-Z0-9_\-\/\.]+\.sql\.gz$/', $file ?? '')) {
             return Response::text('Error: Invalid backup file path. Must be a .sql.gz file with safe characters.');

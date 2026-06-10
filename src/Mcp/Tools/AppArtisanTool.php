@@ -2,6 +2,7 @@
 
 namespace CipiApi\Mcp\Tools;
 
+use CipiApi\Mcp\Support\McpArgValidator;
 use CipiApi\Services\CipiAppArtisanService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -18,8 +19,15 @@ class AppArtisanTool extends Tool
 
     public function handle(Request $request): Response
     {
-        $name = $request->get('name');
-        $command = $request->get('command');
+        [$name, $error] = McpArgValidator::requiredString($request, 'name');
+        if ($error !== null) {
+            return $error;
+        }
+
+        [$command, $error] = McpArgValidator::requiredString($request, 'command');
+        if ($error !== null) {
+            return $error;
+        }
 
         try {
             $result = $this->artisan->run($name, $command);

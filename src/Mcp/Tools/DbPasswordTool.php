@@ -2,6 +2,7 @@
 
 namespace CipiApi\Mcp\Tools;
 
+use CipiApi\Mcp\Support\McpArgValidator;
 use CipiApi\Services\CipiJobService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -18,7 +19,11 @@ class DbPasswordTool extends Tool
 
     public function handle(Request $request): Response
     {
-        $name = $request->get('name');
+        [$name, $error] = McpArgValidator::requiredString($request, 'name');
+        if ($error !== null) {
+            return $error;
+        }
+
         $command = 'db password ' . escapeshellarg($name);
         $job = $this->jobs->dispatch('db-password', $command, ['name' => $name]);
 

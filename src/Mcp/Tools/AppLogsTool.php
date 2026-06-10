@@ -2,6 +2,7 @@
 
 namespace CipiApi\Mcp\Tools;
 
+use CipiApi\Mcp\Support\McpArgValidator;
 use CipiApi\Services\CipiAppLogsService;
 use CipiApi\Services\CipiLogReader;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -21,7 +22,11 @@ class AppLogsTool extends Tool
 
     public function handle(Request $request): Response
     {
-        $name = $request->get('name');
+        [$name, $error] = McpArgValidator::requiredString($request, 'name');
+        if ($error !== null) {
+            return $error;
+        }
+
         $type = $request->get('type', 'all');
         $lines = (int) ($request->get('lines', CipiLogReader::DEFAULT_LINES));
 

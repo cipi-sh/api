@@ -2,6 +2,7 @@
 
 namespace CipiApi\Mcp\Tools;
 
+use CipiApi\Mcp\Support\McpArgValidator;
 use CipiApi\Services\CipiJobStatusService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -20,7 +21,11 @@ class JobShowTool extends Tool
 
     public function handle(Request $request): Response
     {
-        $id = $request->get('id');
+        [$id, $error] = McpArgValidator::requiredString($request, 'id');
+        if ($error !== null) {
+            return $error;
+        }
+
         $includeOutput = (bool) $request->get('include_output', true);
 
         $data = $this->jobStatus->find($id);
