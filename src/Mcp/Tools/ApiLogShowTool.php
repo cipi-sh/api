@@ -21,10 +21,6 @@ class ApiLogShowTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('logs-view')) {
-            return Response::text('Permission denied: logs-view required');
-        }
-
         $lines = (int) ($request->get('lines', CipiLogReader::DEFAULT_LINES));
         $date = $request->get('date');
 

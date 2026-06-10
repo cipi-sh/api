@@ -21,10 +21,6 @@ class AppLogsTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('apps-view')) {
-            return Response::text('Permission denied: apps-view required');
-        }
-
         $name = $request->get('name');
         $type = $request->get('type', 'all');
         $lines = (int) ($request->get('lines', CipiLogReader::DEFAULT_LINES));

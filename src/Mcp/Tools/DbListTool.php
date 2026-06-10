@@ -19,10 +19,6 @@ class DbListTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('dbs-view')) {
-            return Response::text('Permission denied: dbs-view required');
-        }
-
         try {
             $rows = $this->dbListCli->list();
         } catch (MysqlDatabaseListingUnavailableException $e) {

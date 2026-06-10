@@ -38,7 +38,7 @@ use Laravel\Mcp\Server;
 
 #[Name('Cipi Server')]
 #[Version('1.0.0')]
-#[Instructions('Cipi server management: apps, aliases, databases, SSL, jobs, logs, and server status. Uses same token as REST API.')]
+#[Instructions('Cipi server management: apps, aliases, databases, SSL, jobs, logs, and server status. Requires mcp-access token ability only.')]
 class CipiServer extends Server
 {
     protected array $tools = [

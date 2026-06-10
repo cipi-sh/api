@@ -37,7 +37,7 @@ php artisan cipi:token-create
 
 ## MCP Integration
 
-The MCP server is exposed at `/mcp` using [Streamable HTTP](https://modelcontextprotocol.io/) transport and is secured with the same Sanctum token used by the REST API (the token must have the `mcp-access` ability).
+The MCP server is exposed at `/mcp` using [Streamable HTTP](https://modelcontextprotocol.io/) transport and is secured with the same Sanctum token used by the REST API. A token with the **`mcp-access`** ability is sufficient for **all** MCP tools — per-endpoint REST abilities (`apps-view`, `deploy-manage`, etc.) are not required on `/mcp`.
 
 Generate a token if you haven't already:
 
@@ -117,7 +117,7 @@ Once connected, the following tools are available to the AI agent:
 | ------------------- | ----------------------------------------------------- |
 | `AppList`           | List all apps with domains, PHP versions, and aliases |
 | `AppShow`           | Show details of a specific app                        |
-| `AppArtisan`        | Run Artisan on a Laravel app (`apps-artisan`)         |
+| `AppArtisan`        | Run Artisan on a Laravel app                          |
 | `AppCreate`         | Create a new app (`custom` for non-Laravel apps; optional Git for custom SFTP-only sites, Cipi 4.4.4+) |
 | `AppEdit`           | Edit an existing app                                  |
 | `AppDelete`         | Delete an app                                         |
@@ -141,7 +141,7 @@ Once connected, the following tools are available to the AI agent:
 | `SslInstall`        | Install an SSL certificate for an app                 |
 | `JobShow`           | Poll async job status, result, and CLI output         |
 | `AppLogs`           | Read recent app logs (`cipi app logs` types)          |
-| `ApiLogShow`        | Read Cipi API host Laravel logs (`logs-view`)         |
+| `ApiLogShow`        | Read Cipi API host Laravel logs                       |
 | `ServerStatus`      | CPU, RAM, disk, services (`cipi status`)              |
 | `ServiceList`       | System service status (`cipi service list`)           |
 

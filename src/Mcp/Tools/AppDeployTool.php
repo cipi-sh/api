@@ -20,10 +20,6 @@ class AppDeployTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('deploy-manage')) {
-            return Response::text('Permission denied: deploy-manage required');
-        }
-
         $name = $request->get('name');
         if (! $this->validator->appExists($name)) {
             return Response::text("Error: App '{$name}' not found");

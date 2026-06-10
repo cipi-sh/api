@@ -22,10 +22,6 @@ class AliasRemoveTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('aliases-delete')) {
-            return Response::text('Permission denied: aliases-delete required');
-        }
-
         $name = $request->get('name');
         $alias = $request->get('alias');
 

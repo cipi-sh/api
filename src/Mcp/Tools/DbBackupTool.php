@@ -18,10 +18,6 @@ class DbBackupTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('dbs-manage')) {
-            return Response::text('Permission denied: dbs-manage required');
-        }
-
         $name = $request->get('name');
         $command = 'db backup ' . escapeshellarg($name);
         $job = $this->jobs->dispatch('db-backup', $command, ['name' => $name]);

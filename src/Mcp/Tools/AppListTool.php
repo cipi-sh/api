@@ -19,11 +19,7 @@ class AppListTool extends Tool
     ) {}
 
     public function handle(Request $request): Response
-    {
-        if (! $request->user()?->tokenCan('apps-view')) {
-            return Response::text('Permission denied: apps-view required');
-        }
-        $apps = $this->validator->getApps();
+    {        $apps = $this->validator->getApps();
         $data = [];
         foreach ($apps as $name => $app) {
             $data[] = [

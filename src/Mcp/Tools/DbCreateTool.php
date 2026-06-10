@@ -20,10 +20,6 @@ class DbCreateTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('dbs-create')) {
-            return Response::text('Permission denied: dbs-create required');
-        }
-
         $name = $request->get('name');
         if ($err = $this->validator->usernameError($name ?? '')) {
             return Response::text("Error: {$err}");

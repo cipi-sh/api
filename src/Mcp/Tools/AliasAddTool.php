@@ -20,10 +20,6 @@ class AliasAddTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('aliases-create')) {
-            return Response::text('Permission denied: aliases-create required');
-        }
-
         $name = $request->get('name');
         $alias = $request->get('alias');
 

@@ -19,11 +19,7 @@ class AppShowTool extends Tool
     ) {}
 
     public function handle(Request $request): Response
-    {
-        if (! $request->user()?->tokenCan('apps-view')) {
-            return Response::text('Permission denied: apps-view required');
-        }
-        $name = $request->get('name');
+    {        $name = $request->get('name');
         if (! $this->validator->appExists($name)) {
             return Response::text("Error: App '{$name}' not found");
         }

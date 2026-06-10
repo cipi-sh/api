@@ -18,10 +18,6 @@ class AppArtisanTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('apps-artisan')) {
-            return Response::text('Permission denied: apps-artisan required');
-        }
-
         $name = $request->get('name');
         $command = $request->get('command');
 

@@ -20,10 +20,6 @@ class AppEditTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('apps-edit')) {
-            return Response::text('Permission denied: apps-edit required');
-        }
-
         $name = $request->get('name');
         if (! $this->validator->appExists($name)) {
             return Response::text("Error: App '{$name}' not found");

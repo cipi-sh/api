@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.1] - 2026-06-10
+
+Simplified MCP authorization: one ability for all tools.
+
+### Changed
+
+- **MCP authorization** — all MCP tools are gated only by the `mcp-access` token ability. Per-tool REST abilities (`apps-view`, `deploy-manage`, `logs-view`, `apps-artisan`, etc.) are no longer checked on `/mcp`.
+- **OpenAPI** — `info.version` bumped to **1.11.1**; MCP description updated accordingly.
+
 ## [1.11.0] - 2026-06-10
 
 MCP job polling, log reading, Artisan, and server monitoring tools.

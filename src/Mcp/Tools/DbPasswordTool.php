@@ -18,10 +18,6 @@ class DbPasswordTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('dbs-manage')) {
-            return Response::text('Permission denied: dbs-manage required');
-        }
-
         $name = $request->get('name');
         $command = 'db password ' . escapeshellarg($name);
         $job = $this->jobs->dispatch('db-password', $command, ['name' => $name]);

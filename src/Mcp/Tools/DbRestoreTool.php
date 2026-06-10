@@ -20,10 +20,6 @@ class DbRestoreTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('dbs-manage')) {
-            return Response::text('Permission denied: dbs-manage required');
-        }
-
         $name = $request->get('name');
         $file = $request->get('file');
 

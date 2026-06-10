@@ -20,10 +20,6 @@ class AppBasicAuthStatusTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('apps-basicauth')) {
-            return Response::text('Permission denied: apps-basicauth required');
-        }
-
         $name = $request->get('name');
         if (! $this->validator->appExists($name)) {
             return Response::text("Error: App '{$name}' not found");

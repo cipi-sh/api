@@ -20,10 +20,6 @@ class SslInstallTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('ssl-manage')) {
-            return Response::text('Permission denied: ssl-manage required');
-        }
-
         $name = $request->get('name');
         if (! $this->validator->appExists($name)) {
             return Response::text("Error: App '{$name}' not found");

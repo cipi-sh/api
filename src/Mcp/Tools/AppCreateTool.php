@@ -20,10 +20,6 @@ class AppCreateTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('apps-create')) {
-            return Response::text('Permission denied: apps-create required');
-        }
-
         $user = $request->get('user');
         $domain = $request->get('domain');
         $repositoryRaw = $request->get('repository');

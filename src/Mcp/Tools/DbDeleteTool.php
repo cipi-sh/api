@@ -20,10 +20,6 @@ class DbDeleteTool extends Tool
 
     public function handle(Request $request): Response
     {
-        if (! $request->user()?->tokenCan('dbs-delete')) {
-            return Response::text('Permission denied: dbs-delete required');
-        }
-
         $name = $request->get('name');
         $command = 'db delete ' . escapeshellarg($name);
         $job = $this->jobs->dispatch('db-delete', $command, ['name' => $name]);
