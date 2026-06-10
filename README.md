@@ -117,6 +117,7 @@ Once connected, the following tools are available to the AI agent:
 | ------------------- | ----------------------------------------------------- |
 | `AppList`           | List all apps with domains, PHP versions, and aliases |
 | `AppShow`           | Show details of a specific app                        |
+| `AppArtisan`        | Run Artisan on a Laravel app (`apps-artisan`)         |
 | `AppCreate`         | Create a new app (`custom` for non-Laravel apps; optional Git for custom SFTP-only sites, Cipi 4.4.4+) |
 | `AppEdit`           | Edit an existing app                                  |
 | `AppDelete`         | Delete an app                                         |
@@ -138,6 +139,11 @@ Once connected, the following tools are available to the AI agent:
 | `DbRestore`         | Restore a database from a backup file                 |
 | `DbPassword`        | Regenerate database password and update `.env`        |
 | `SslInstall`        | Install an SSL certificate for an app                 |
+| `JobShow`           | Poll async job status, result, and CLI output         |
+| `AppLogs`           | Read recent app logs (`cipi app logs` types)          |
+| `ApiLogShow`        | Read Cipi API host Laravel logs (`logs-view`)         |
+| `ServerStatus`      | CPU, RAM, disk, services (`cipi status`)              |
+| `ServiceList`       | System service status (`cipi service list`)           |
 
 ## Configuration
 
@@ -148,6 +154,10 @@ The `CIPI_APPS_JSON` env variable defaults to `/etc/cipi/apps.json`.
 `GET /api/dbs` runs **`sudo cipi db list`** on the host (synchronously), like the Cipi server CLI: vault and MariaDB access stay inside Cipi, not duplicated in PHP.
 
 **Why other API actions worked but `db` failed:** Cipi configures **`/etc/sudoers.d/cipi-api`** so `www-data` may run **`NOPASSWD`** only for an explicit list of `cipi` subcommands (`app`, `deploy`, `alias`, `ssl`, …). Database commands were missing from that whitelist until **Cipi 4.4.17**, so `sudo` tried to ask for a password and failed without a TTY (`sudo: a terminal is required`). Update the server with **`cipi self-update`** (applies migration 4.4.17) or add the `cipi db …` lines to `cipi-api` sudoers manually (see Cipi `setup.sh`).
+
+**`AppArtisan`:** runs `sudo cipi app artisan <app> …` on the host. Ensure the server's `cipi-api` sudoers entry allows `app artisan` (included in current Cipi releases that ship `cipi app artisan`).
+
+**`ServerStatus` / `ServiceList`:** run `sudo cipi status` and `sudo cipi service list` on the host. Require `mcp-access` only. Ensure `cipi-api` sudoers allows these commands (see Cipi `setup.sh`).
 
 ## License
 

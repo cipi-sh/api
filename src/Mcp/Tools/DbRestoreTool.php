@@ -34,7 +34,7 @@ class DbRestoreTool extends Tool
         $command = 'db restore ' . escapeshellarg($name) . ' ' . escapeshellarg($file);
         $job = $this->jobs->dispatch('db-restore', $command, ['name' => $name, 'file' => $file]);
 
-        return Response::text("Job dispatched: {$job->id} (status: pending). Poll GET /api/jobs/{$job->id} for result.");
+        return Response::text("Job dispatched: {$job->id} (status: pending). Poll JobShow with id {$job->id} for result.");
     }
 
     public function schema(JsonSchema $schema): array

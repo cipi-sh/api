@@ -13,9 +13,12 @@ use CipiApi\Mcp\Tools\AppDeployUnlockTool;
 use CipiApi\Mcp\Tools\AppEditTool;
 use CipiApi\Mcp\Tools\AppListTool;
 use CipiApi\Mcp\Tools\AppShowTool;
+use CipiApi\Mcp\Tools\ApiLogShowTool;
+use CipiApi\Mcp\Tools\AppArtisanTool;
 use CipiApi\Mcp\Tools\AppBasicAuthDisableTool;
 use CipiApi\Mcp\Tools\AppBasicAuthEnableTool;
 use CipiApi\Mcp\Tools\AppBasicAuthStatusTool;
+use CipiApi\Mcp\Tools\AppLogsTool;
 use CipiApi\Mcp\Tools\AppSuspendTool;
 use CipiApi\Mcp\Tools\AppUnsuspendTool;
 use CipiApi\Mcp\Tools\DbBackupTool;
@@ -24,6 +27,9 @@ use CipiApi\Mcp\Tools\DbDeleteTool;
 use CipiApi\Mcp\Tools\DbListTool;
 use CipiApi\Mcp\Tools\DbPasswordTool;
 use CipiApi\Mcp\Tools\DbRestoreTool;
+use CipiApi\Mcp\Tools\JobShowTool;
+use CipiApi\Mcp\Tools\ServerStatusTool;
+use CipiApi\Mcp\Tools\ServiceListTool;
 use CipiApi\Mcp\Tools\SslInstallTool;
 use Laravel\Mcp\Server\Attributes\Instructions;
 use Laravel\Mcp\Server\Attributes\Name;
@@ -32,12 +38,13 @@ use Laravel\Mcp\Server;
 
 #[Name('Cipi Server')]
 #[Version('1.0.0')]
-#[Instructions('Cipi server management: apps, aliases, databases, SSL. Uses same token as REST API.')]
+#[Instructions('Cipi server management: apps, aliases, databases, SSL, jobs, logs, and server status. Uses same token as REST API.')]
 class CipiServer extends Server
 {
     protected array $tools = [
         AppListTool::class,
         AppShowTool::class,
+        AppArtisanTool::class,
         AppCreateTool::class,
         AppEditTool::class,
         AppDeleteTool::class,
@@ -59,5 +66,10 @@ class CipiServer extends Server
         DbRestoreTool::class,
         DbPasswordTool::class,
         SslInstallTool::class,
+        JobShowTool::class,
+        AppLogsTool::class,
+        ApiLogShowTool::class,
+        ServerStatusTool::class,
+        ServiceListTool::class,
     ];
 }

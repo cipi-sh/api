@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.0] - 2026-06-10
+
+MCP job polling, log reading, Artisan, and server monitoring tools.
+
+### Added
+
+- **MCP tools**
+  - `JobShow` — poll background job status, parsed `result`, and CLI `output` (same data as `GET /api/jobs/{id}`).
+  - `AppLogs` — read recent app log snapshots by type (`all`, `nginx`, `php`, `worker`, `deploy`, `laravel`), matching [`cipi app logs`](https://cipi.sh/docs/apps#cli-app-logs). Requires `apps-view`.
+  - `ApiLogShow` — read recent Laravel logs for the Cipi API host app (`storage/logs/`). Requires `logs-view`.
+  - `AppArtisan` — run Artisan on a Laravel app synchronously (same as [`cipi app artisan`](https://cipi.sh/docs/apps#cli-app-artisan)). Requires `apps-artisan`. Custom apps and `tinker` are rejected.
+  - `ServerStatus` — server snapshot via `cipi status` (CPU, RAM, disk, services). Gated only by `mcp-access`.
+  - `ServiceList` — system service status via `cipi service list [service]`. Gated only by `mcp-access`.
+- **Token abilities** — new `logs-view` ability gates `ApiLogShow`; new `apps-artisan` ability gates `AppArtisan`.
+- **Services** — `CipiJobStatusService`, `CipiLogReader`, `CipiAppLogsService`, `CipiApiLogService`, `CipiAppArtisanService`, and `CipiServerMonitorService`.
+
+### Changed
+
+- Async MCP tools now suggest polling via `JobShow` instead of the REST endpoint.
+- `JobController` delegates formatting to `CipiJobStatusService` (output truncated at 50k chars).
+- **`CipiCliService`** — `app artisan`, `status`, and `service list` added to `ALLOWED_COMMANDS`.
+- **`CipiValidationService`** — adds `isCustomApp(name)` helper reading the `custom` flag from `apps.json`.
+- **OpenAPI** — `info.version` bumped to **1.11.0**; MCP description mentions job, log, Artisan, and server status tools.
+
 ## [1.10.0] - 2026-06-09
 
 HTTP Basic Auth management for apps, wiring the REST API and MCP server to Cipi `cipi basicauth` commands (Nginx gatekeeper — unrelated to `cipi auth` / `auth.json`).

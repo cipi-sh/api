@@ -32,7 +32,7 @@ class DbCreateTool extends Tool
         $command = 'db create --name=' . escapeshellarg($name);
         $job = $this->jobs->dispatch('db-create', $command, ['name' => $name]);
 
-        return Response::text("Job dispatched: {$job->id} (status: pending). Poll GET /api/jobs/{$job->id} for result.");
+        return Response::text("Job dispatched: {$job->id} (status: pending). Poll JobShow with id {$job->id} for result.");
     }
 
     public function schema(JsonSchema $schema): array

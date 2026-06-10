@@ -39,7 +39,7 @@ class AliasRemoveTool extends Tool
 
         $command = 'alias remove ' . escapeshellarg($name) . ' ' . escapeshellarg($alias);
         $job = $this->jobs->dispatch('alias-delete', $command, ['app' => $name, 'alias' => $alias]);
-        return Response::text("Job dispatched: {$job->id} (status: pending). Poll GET /api/jobs/{$job->id} for result.");
+        return Response::text("Job dispatched: {$job->id} (status: pending). Poll JobShow with id {$job->id} for result.");
     }
 
     public function schema(JsonSchema $schema): array

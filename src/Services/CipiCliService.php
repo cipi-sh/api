@@ -14,6 +14,7 @@ class CipiCliService
         'app delete',
         'app suspend',
         'app unsuspend',
+        'app artisan',
         'basicauth enable',
         'basicauth disable',
         'basicauth status',
@@ -27,6 +28,8 @@ class CipiCliService
         'db backup',
         'db restore',
         'db password',
+        'status',
+        'service list',
     ];
 
     /**

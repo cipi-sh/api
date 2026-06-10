@@ -148,4 +148,12 @@ class CipiValidationService
 
         return ($apps[$name]['basic_auth'] ?? '') === 'true';
     }
+
+    public function isCustomApp(string $name): bool
+    {
+        $apps = $this->getApps();
+        $value = $apps[$name]['custom'] ?? false;
+
+        return $value === true || $value === 'true' || $value === 1 || $value === '1';
+    }
 }

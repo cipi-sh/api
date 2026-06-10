@@ -34,7 +34,7 @@ class AppUnsuspendTool extends Tool
 
         $command = 'app unsuspend ' . escapeshellarg($name);
         $job = $this->jobs->dispatch('app-unsuspend', $command, ['app' => $name]);
-        return Response::text("Job dispatched: {$job->id} (status: pending). Poll GET /api/jobs/{$job->id} for result.");
+        return Response::text("Job dispatched: {$job->id} (status: pending). Poll JobShow with id {$job->id} for result.");
     }
 
     public function schema(JsonSchema $schema): array
