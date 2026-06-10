@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.3] - 2026-06-10
+
+Fix MCP clients (e.g. Cursor) only discovering the first 15 tools.
+
+### Fixed
+
+- **`CipiServer`** — raises `defaultPaginationLength` to 50 so `tools/list` returns all registered tools in one page. Laravel MCP defaults to 15; clients that do not paginate `nextCursor` were missing `AliasAdd`, database tools, `JobShow`, `AppLogs`, etc. `tools/call` still worked for omitted tools.
+
+### Changed
+
+- **OpenAPI** — `info.version` bumped to **1.11.3**.
+
 ## [1.11.2] - 2026-06-10
 
 Drop the unused `logs-view` token ability from the documented ability set.

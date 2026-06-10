@@ -41,6 +41,14 @@ use Laravel\Mcp\Server;
 #[Instructions('Cipi server management: apps, aliases, databases, SSL, jobs, logs, and server status. Requires mcp-access token ability only.')]
 class CipiServer extends Server
 {
+    /**
+     * Laravel MCP paginates tools/list (default 15). Cursor does not fetch further pages,
+     * so expose all Cipi tools in a single list response.
+     */
+    public int $defaultPaginationLength = 50;
+
+    public int $maxPaginationLength = 50;
+
     protected array $tools = [
         AppListTool::class,
         AppShowTool::class,
