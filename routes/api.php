@@ -7,6 +7,7 @@ use CipiApi\Http\Controllers\DbController;
 use CipiApi\Http\Controllers\DeployController;
 use CipiApi\Http\Controllers\JobController;
 use CipiApi\Http\Controllers\SslController;
+use CipiApi\Http\Controllers\StatusController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('api')->middleware(['auth:sanctum'])->group(function () {
@@ -45,4 +46,7 @@ Route::prefix('api')->middleware(['auth:sanctum'])->group(function () {
 
     // Jobs
     Route::get('/jobs/{id}', [JobController::class, 'show']);
+
+    // Server
+    Route::get('/status', [StatusController::class, 'show'])->middleware('ability:status-view');
 });

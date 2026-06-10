@@ -30,7 +30,7 @@ php artisan cipi:token-create
 
 ## Features
 
-- **REST API** — CRUD for apps, aliases, databases, SSL, and async jobs (`/api/*`), secured with Laravel Sanctum and token abilities. App create supports optional Git for **custom** apps (SFTP-only), matching Cipi 4.4.4+. Apps can also be taken offline and restored with **suspend / unsuspend** (HTTP 503 maintenance page), matching Cipi 4.5.8+. **HTTP Basic Auth** can be enabled, disabled, and inspected per app via `/api/apps/{name}/basicauth/*` (synchronous, wraps `cipi basicauth`).
+- **REST API** — CRUD for apps, aliases, databases, SSL, and async jobs (`/api/*`), secured with Laravel Sanctum and token abilities. App create supports optional Git for **custom** apps (SFTP-only), matching Cipi 4.4.4+. Apps can also be taken offline and restored with **suspend / unsuspend** (HTTP 503 maintenance page), matching Cipi 4.5.8+. **HTTP Basic Auth** can be enabled, disabled, and inspected per app via `/api/apps/{name}/basicauth/*` (synchronous, wraps `cipi basicauth`). **Server status** (`GET /api/status`) returns the same data as `cipi status` as structured JSON (requires `status-view`).
 - **MCP Server** — Model Context Protocol endpoint at `/mcp` for AI-powered integrations.
 - **Swagger Docs** — Interactive API reference at `/docs`, generated from `public/api-docs/openapi.json`. The spec covers apps, aliases, deploy, SSL, databases (`GET /api/dbs` via `cipi db list`; other `/api/dbs/*` actions use jobs), and job polling (including structured `result` types per job).
 - **Artisan Commands** — `cipi:token-create`, `cipi:token-list`, `cipi:token-revoke`.
@@ -142,7 +142,7 @@ Once connected, the following tools are available to the AI agent:
 | `JobShow`           | Poll async job status, result, and CLI output         |
 | `AppLogs`           | Read recent app logs (`cipi app logs` types)          |
 | `ApiLogShow`        | Read Cipi API host Laravel logs                       |
-| `ServerStatus`      | CPU, RAM, disk, services (`cipi status`)              |
+| `ServerStatus`      | Server snapshot (same JSON as `GET /api/status`)       |
 | `ServiceList`       | System service status (`cipi service list`)           |
 
 ## Configuration
@@ -157,7 +157,7 @@ The `CIPI_APPS_JSON` env variable defaults to `/etc/cipi/apps.json`.
 
 **`AppArtisan`:** runs `sudo cipi app artisan <app> …` on the host. Ensure the server's `cipi-api` sudoers entry allows `app artisan` (included in current Cipi releases that ship `cipi app artisan`).
 
-**`ServerStatus` / `ServiceList`:** run `sudo cipi status` and `sudo cipi service list` on the host. Require `mcp-access` only. Ensure `cipi-api` sudoers allows these commands (see Cipi `setup.sh`).
+**`ServerStatus` / `ServiceList`:** `ServerStatus` returns structured JSON (same as `GET /api/status`). `ServiceList` runs `sudo cipi service list` on the host. Both require `mcp-access` only on `/mcp`. Ensure `cipi-api` sudoers allows `service list` (see Cipi `setup.sh`).
 
 ## License
 

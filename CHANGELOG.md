@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.6] - 2026-06-10
+
+Structured server status over REST and MCP.
+
+### Added
+
+- **`GET /api/status`** — synchronous snapshot matching `cipi status` (System, Resources, Services, PHP, Apps count) as structured JSON. Requires `status-view` token ability. Reads host metrics as `www-data` (no sudo).
+- **`status-view` token ability** — gates the status endpoint.
+- **`CipiServerStatusService`** — collects the same metrics as `cipi status` (`free`, `df`, `top`, `systemctl`, PHP pools, apps.json count).
+
+### Changed
+
+- **`ServerStatus` MCP tool** — returns the same structured JSON as `GET /api/status` (still requires only `mcp-access`).
+- **OpenAPI** — `info.version` bumped to **1.11.6**; documents `/status`.
+
 ## [1.11.5] - 2026-06-10
 
 Safer MCP responses when exposing production logs or command output to AI clients.
