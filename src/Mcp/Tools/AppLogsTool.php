@@ -3,6 +3,7 @@
 namespace CipiApi\Mcp\Tools;
 
 use CipiApi\Mcp\Support\McpArgValidator;
+use CipiApi\Mcp\Support\McpProductionContent;
 use CipiApi\Services\CipiAppLogsService;
 use CipiApi\Services\CipiLogReader;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -31,7 +32,9 @@ class AppLogsTool extends Tool
         $lines = (int) ($request->get('lines', CipiLogReader::DEFAULT_LINES));
 
         try {
-            return Response::text($this->appLogs->read($name, $type, $lines));
+            $content = $this->appLogs->read($name, $type, $lines);
+
+            return Response::text(McpProductionContent::formatLogResponse($content));
         } catch (\InvalidArgumentException $e) {
             return Response::text('Error: ' . $e->getMessage());
         } catch (\RuntimeException $e) {

@@ -2,6 +2,7 @@
 
 namespace CipiApi\Mcp\Tools;
 
+use CipiApi\Mcp\Support\McpProductionContent;
 use CipiApi\Services\CipiApiLogService;
 use CipiApi\Services\CipiLogReader;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -24,7 +25,9 @@ class ApiLogShowTool extends Tool
         $lines = (int) ($request->get('lines', CipiLogReader::DEFAULT_LINES));
         $date = $request->get('date');
 
-        return Response::text($this->apiLogs->read($date, $lines));
+        $content = $this->apiLogs->read($date, $lines);
+
+        return Response::text(McpProductionContent::formatLogResponse($content));
     }
 
     public function schema(JsonSchema $schema): array

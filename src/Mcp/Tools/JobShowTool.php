@@ -3,6 +3,7 @@
 namespace CipiApi\Mcp\Tools;
 
 use CipiApi\Mcp\Support\McpArgValidator;
+use CipiApi\Mcp\Support\McpProductionContent;
 use CipiApi\Services\CipiJobStatusService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -35,9 +36,13 @@ class JobShowTool extends Tool
 
         if (! $includeOutput) {
             unset($data['output']);
+        } elseif (isset($data['output']) && is_string($data['output'])) {
+            $data['output'] = McpProductionContent::redact($data['output']);
         }
 
-        return Response::text(json_encode($data, JSON_PRETTY_PRINT));
+        $json = json_encode($data, JSON_PRETTY_PRINT);
+
+        return Response::text(McpProductionContent::formatSensitiveResponse($json !== false ? $json : ''));
     }
 
     public function schema(JsonSchema $schema): array

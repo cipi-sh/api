@@ -3,6 +3,7 @@
 namespace CipiApi\Mcp\Tools;
 
 use CipiApi\Mcp\Support\McpArgValidator;
+use CipiApi\Mcp\Support\McpProductionContent;
 use CipiApi\Services\CipiAppArtisanService;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -41,7 +42,9 @@ class AppArtisanTool extends Tool
         $exitCode = $result['exit_code'];
         $output = $result['output'] !== '' ? $result['output'] : '(no output)';
 
-        return Response::text("Artisan {$status} (exit code: {$exitCode})\n\n{$output}");
+        $content = "Artisan {$status} (exit code: {$exitCode})\n\n{$output}";
+
+        return Response::text(McpProductionContent::formatSensitiveResponse($content));
     }
 
     public function schema(JsonSchema $schema): array

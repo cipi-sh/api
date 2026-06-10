@@ -7,7 +7,7 @@ namespace CipiApi\Services;
  */
 class CipiLogReader
 {
-    public const DEFAULT_LINES = 100;
+    public const DEFAULT_LINES = 50;
 
     public const MAX_LINES = 1000;
 

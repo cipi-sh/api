@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.5] - 2026-06-10
+
+Safer MCP responses when exposing production logs or command output to AI clients.
+
+### Added
+
+- **`McpProductionContent`** — server-side redaction for common secrets (`password`, `Bearer`, `DB_PASSWORD`, SSH/DB credentials in CLI output, etc.) and a high-risk pattern detector (API tokens, payment-card-like numbers, DB connection strings) that prepends a targeted alert only when a match is found.
+
+### Changed
+
+- **MCP log tools** (`AppLogs`, `ApiLogShow`) — every response is prefixed with a mandatory production-content warning (*You are about to send production logs to the model. They may include personal data or secrets.*); log text is redacted before delivery.
+- **MCP sensitive output** (`JobShow` CLI `output`, `AppArtisan`) — redaction and conditional high-risk alert; structured job `result` (e.g. app-create credentials) is left intact.
+- **Log defaults** — `CipiLogReader::DEFAULT_LINES` lowered from 100 to **50** (max remains 1000).
+- **OpenAPI** — `info.version` bumped to **1.11.5**.
+
 ## [1.11.4] - 2026-06-10
 
 Graceful MCP errors when required tool arguments are missing.
