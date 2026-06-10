@@ -29,6 +29,7 @@ class CipiOutputParser
             'basicauth-enable' => $this->parseBasicAuthEnable($plain),
             'basicauth-disable' => $this->parseBasicAuthDisable($plain),
             'basicauth-status' => $this->parseBasicAuthStatus($plain),
+            'status' => $this->parseStatus($plain),
             default => null,
         };
 
@@ -384,6 +385,87 @@ class CipiOutputParser
         return [
             'enabled' => $enabled ?? false,
             'users' => $users,
+        ];
+    }
+
+    protected function parseStatus(string $text): ?array
+    {
+        $cipi = $this->extractLabel($text, 'Cipi');
+        $system = [
+            'ip' => $this->extractLabel($text, 'IP'),
+            'hostname' => $this->extractLabel($text, 'Hostname'),
+            'os' => $this->extractLabel($text, 'OS'),
+            'uptime' => $this->extractLabel($text, 'Uptime'),
+            'cipi' => $cipi !== null ? ltrim($cipi, 'vV') : null,
+        ];
+
+        if ($system['ip'] === null && $system['hostname'] === null && $system['os'] === null) {
+            return null;
+        }
+
+        $cpuPercent = null;
+        if (preg_match('/CPU\s+(\d+)%/', $text, $m)) {
+            $cpuPercent = (int) $m[1];
+        }
+
+        $memory = null;
+        if (preg_match('/Memory\s+(\d+)MB\s*\/\s*(\d+)MB\s*\((\d+)%\)/', $text, $m)) {
+            $memory = [
+                'used_mb' => (int) $m[1],
+                'total_mb' => (int) $m[2],
+                'usage_percent' => (int) $m[3],
+            ];
+        }
+
+        $disk = null;
+        if (preg_match('/Disk\s+(\S+)\/(\S+)\s*\((\d+)%\)/', $text, $m)) {
+            $disk = [
+                'display' => "{$m[1]}/{$m[2]} ({$m[3]}%)",
+                'used' => $m[1],
+                'total' => $m[2],
+                'usage_percent' => (int) $m[3],
+            ];
+        }
+
+        $services = [];
+        if (preg_match('/Services\s*\n(.*?)(?:\n\n|\nPHP|\nApps:)/s', $text, $section)) {
+            foreach (explode("\n", $section[1]) as $line) {
+                $line = trim($line);
+                if ($line === '') {
+                    continue;
+                }
+                if (preg_match('/^([a-z0-9.-]+)\s+\S*\s*(running|stopped)$/i', $line, $m)) {
+                    $services[$m[1]] = strtolower($m[2]);
+                }
+            }
+        }
+
+        $php = [];
+        if (preg_match_all('/PHP\s+([\d.]+)\s+\S*\s*running\s*\((\d+)\s+pools\)/i', $text, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $m) {
+                $php[] = [
+                    'version' => $m[1],
+                    'status' => 'running',
+                    'pools' => (int) $m[2],
+                ];
+            }
+        }
+
+        $apps = 0;
+        if (preg_match('/Apps:\s*(\d+)/', $text, $m)) {
+            $apps = (int) $m[1];
+        }
+
+        return [
+            'system' => $system,
+            'resources' => [
+                'cpu' => ['usage_percent' => $cpuPercent],
+                'memory' => $memory,
+                'disk' => $disk,
+            ],
+            'services' => $services,
+            'php' => $php,
+            'apps' => $apps,
         ];
     }
 

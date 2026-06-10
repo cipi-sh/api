@@ -6,17 +6,50 @@ use CipiApi\Exceptions\AppsJsonUnreadableException;
 
 /**
  * Structured snapshot matching `cipi status` sections (System, Resources, Services, PHP, Apps).
- * Reads host metrics as www-data — no sudo required.
+ * Prefers `sudo cipi status` (same source as the CLI); falls back to host reads as www-data.
  */
 class CipiServerStatusService
 {
     private const SERVICES = ['nginx', 'mariadb', 'supervisor', 'fail2ban'];
 
     public function __construct(
+        protected CipiCliService $cli,
+        protected CipiOutputParser $parser,
         protected CipiValidationService $validator,
     ) {}
 
     public function snapshot(): array
+    {
+        $fromCli = $this->snapshotFromCli();
+        if ($fromCli !== null) {
+            return $fromCli;
+        }
+
+        return $this->snapshotFromHost();
+    }
+
+    /**
+     * @return array{system: array, resources: array, services: array, php: list<array>, apps: int}|null
+     */
+    protected function snapshotFromCli(): ?array
+    {
+        $result = $this->cli->run('status');
+        if ($result['exit_code'] !== 0) {
+            return null;
+        }
+
+        $parsed = $this->parser->parse('status', $result['output'], true);
+        if (! is_array($parsed) || ! isset($parsed['system'])) {
+            return null;
+        }
+
+        return $parsed;
+    }
+
+    /**
+     * @return array{system: array, resources: array, services: array, php: list<array>, apps: int}
+     */
+    protected function snapshotFromHost(): array
     {
         return [
             'system' => $this->systemInfo(),
@@ -217,10 +250,13 @@ class CipiServerStatusService
     protected function phpPoolCount(string $version): int
     {
         $dir = "/etc/php/{$version}/fpm/pool.d";
-        if (is_dir($dir) && is_readable($dir)) {
-            $files = glob($dir . '/*.conf');
 
-            return is_array($files) ? count($files) : 0;
+        if ($this->pathWithinOpenBasedir($dir)) {
+            if (@is_dir($dir) && @is_readable($dir)) {
+                $files = @glob($dir . '/*.conf');
+
+                return is_array($files) ? count($files) : 0;
+            }
         }
 
         $count = trim((string) shell_exec(
@@ -228,5 +264,29 @@ class CipiServerStatusService
         ));
 
         return $count !== '' && ctype_digit($count) ? (int) $count : 0;
+    }
+
+    /**
+     * Whether PHP may stat/read {@see $path} without triggering open_basedir errors.
+     */
+    protected function pathWithinOpenBasedir(string $path): bool
+    {
+        $basedir = ini_get('open_basedir');
+        if (! is_string($basedir) || $basedir === '') {
+            return true;
+        }
+
+        $path = str_replace('\\', '/', $path);
+        foreach (explode(PATH_SEPARATOR, $basedir) as $allowed) {
+            $allowed = rtrim(str_replace('\\', '/', $allowed), '/');
+            if ($allowed === '') {
+                continue;
+            }
+            if ($path === $allowed || str_starts_with($path, $allowed . '/')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.8] - 2026-06-10
+
+Server status via `cipi status` CLI (with host fallback).
+
+### Changed
+
+- **`CipiServerStatusService`** — prefers `sudo cipi status` and parses CLI output into the same structured JSON as before; falls back to direct host reads as `www-data` when sudo is unavailable (same pattern as `CipiDatabaseListCliService`).
+- **`CipiOutputParser`** — adds `status` parser for `cipi status` output (system, resources, services, PHP pools, app count).
+- **OpenAPI** — `info.version` bumped to **1.11.8**; `/status` documents the CLI-first path and sudo requirement.
+
+### Fixed
+
+- **`GET /api/status` / `ServerStatus` MCP tool** — no longer crash on `open_basedir` when counting PHP pools; CLI path avoids the restriction entirely, and the host fallback skips `is_dir()` outside the allowlist.
+
 ## [1.11.7] - 2026-06-10
 
 Canonical token ability list for `cipi api token create`.
@@ -40,7 +54,7 @@ Safer MCP responses when exposing production logs or command output to AI client
 
 ### Changed
 
-- **MCP log tools** (`AppLogs`, `ApiLogShow`) — every response is prefixed with a mandatory production-content warning (*You are about to send production logs to the model. They may include personal data or secrets.*); log text is redacted before delivery.
+- **MCP log tools** (`AppLogs`, `ApiLogShow`) — every response is prefixed with a mandatory production-content warning (_You are about to send production logs to the model. They may include personal data or secrets._); log text is redacted before delivery.
 - **MCP sensitive output** (`JobShow` CLI `output`, `AppArtisan`) — redaction and conditional high-risk alert; structured job `result` (e.g. app-create credentials) is left intact.
 - **Log defaults** — `CipiLogReader::DEFAULT_LINES` lowered from 100 to **50** (max remains 1000).
 - **OpenAPI** — `info.version` bumped to **1.11.5**.

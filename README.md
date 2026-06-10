@@ -159,7 +159,7 @@ Token abilities for `cipi api token create` are defined in `config/cipi.php` (`t
 
 **`AppArtisan`:** runs `sudo cipi app artisan <app> …` on the host. Ensure the server's `cipi-api` sudoers entry allows `app artisan` (included in current Cipi releases that ship `cipi app artisan`).
 
-**`ServerStatus` / `ServiceList`:** `ServerStatus` returns structured JSON (same as `GET /api/status`). `ServiceList` runs `sudo cipi service list` on the host. Both require `mcp-access` only on `/mcp`. Ensure `cipi-api` sudoers allows `service list` (see Cipi `setup.sh`).
+**`ServerStatus` / `ServiceList`:** `ServerStatus` returns structured JSON (same as `GET /api/status`), preferring `sudo cipi status` with a host-read fallback. `ServiceList` runs `sudo cipi service list` on the host. Both require `mcp-access` only on `/mcp`. Ensure `cipi-api` sudoers allows `status` and `service list` (see Cipi `setup.sh`).
 
 ## License
 
