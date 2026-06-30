@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.10] - 2026-06-30
+
+PHP 8 compatibility for paginated app logs.
+
+### Fixed
+
+- **`GET /api/apps/{name}/logs`** — parenthesized ternary/`?:` chain when splitting redacted log lines (PHP 8+ fatal: `Unparenthesized a ? b : c ?: d`).
+
+### Changed
+
+- **OpenAPI** — `info.version` bumped to **1.11.10**.
+
 ## [1.11.9] - 2026-06-30
 
 Paginated app logs over REST.

@@ -216,7 +216,7 @@ class CipiLogReader
             $content = rtrim($blocks[$i + 1] ?? '', "\n");
             [$path, $totalLinesRaw] = array_pad(explode(':', $meta, 2), 2, '0');
             $totalLines = max(0, (int) $totalLinesRaw);
-            $lines = $content === '' ? [] : preg_split("/\r\n|\r|\n/", $content) ?: [];
+            $lines = $content === '' ? [] : (preg_split("/\r\n|\r|\n/", $content) ?: []);
 
             $entries[] = [
                 'path' => $path,

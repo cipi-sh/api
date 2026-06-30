@@ -78,7 +78,7 @@ class AppLogsController extends Controller
                 $warnings[] = McpProductionContent::HIGH_RISK_ALERT;
             }
 
-            $file['lines'] = $redacted === '' ? [] : preg_split("/\r\n|\r|\n/", $redacted) ?: [];
+            $file['lines'] = $redacted === '' ? [] : (preg_split("/\r\n|\r|\n/", $redacted) ?: []);
             $redactedFiles[] = $file;
         }
 
