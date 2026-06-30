@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.11.10] - 2026-06-30
+## [1.11.11] - 2026-06-30
 
 PHP 8 compatibility for paginated app logs.
 
@@ -13,6 +13,10 @@ PHP 8 compatibility for paginated app logs.
 ### Changed
 
 - **OpenAPI** — `info.version` bumped to **1.11.10**.
+
+## [1.11.10] - 2026-06-30
+
+No changes
 
 ## [1.11.9] - 2026-06-30
 
