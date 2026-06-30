@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.9] - 2026-06-30
+
+Paginated app logs over REST.
+
+### Added
+
+- **`GET /api/apps/{name}/logs`** — synchronous, paginated log snapshots for nginx, PHP-FPM, Laravel (when present), worker, and deploy logs. Query params: `type` (default `all`), `page` (default `1`, most recent first), `per_page` (default `50`, max `1000`). Requires `apps-view` ability. Matches `cipi app logs` paths; log text is redacted via `McpProductionContent`.
+- **`CipiLogReader::tailViaSudoPaginated()`** — page-based reads from the end of each log file via sudo.
+- **`CipiAppLogsService::readPaginated()`** and **`availableTypes()`** — structured JSON payload for REST.
+
+### Changed
+
+- **OpenAPI** — `info.version` bumped to **1.11.9**; documents `/apps/{name}/logs`.
+
 ## [1.11.8] - 2026-06-10
 
 Server status via `cipi status` CLI (with host fallback).

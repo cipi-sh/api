@@ -11,9 +11,32 @@ class CipiLogReader
 
     public const MAX_LINES = 1000;
 
+    public const DEFAULT_PER_PAGE = 50;
+
+    public const MAX_PER_PAGE = 1000;
+
     public function clampLines(int $lines): int
     {
         return min(max(1, $lines), self::MAX_LINES);
+    }
+
+    public function clampPage(int $page): int
+    {
+        return max(1, $page);
+    }
+
+    public function clampPerPage(int $perPage): int
+    {
+        return min(max(1, $perPage), self::MAX_PER_PAGE);
+    }
+
+    public function totalPages(int $totalLines, int $perPage): int
+    {
+        if ($totalLines <= 0) {
+            return 0;
+        }
+
+        return (int) ceil($totalLines / $this->clampPerPage($perPage));
     }
 
     /**
@@ -62,6 +85,29 @@ class CipiLogReader
         }
 
         return implode("\n", $chunks);
+    }
+
+    /**
+     * Tail files via sudo bash with page-based reads from the end of each file.
+     *
+     * Page 1 is the most recent chunk; higher pages return progressively older lines.
+     *
+     * @param  list<string>  $patterns
+     * @return list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
+     */
+    public function tailViaSudoPaginated(array $patterns, int $page, int $perPage): array
+    {
+        $page = $this->clampPage($page);
+        $perPage = $this->clampPerPage($perPage);
+        $entries = [];
+
+        foreach ($patterns as $pattern) {
+            foreach ($this->runSudoTailPaginated($pattern, $page, $perPage) as $entry) {
+                $entries[] = $entry;
+            }
+        }
+
+        return $entries;
     }
 
     /**
@@ -122,6 +168,67 @@ class CipiLogReader
         exec('sudo /bin/bash -c ' . escapeshellarg($inner), $output, $exitCode);
 
         return $exitCode === 0 ? trim(implode("\n", $output)) : '';
+    }
+
+    /**
+     * @return list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
+     */
+    protected function runSudoTailPaginated(string $pattern, int $page, int $perPage): array
+    {
+        if (! $this->isSafeHostPathPattern($pattern)) {
+            return [];
+        }
+
+        $pageArg = (string) $page;
+        $perPageArg = (string) $perPage;
+
+        $inner = 'shopt -s nullglob; '
+            . 'for f in ' . $pattern . '; do '
+            . 'if [ -f "$f" ]; then '
+            . 'total=$(wc -l < "$f" | tr -d " \\n"); '
+            . 'from_end=$(( ' . $pageArg . ' * ' . $perPageArg . ' )); '
+            . 'echo "===CIPI_LOG_FILE:$f:$total==="; '
+            . '/usr/bin/tail -n "$from_end" "$f" | /usr/bin/head -n ' . $perPageArg . '; '
+            . 'echo "===CIPI_LOG_END==="; '
+            . 'fi; '
+            . 'done 2>/dev/null';
+
+        $output = [];
+        exec('sudo /bin/bash -c ' . escapeshellarg($inner), $output, $exitCode);
+
+        if ($exitCode !== 0 || $output === []) {
+            return [];
+        }
+
+        return $this->parsePaginatedSudoOutput(implode("\n", $output), $page, $perPage);
+    }
+
+    /**
+     * @return list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
+     */
+    protected function parsePaginatedSudoOutput(string $raw, int $page, int $perPage): array
+    {
+        $entries = [];
+        $blocks = preg_split('/===CIPI_LOG_FILE:(.+?)===(.*?)===CIPI_LOG_END===/s', $raw, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [];
+
+        for ($i = 1; $i < count($blocks); $i += 3) {
+            $meta = $blocks[$i];
+            $content = rtrim($blocks[$i + 1] ?? '', "\n");
+            [$path, $totalLinesRaw] = array_pad(explode(':', $meta, 2), 2, '0');
+            $totalLines = max(0, (int) $totalLinesRaw);
+            $lines = $content === '' ? [] : preg_split("/\r\n|\r|\n/", $content) ?: [];
+
+            $entries[] = [
+                'path' => $path,
+                'total_lines' => $totalLines,
+                'page' => $page,
+                'per_page' => $perPage,
+                'total_pages' => $this->totalPages($totalLines, $perPage),
+                'lines' => $lines,
+            ];
+        }
+
+        return $entries;
     }
 
     protected function formatChunk(string $path, string $content): string

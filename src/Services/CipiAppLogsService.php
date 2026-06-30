@@ -38,6 +38,66 @@ class CipiAppLogsService
     }
 
     /**
+     * @return array{
+     *     app: string,
+     *     type: string,
+     *     page: int,
+     *     per_page: int,
+     *     available_types: list<string>,
+     *     files: list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
+     * }
+     */
+    public function readPaginated(string $app, string $type = 'all', int $page = 1, int $perPage = CipiLogReader::DEFAULT_PER_PAGE): array
+    {
+        $type = strtolower($type);
+        if (! in_array($type, self::TYPES, true)) {
+            throw new \InvalidArgumentException(
+                'Invalid type. Allowed: ' . implode(', ', self::TYPES)
+            );
+        }
+
+        if (! $this->validator->appExists($app)) {
+            throw new \RuntimeException("App '{$app}' not found");
+        }
+
+        $page = $this->logReader->clampPage($page);
+        $perPage = $this->logReader->clampPerPage($perPage);
+        $patterns = $this->resolvePatterns($app, $type);
+        $files = $this->logReader->tailViaSudoPaginated($patterns, $page, $perPage);
+
+        return [
+            'app' => $app,
+            'type' => $type,
+            'page' => $page,
+            'per_page' => $perPage,
+            'available_types' => $this->availableTypes($app),
+            'files' => $files,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function availableTypes(string $app): array
+    {
+        if (! $this->validator->appExists($app)) {
+            throw new \RuntimeException("App '{$app}' not found");
+        }
+
+        $types = ['nginx', 'php', 'worker', 'deploy'];
+
+        $home = '/home/' . $app;
+        $laravelDir = "{$home}/shared/storage/logs";
+        $isCustom = $this->validator->isCustomApp($app);
+
+        if ($isCustom || $this->laravelLogsAvailable($laravelDir)) {
+            $types[] = 'laravel';
+        }
+
+        return $types;
+    }
+
+    /**
      * @return list<string>
      */
     protected function resolvePatterns(string $app, string $type): array
