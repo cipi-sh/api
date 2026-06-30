@@ -1,6 +1,7 @@
 <?php
 
 use CipiApi\Http\Controllers\AliasController;
+use CipiApi\Http\Controllers\AppLogsController;
 use CipiApi\Http\Controllers\AppController;
 use CipiApi\Http\Controllers\BasicAuthController;
 use CipiApi\Http\Controllers\DbController;
@@ -14,6 +15,7 @@ Route::prefix('api')->middleware(['auth:sanctum'])->group(function () {
     // Apps
     Route::get('/apps', [AppController::class, 'list'])->middleware('ability:apps-view');
     Route::get('/apps/{name}', [AppController::class, 'show'])->middleware('ability:apps-view');
+    Route::get('/apps/{name}/logs', [AppLogsController::class, 'show'])->middleware('ability:apps-view');
     Route::post('/apps', [AppController::class, 'create'])->middleware('ability:apps-create');
     Route::put('/apps/{name}', [AppController::class, 'edit'])->middleware('ability:apps-edit');
     Route::delete('/apps/{name}', [AppController::class, 'delete'])->middleware('ability:apps-delete');
