@@ -88,10 +88,41 @@ class CipiLogReader
     }
 
     /**
-     * Tail files via sudo bash with page-based reads from the end of each file.
+     * Tail log files with page-based reads from the end of each file.
      *
+     * Tries direct reads first (when ACLs allow), then falls back to sudo.
      * Page 1 is the most recent chunk; higher pages return progressively older lines.
      *
+     * @param  list<string>  $patterns
+     * @return list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
+     */
+    public function tailPaginated(array $patterns, int $page, int $perPage): array
+    {
+        return $this->tailPaginatedViaSudo($patterns, $page, $perPage);
+    }
+
+    /**
+     * Read paginated logs via sudo only (PHP open_basedir blocks /home reads).
+     *
+     * @param  list<string>  $patterns
+     * @return list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
+     */
+    public function tailPaginatedViaSudo(array $patterns, int $page, int $perPage): array
+    {
+        $page = $this->clampPage($page);
+        $perPage = $this->clampPerPage($perPage);
+        $entries = [];
+
+        foreach ($patterns as $pattern) {
+            foreach ($this->runSudoTailPaginated($pattern, $page, $perPage) as $entry) {
+                $entries[] = $entry;
+            }
+        }
+
+        return $entries;
+    }
+
+    /**
      * @param  list<string>  $patterns
      * @return list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
      */
@@ -108,6 +139,92 @@ class CipiLogReader
         }
 
         return $entries;
+    }
+
+    /**
+     * @param  list<string>  $patterns
+     * @return list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
+     */
+    protected function tailLocalPaginated(array $patterns, int $page, int $perPage): array
+    {
+        $entries = [];
+
+        foreach ($patterns as $pattern) {
+            foreach ($this->expandPattern($pattern) as $path) {
+                if (! is_readable($path)) {
+                    continue;
+                }
+
+                $entry = $this->readPaginatedFromFile($path, $page, $perPage);
+                if ($entry !== null) {
+                    $entries[] = $entry;
+                }
+            }
+        }
+
+        return $entries;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function expandPattern(string $pattern): array
+    {
+        if (! $this->isSafeHostPathPattern($pattern)) {
+            return [];
+        }
+
+        $files = glob($pattern) ?: [];
+        sort($files);
+
+        return $files;
+    }
+
+    /**
+     * @return array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}|null
+     */
+    protected function readPaginatedFromFile(string $path, int $page, int $perPage): ?array
+    {
+        try {
+            $file = new \SplFileObject($path, 'r');
+            $file->seek(PHP_INT_MAX);
+            $totalLines = $file->key() + 1;
+
+            if ($totalLines <= 0) {
+                return null;
+            }
+
+            $fromEnd = $page * $perPage;
+            $start = max(0, $totalLines - $fromEnd);
+            $file->seek($start);
+
+            $buffer = [];
+            while (! $file->eof() && count($buffer) < $perPage) {
+                $line = $file->current();
+                if (is_string($line)) {
+                    $trimmed = rtrim($line, "\r\n");
+                    if ($trimmed !== '') {
+                        $buffer[] = $trimmed;
+                    }
+                }
+                $file->next();
+            }
+
+            if ($buffer === []) {
+                return null;
+            }
+
+            return [
+                'path' => $path,
+                'total_lines' => $totalLines,
+                'page' => $page,
+                'per_page' => $perPage,
+                'total_pages' => $this->totalPages($totalLines, $perPage),
+                'lines' => $buffer,
+            ];
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
@@ -170,15 +287,49 @@ class CipiLogReader
         return $exitCode === 0 ? trim(implode("\n", $output)) : '';
     }
 
-    /**
-     * @return list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
-     */
     protected function runSudoTailPaginated(string $pattern, int $page, int $perPage): array
     {
         if (! $this->isSafeHostPathPattern($pattern)) {
             return [];
         }
 
+        $output = $this->runLogReader($pattern, $page, $perPage);
+
+        if ($output === '') {
+            return [];
+        }
+
+        return $this->parsePaginatedOutput($output, $page, $perPage);
+    }
+
+    /**
+     * @return list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
+     */
+    public function parsePaginatedOutput(string $raw, int $page, int $perPage): array
+    {
+        return $this->parsePaginatedSudoOutput($raw, $page, $perPage);
+    }
+
+    protected function runLogReader(string $pattern, int $page, int $perPage): string
+    {
+        if (is_executable('/usr/local/bin/cipi-read-app-logs')) {
+            $output = [];
+            $cmd = 'sudo /usr/local/bin/cipi-read-app-logs '
+                . escapeshellarg($pattern) . ' '
+                . $page . ' '
+                . $perPage;
+            exec($cmd, $output, $exitCode);
+
+            if ($exitCode === 0 && $output !== []) {
+                return trim(implode("\n", $output));
+            }
+        }
+
+        return $this->runSudoTailPaginatedViaBash($pattern, $page, $perPage);
+    }
+
+    protected function runSudoTailPaginatedViaBash(string $pattern, int $page, int $perPage): string
+    {
         $pageArg = (string) $page;
         $perPageArg = (string) $perPage;
 
@@ -196,11 +347,7 @@ class CipiLogReader
         $output = [];
         exec('sudo /bin/bash -c ' . escapeshellarg($inner), $output, $exitCode);
 
-        if ($exitCode !== 0 || $output === []) {
-            return [];
-        }
-
-        return $this->parsePaginatedSudoOutput(implode("\n", $output), $page, $perPage);
+        return $exitCode === 0 ? trim(implode("\n", $output)) : '';
     }
 
     /**
@@ -209,13 +356,30 @@ class CipiLogReader
     protected function parsePaginatedSudoOutput(string $raw, int $page, int $perPage): array
     {
         $entries = [];
-        $blocks = preg_split('/===CIPI_LOG_FILE:(.+?)===(.*?)===CIPI_LOG_END===/s', $raw, -1, PREG_SPLIT_DELIM_CAPTURE) ?: [];
+        $marker = '===CIPI_LOG_FILE:';
+        $endMarker = '===CIPI_LOG_END===';
+        $offset = 0;
 
-        for ($i = 1; $i < count($blocks); $i += 3) {
-            $meta = $blocks[$i];
-            $content = rtrim($blocks[$i + 1] ?? '', "\n");
-            [$path, $totalLinesRaw] = array_pad(explode(':', $meta, 2), 2, '0');
-            $totalLines = max(0, (int) $totalLinesRaw);
+        while (($start = strpos($raw, $marker, $offset)) !== false) {
+            $metaStart = $start + strlen($marker);
+            $metaEnd = strpos($raw, '===', $metaStart);
+
+            if ($metaEnd === false) {
+                break;
+            }
+
+            $meta = substr($raw, $metaStart, $metaEnd - $metaStart);
+            $contentStart = $metaEnd + 3;
+            $contentEnd = strpos($raw, $endMarker, $contentStart);
+
+            if ($contentEnd === false) {
+                break;
+            }
+
+            $content = rtrim(substr($raw, $contentStart, $contentEnd - $contentStart), "\n");
+            $lastColon = strrpos($meta, ':');
+            $path = $lastColon === false ? $meta : substr($meta, 0, $lastColon);
+            $totalLines = max(0, (int) ($lastColon === false ? 0 : substr($meta, $lastColon + 1)));
             $lines = $content === '' ? [] : (preg_split("/\r\n|\r|\n/", $content) ?: []);
 
             $entries[] = [
@@ -226,6 +390,8 @@ class CipiLogReader
                 'total_pages' => $this->totalPages($totalLines, $perPage),
                 'lines' => $lines,
             ];
+
+            $offset = $contentEnd + strlen($endMarker);
         }
 
         return $entries;

@@ -4,15 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [1.11.11] - 2026-06-30
 
-PHP 8 compatibility for paginated app logs.
+PHP 8 compatibility and reliable Laravel app log reads.
 
 ### Fixed
 
 - **`GET /api/apps/{name}/logs`** — parenthesized ternary/`?:` chain when splitting redacted log lines (PHP 8+ fatal: `Unparenthesized a ? b : c ?: d`).
+- **Laravel log paths** — always read `shared/storage/logs/*.log` for non-custom apps instead of gating on a sudo directory probe that could fail while log files exist.
+- **Paginated log parsing** — scan `===CIPI_LOG_FILE:` markers linearly so stack traces cannot break regex-based block splitting; parse file paths with `strrpos` on the line-count suffix.
+- **open_basedir** — paginated app logs are fetched via `sudo cipi app logs read` (CLI runs as root) because cipi-api PHP cannot read `/home/*` directly; falls back to `cipi-read-app-logs` when CLI output is empty.
 
 ### Changed
 
-- **OpenAPI** — `info.version` bumped to **1.11.10**.
+- **`availableTypes()`** — always exposes `laravel` for managed apps.
+- **`CipiCliService`** — allows `app logs read` for the log snapshot command.
+- **OpenAPI** — `info.version` bumped to **1.11.11**.
 
 ## [1.11.10] - 2026-06-30
 

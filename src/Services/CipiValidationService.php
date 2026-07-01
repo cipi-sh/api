@@ -139,7 +139,9 @@ class CipiValidationService
     public function isSuspended(string $name): bool
     {
         $apps = $this->getApps();
-        return (bool) ($apps[$name]['suspended'] ?? false);
+        $value = $apps[$name]['suspended'] ?? false;
+
+        return $value === true || $value === 'true' || $value === 1 || $value === '1';
     }
 
     public function isBasicAuthEnabled(string $name): bool

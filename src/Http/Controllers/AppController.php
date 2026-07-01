@@ -29,7 +29,7 @@ class AppController extends Controller
                 'branch' => $app['branch'] ?? '',
                 'repository' => $app['repository'] ?? '',
                 'aliases' => $app['aliases'] ?? [],
-                'suspended' => (bool) ($app['suspended'] ?? false),
+                'suspended' => $this->validator->isSuspended($name),
                 'basic_auth' => $this->validator->isBasicAuthEnabled($name),
                 'created_at' => $app['created_at'] ?? '',
             ];
@@ -45,6 +45,7 @@ class AppController extends Controller
         $apps = $this->validator->getApps();
         $app = $apps[$name];
         $app['app'] = $name;
+        $app['suspended'] = $this->validator->isSuspended($name);
         return response()->json(['data' => $app], 200);
     }
 

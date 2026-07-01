@@ -12,6 +12,7 @@ class CipiCliService
         'app create',
         'app edit',
         'app delete',
+        'app logs read',
         'app suspend',
         'app unsuspend',
         'app artisan',

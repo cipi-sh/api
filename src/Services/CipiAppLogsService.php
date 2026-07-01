@@ -12,6 +12,7 @@ class CipiAppLogsService
     public function __construct(
         protected CipiLogReader $logReader,
         protected CipiValidationService $validator,
+        protected CipiCliService $cli,
     ) {}
 
     public function read(string $app, string $type = 'all', int $lines = CipiLogReader::DEFAULT_LINES): string
@@ -44,7 +45,8 @@ class CipiAppLogsService
      *     page: int,
      *     per_page: int,
      *     available_types: list<string>,
-     *     files: list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
+     *     files: list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>,
+     *     warnings?: list<string>
      * }
      */
     public function readPaginated(string $app, string $type = 'all', int $page = 1, int $perPage = CipiLogReader::DEFAULT_PER_PAGE): array
@@ -62,10 +64,21 @@ class CipiAppLogsService
 
         $page = $this->logReader->clampPage($page);
         $perPage = $this->logReader->clampPerPage($perPage);
-        $patterns = $this->resolvePatterns($app, $type);
-        $files = $this->logReader->tailViaSudoPaginated($patterns, $page, $perPage);
 
-        return [
+        $files = $this->readPaginatedViaCli($app, $type, $page, $perPage);
+        $warnings = [];
+
+        if ($files === []) {
+            $patterns = $this->resolvePatterns($app, $type);
+            $files = $this->logReader->tailPaginatedViaSudo($patterns, $page, $perPage);
+        }
+
+        if ($files === []) {
+            $warnings[] = 'No log output returned. On the server run: cipi self-update && cipi api update, then test: sudo -u www-data sudo /usr/local/bin/cipi app logs read '
+                .$app.' --type='.$type.' --page=1 --per-page=20';
+        }
+
+        $payload = [
             'app' => $app,
             'type' => $type,
             'page' => $page,
@@ -73,6 +86,33 @@ class CipiAppLogsService
             'available_types' => $this->availableTypes($app),
             'files' => $files,
         ];
+
+        if ($warnings !== []) {
+            $payload['warnings'] = $warnings;
+        }
+
+        return $payload;
+    }
+
+    /**
+     * @return list<array{path: string, total_lines: int, page: int, per_page: int, total_pages: int, lines: list<string>}>
+     */
+    protected function readPaginatedViaCli(string $app, string $type, int $page, int $perPage): array
+    {
+        $command = 'app logs read '
+            .escapeshellarg($app)
+            .' --type='.$type
+            .' --page='.$page
+            .' --per-page='.$perPage;
+
+        $result = $this->cli->run($command);
+        $output = trim($result['output'] ?? '');
+
+        if (! $result['success'] || $output === '') {
+            return [];
+        }
+
+        return $this->logReader->parsePaginatedOutput($output, $page, $perPage);
     }
 
     /**
@@ -84,17 +124,7 @@ class CipiAppLogsService
             throw new \RuntimeException("App '{$app}' not found");
         }
 
-        $types = ['nginx', 'php', 'worker', 'deploy'];
-
-        $home = '/home/' . $app;
-        $laravelDir = "{$home}/shared/storage/logs";
-        $isCustom = $this->validator->isCustomApp($app);
-
-        if ($isCustom || $this->laravelLogsAvailable($laravelDir)) {
-            $types[] = 'laravel';
-        }
-
-        return $types;
+        return ['nginx', 'php', 'worker', 'deploy', 'laravel'];
     }
 
     /**
@@ -106,28 +136,18 @@ class CipiAppLogsService
         $logsDir = "{$home}/logs";
         $laravelDir = "{$home}/shared/storage/logs";
         $isCustom = $this->validator->isCustomApp($app);
-        $hasLaravelDir = $this->laravelLogsAvailable($laravelDir);
 
         return match ($type) {
             'nginx' => ["{$logsDir}/nginx-*.log"],
             'php' => ["{$logsDir}/php-fpm-*.log"],
             'worker' => ["{$logsDir}/worker-*.log"],
             'deploy' => ["{$logsDir}/deploy.log"],
-            'laravel' => ($isCustom || ! $hasLaravelDir)
-                ? ["{$logsDir}/*.log"]
+            'laravel' => $isCustom
+                ? ["{$laravelDir}/*.log", "{$logsDir}/*.log"]
                 : ["{$laravelDir}/*.log"],
-            'all' => ($isCustom || ! $hasLaravelDir)
-                ? ["{$logsDir}/*.log"]
-                : ["{$logsDir}/*.log", "{$laravelDir}/*.log"],
+            'all' => $isCustom
+                ? ["{$laravelDir}/*.log", "{$logsDir}/*.log"]
+                : ["{$laravelDir}/*.log", "{$logsDir}/*.log"],
         };
-    }
-
-    protected function laravelLogsAvailable(string $laravelDir): bool
-    {
-        $inner = 'if [ -d ' . escapeshellarg($laravelDir) . ' ]; then echo yes; fi';
-        $output = [];
-        exec('sudo /bin/bash -c ' . escapeshellarg($inner), $output, $exitCode);
-
-        return $exitCode === 0 && in_array('yes', $output, true);
     }
 }
