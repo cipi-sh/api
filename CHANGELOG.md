@@ -2,21 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.12] - 2026-07-01
+
+Reliable paginated app logs under `open_basedir` and accurate app suspend status.
+
+### Fixed
+
+- **Laravel log paths** — always read `shared/storage/logs/*.log` for non-custom apps instead of gating on a sudo directory probe that could fail while log files exist.
+- **Paginated log parsing** — scan `===CIPI_LOG_FILE:` markers linearly so stack traces cannot break regex-based block splitting; parse file paths with `strrpos` on the line-count suffix.
+- **`open_basedir`** — paginated app logs are fetched via `sudo cipi app logs read` (CLI runs as root) because cipi-api PHP cannot read `/home/*` directly; falls back to `cipi-read-app-logs` when CLI output is empty.
+- **`isSuspended()`** — treats JSON string `"true"` / `"1"` as suspended (`apps.json` can store booleans as strings).
+- **`GET /api/apps` / `GET /api/apps/{name}`** — `suspended` reflects live status via `isSuspended()` instead of a stale `apps.json` value.
+
+### Changed
+
+- **`GET /api/apps/{name}/logs`** — CLI-first paginated reads (`cipi app logs read`); optional `warnings` when no output; sudo fallback via `cipi-read-app-logs` or inline bash.
+- **`availableTypes()`** — always exposes `laravel` for managed apps.
+- **`CipiCliService`** — allows `app logs read` for the log snapshot command.
+- **`CipiLogReader`** — refactored paginated tail (`tailPaginatedViaSudo`, `parsePaginatedOutput`, local read helpers).
+- **OpenAPI** — `info.version` bumped to **1.11.12**.
+
 ## [1.11.11] - 2026-06-30
 
-PHP 8 compatibility and reliable Laravel app log reads.
+PHP 8 compatibility for paginated app logs.
 
 ### Fixed
 
 - **`GET /api/apps/{name}/logs`** — parenthesized ternary/`?:` chain when splitting redacted log lines (PHP 8+ fatal: `Unparenthesized a ? b : c ?: d`).
-- **Laravel log paths** — always read `shared/storage/logs/*.log` for non-custom apps instead of gating on a sudo directory probe that could fail while log files exist.
-- **Paginated log parsing** — scan `===CIPI_LOG_FILE:` markers linearly so stack traces cannot break regex-based block splitting; parse file paths with `strrpos` on the line-count suffix.
-- **open_basedir** — paginated app logs are fetched via `sudo cipi app logs read` (CLI runs as root) because cipi-api PHP cannot read `/home/*` directly; falls back to `cipi-read-app-logs` when CLI output is empty.
 
 ### Changed
 
-- **`availableTypes()`** — always exposes `laravel` for managed apps.
-- **`CipiCliService`** — allows `app logs read` for the log snapshot command.
 - **OpenAPI** — `info.version` bumped to **1.11.11**.
 
 ## [1.11.10] - 2026-06-30
