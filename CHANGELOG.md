@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.20.0] - 2026-09-17
+## [1.31.0] - 2026-09-17
 
 Covers Cipi 5.1.1 → 5.4.0: app/path redirects, prefix proxies, Node apps and runtimes, deploy audit ledger, Meilisearch, packages/monitor/Zero Trust status, fix-permissions, and wildcard domains. Requires **Cipi CLI ≥ 5.4.1** (`cipi self-update`, migration 5.4.1) so `/etc/sudoers.d/cipi-api` allows `redirect *`, `proxy *`, and `node list|status|restart`; the read-only search/package/monitor/zt entries exist since their feature releases.
 
@@ -38,7 +38,11 @@ Covers Cipi 5.1.1 → 5.4.0: app/path redirects, prefix proxies, Node apps and r
 ### Changed
 
 - **MCP server** — 20 new tools registered (65 total, one `tools/list` page); instructions mention Node apps, redirects, proxies, search, deploy audit, and monitor.
-- **OpenAPI** — `info.version` **1.20.0**; 16 new paths, 20 new schemas; `AppCreateRequest` / `AppEditRequest` / app list-show schemas extended with Node and routing fields.
+- **OpenAPI** — `info.version` **1.31.0**; 16 new paths, 20 new schemas; `AppCreateRequest` / `AppEditRequest` / app list-show schemas extended with Node and routing fields.
+
+## [1.20] - 2026-08-06
+
+Version Fix
 
 ## [1.19.1] - 2026-08-06
 
