@@ -63,6 +63,32 @@ class CipiCliService
         'health unset',
         'health check',
         'api ip-whitelist',
+        // Cipi CLI ≥ 5.2.1
+        'app fix-permissions',
+        // Cipi CLI ≥ 5.2.2
+        'search status',
+        'search list',
+        'search enable',
+        'search disable',
+        'package list',
+        // Cipi CLI ≥ 5.3.0
+        'monitor list',
+        'zt status',
+        // Cipi CLI ≥ 5.3.1 (API sudoers ≥ 5.4.1)
+        'redirect set',
+        'redirect enable',
+        'redirect disable',
+        'redirect unset',
+        'redirect add',
+        'redirect remove',
+        'redirect list',
+        'proxy add',
+        'proxy remove',
+        'proxy list',
+        // Cipi CLI ≥ 5.4.0 (API sudoers ≥ 5.4.1)
+        'node list',
+        'node status',
+        'node restart',
     ];
 
     /**

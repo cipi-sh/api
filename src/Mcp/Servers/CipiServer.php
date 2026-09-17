@@ -7,6 +7,26 @@ use CipiApi\Mcp\Tools\AliasListTool;
 use CipiApi\Mcp\Tools\AliasRemoveTool;
 use CipiApi\Mcp\Tools\AppCreateTool;
 use CipiApi\Mcp\Tools\AppDeleteTool;
+use CipiApi\Mcp\Tools\AppFixPermissionsTool;
+use CipiApi\Mcp\Tools\DeployAuditTool;
+use CipiApi\Mcp\Tools\MonitorListTool;
+use CipiApi\Mcp\Tools\NodeRestartTool;
+use CipiApi\Mcp\Tools\NodeRuntimesTool;
+use CipiApi\Mcp\Tools\NodeStatusTool;
+use CipiApi\Mcp\Tools\PackageListTool;
+use CipiApi\Mcp\Tools\ProxyAddTool;
+use CipiApi\Mcp\Tools\ProxyListTool;
+use CipiApi\Mcp\Tools\ProxyRemoveTool;
+use CipiApi\Mcp\Tools\RedirectAddTool;
+use CipiApi\Mcp\Tools\RedirectListTool;
+use CipiApi\Mcp\Tools\RedirectRemoveTool;
+use CipiApi\Mcp\Tools\RedirectSetTool;
+use CipiApi\Mcp\Tools\RedirectToggleTool;
+use CipiApi\Mcp\Tools\RedirectUnsetTool;
+use CipiApi\Mcp\Tools\SearchDisableTool;
+use CipiApi\Mcp\Tools\SearchEnableTool;
+use CipiApi\Mcp\Tools\SearchStatusTool;
+use CipiApi\Mcp\Tools\ZtStatusTool;
 use CipiApi\Mcp\Tools\AppDeployConfigShowTool;
 use CipiApi\Mcp\Tools\AppDeployConfigUpdateTool;
 use CipiApi\Mcp\Tools\AppDeployRollbackTool;
@@ -56,8 +76,8 @@ use Laravel\Mcp\Server\Attributes\Version;
 use Laravel\Mcp\Server;
 
 #[Name('Cipi Server')]
-#[Version('1.0.0')]
-#[Instructions('Cipi server management: apps, aliases, www redirects, databases (MariaDB/PostgreSQL), SSL, jobs, logs, and server status. Requires mcp-access token ability only.')]
+#[Version('1.1.0')]
+#[Instructions('Cipi server management: apps (Laravel, custom, Node), aliases, www redirects, app/path redirects, prefix proxies, databases (MariaDB/PostgreSQL), SSL, Meilisearch, deploy audit, monitor, jobs, logs, and server status. Requires mcp-access token ability only.')]
 class CipiServer extends Server
 {
     /**
@@ -91,6 +111,7 @@ class CipiServer extends Server
         AppDeployUnlockTool::class,
         AppSuspendTool::class,
         AppUnsuspendTool::class,
+        AppFixPermissionsTool::class,
         AppBasicAuthStatusTool::class,
         AppBasicAuthEnableTool::class,
         AppBasicAuthDisableTool::class,
@@ -102,6 +123,25 @@ class CipiServer extends Server
         WwwForceToRootTool::class,
         WwwForceFromRootTool::class,
         WwwClearTool::class,
+        RedirectListTool::class,
+        RedirectSetTool::class,
+        RedirectToggleTool::class,
+        RedirectUnsetTool::class,
+        RedirectAddTool::class,
+        RedirectRemoveTool::class,
+        ProxyListTool::class,
+        ProxyAddTool::class,
+        ProxyRemoveTool::class,
+        NodeRuntimesTool::class,
+        NodeStatusTool::class,
+        NodeRestartTool::class,
+        DeployAuditTool::class,
+        SearchStatusTool::class,
+        SearchEnableTool::class,
+        SearchDisableTool::class,
+        PackageListTool::class,
+        MonitorListTool::class,
+        ZtStatusTool::class,
         DbEnginesTool::class,
         DbListTool::class,
         DbCreateTool::class,

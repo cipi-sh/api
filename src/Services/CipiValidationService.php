@@ -79,11 +79,13 @@ class CipiValidationService
         if (strlen($domain) > 253) {
             return 'Domain must be at most 253 characters';
         }
+        // Wildcard primary domains (*.example.com) are supported since Cipi 5.1.1.
+        $host = str_starts_with($domain, '*.') ? substr($domain, 2) : $domain;
         if (! preg_match(
             '/^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*\.[a-zA-Z]{2,}$/',
-            $domain
+            $host
         )) {
-            return "Invalid domain format '{$domain}'. Must be a valid FQDN (e.g. app.example.com)";
+            return "Invalid domain format '{$domain}'. Must be a valid FQDN (e.g. app.example.com) or wildcard (*.example.com)";
         }
         return null;
     }
@@ -427,5 +429,207 @@ class CipiValidationService
             'frankenphp' => 'frankenphp',
             default => null,
         };
+    }
+
+    /**
+     * Whether the app is a Node frontend app (Cipi 5.4.0, `runtime: node`).
+     */
+    public function isNodeApp(string $name): bool
+    {
+        $apps = $this->getApps();
+
+        return ($apps[$name]['runtime'] ?? '') === 'node';
+    }
+
+    /**
+     * Node mode for a Node app (`spa`, `static`, `ssr`), or null.
+     */
+    public function getNodeMode(string $name): ?string
+    {
+        if (! $this->isNodeApp($name)) {
+            return null;
+        }
+        $apps = $this->getApps();
+        $mode = $apps[$name]['node_mode'] ?? null;
+
+        return is_string($mode) && $mode !== '' ? $mode : null;
+    }
+
+    /**
+     * Node major for an app (Node apps, or Laravel apps pinned via `cipi app edit --node-version=`).
+     */
+    public function getNodeVersion(string $name): ?string
+    {
+        $apps = $this->getApps();
+        $version = $apps[$name]['node_version'] ?? null;
+
+        return is_string($version) && $version !== '' ? $version : null;
+    }
+
+    /**
+     * App redirect object from apps.json (`cipi redirect set`), or null.
+     */
+    public function getAppRedirect(string $name): ?array
+    {
+        $apps = $this->getApps();
+        $redirect = $apps[$name]['redirect'] ?? null;
+
+        return is_array($redirect) && $redirect !== [] ? $redirect : null;
+    }
+
+    /**
+     * Path redirects from apps.json (`cipi redirect add`).
+     */
+    public function getAppRedirects(string $name): array
+    {
+        $apps = $this->getApps();
+        $redirects = $apps[$name]['redirects'] ?? [];
+
+        return is_array($redirects) ? array_values($redirects) : [];
+    }
+
+    /**
+     * Prefix proxies from apps.json (`cipi proxy add`).
+     */
+    public function getAppProxies(string $name): array
+    {
+        $apps = $this->getApps();
+        $proxies = $apps[$name]['proxies'] ?? [];
+
+        return is_array($proxies) ? array_values($proxies) : [];
+    }
+
+    /**
+     * Validate a Node mode for app create/edit (`spa`, `static`, `ssr`).
+     */
+    public function nodeModeError(?string $mode): ?string
+    {
+        if ($mode === null || $mode === '') {
+            return null;
+        }
+        if (! in_array($mode, ['spa', 'static', 'ssr'], true)) {
+            return "Invalid node mode '{$mode}'. Allowed: spa, static, ssr";
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate a Node framework preset.
+     */
+    public function nodeFrameworkError(?string $framework): ?string
+    {
+        if ($framework === null || $framework === '') {
+            return null;
+        }
+        if (! in_array($framework, ['next', 'nuxt', 'sveltekit', 'astro', 'remix', 'vite'], true)) {
+            return "Invalid framework '{$framework}'. Allowed: next, nuxt, sveltekit, astro, remix, vite";
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate a Node major (even LTS majors only, e.g. 22, 24).
+     * `default` is accepted for app edit (follow the server default again).
+     */
+    public function nodeVersionError(?string $version, bool $allowDefault = false): ?string
+    {
+        if ($version === null || $version === '') {
+            return null;
+        }
+        if ($allowDefault && $version === 'default') {
+            return null;
+        }
+        if (! preg_match('/^[2-9][0-9]$/', $version) || ((int) $version) % 2 !== 0) {
+            return "Invalid node version '{$version}'. Use an even (LTS) major, e.g. 22 or 24";
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate a Node build/start command: an allowlisted runner plus plain
+     * arguments, no shell metacharacters (mirrors the Cipi CLI check).
+     */
+    public function nodeCommandError(?string $command, string $label = 'command'): ?string
+    {
+        if ($command === null || $command === '') {
+            return null;
+        }
+        if (! preg_match('#^[A-Za-z0-9 ._/@:=+-]+$#', $command)) {
+            return "Invalid {$label}. Use npm/npx/yarn/pnpm/bun/node and safe characters only";
+        }
+        $runner = strtok(trim($command), ' ');
+        if (! in_array($runner, ['node', 'npm', 'npx', 'pnpm', 'pnpx', 'yarn', 'bun'], true)) {
+            return "Invalid {$label}. It must start with node, npm, npx, pnpm, yarn or bun";
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate a relative output directory (spa/static build output).
+     */
+    public function nodeOutputError(?string $output): ?string
+    {
+        if ($output === null || $output === '') {
+            return null;
+        }
+        if (! preg_match('#^[A-Za-z0-9._/-]+$#', $output) || str_contains($output, '..') || str_starts_with($output, '/')) {
+            return "Invalid output '{$output}'. Use a relative path such as dist or build/client";
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate a source path / prefix for redirects and proxies.
+     * Same charset as the Cipi CLI: no quotes, '$', ';', braces or whitespace,
+     * written decoded (nginx matches the decoded URI).
+     */
+    public function routePathError(?string $path): ?string
+    {
+        if ($path === null || $path === '') {
+            return 'Path is required';
+        }
+        if (str_contains($path, '%')) {
+            return "Write '{$path}' decoded (nginx matches the decoded path), without %-escapes";
+        }
+        if (! preg_match('#^/[A-Za-z0-9._~/+@:,=-]*$#', $path) || str_contains($path, '//') || str_contains($path, '..')) {
+            return "Invalid path '{$path}'. Use an absolute path such as /blog/ (letters, digits and . _ ~ / + @ : , = -)";
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate a redirect target URL (http(s)://host[:port][/path][?query]).
+     */
+    public function redirectUrlError(?string $url): ?string
+    {
+        if ($url === null || $url === '') {
+            return 'Target URL is required';
+        }
+        if (! preg_match('#^https?://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._~%/+@:,=&?\#!-]*)?$#', $url)) {
+            return "Invalid URL '{$url}'. Expected http(s)://host[/path]";
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate a proxy upstream (http(s)://host[:port][/path] — no query, no fragment).
+     */
+    public function proxyUpstreamError(?string $upstream): ?string
+    {
+        if ($upstream === null || $upstream === '') {
+            return 'Upstream is required';
+        }
+        if (! preg_match('#^https?://[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?(:[0-9]{1,5})?(/[A-Za-z0-9._~%/+-]*)?$#', $upstream)) {
+            return "Invalid upstream '{$upstream}'. Expected http(s)://host[:port][/path]";
+        }
+
+        return null;
     }
 }

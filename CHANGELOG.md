@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.20.0] - 2026-09-17
+
+Covers Cipi 5.1.1 → 5.4.0: app/path redirects, prefix proxies, Node apps and runtimes, deploy audit ledger, Meilisearch, packages/monitor/Zero Trust status, fix-permissions, and wildcard domains. Requires **Cipi CLI ≥ 5.4.1** (`cipi self-update`, migration 5.4.1) so `/etc/sudoers.d/cipi-api` allows `redirect *`, `proxy *`, and `node list|status|restart`; the read-only search/package/monitor/zt entries exist since their feature releases.
+
+### Added
+
+- **Redirects** (`cipi redirect`, Cipi ≥ 5.3.1) — synchronous (the CLI regenerates the vhost, runs `nginx -t`, and reverts on failure):
+  - `GET /api/apps/{name}/redirects` — whole-app redirect + path redirects (`redirect list --json`). Ability `redirects-view`.
+  - `PUT /api/apps/{name}/redirect` — body `{ to, code?, keep_path? }` → `redirect set` (every hostname redirects in one hop; ACME stays public; app-served targets refused as loops).
+  - `POST /api/apps/{name}/redirect/enable|disable` — toggle the saved redirect without forgetting the target.
+  - `DELETE /api/apps/{name}/redirect` — `redirect unset`.
+  - `POST /api/apps/{name}/redirects` — body `{ from, to, code?, keep_path? }` → `redirect add` (a `from` ending in `/` is a prefix match). `DELETE` with `{ from }` removes.
+  - Ability `redirects-manage` for all writes. MCP: `RedirectList`, `RedirectSet`, `RedirectToggle`, `RedirectUnset`, `RedirectAdd`, `RedirectRemove`.
+- **Proxies** (`cipi proxy`, Cipi ≥ 5.3.1):
+  - `GET /api/apps/{name}/proxies` (`proxies-view`), `POST` with `{ prefix, upstream, strip_prefix?, preserve_host?, timeout?, buffering? }` and `DELETE` with `{ prefix }` (`proxies-manage`).
+  - The CLI loopback guard is **never bypassed from the API** (no `--force`): upstreams on ports Cipi already uses (nginx, SSH, MariaDB, PostgreSQL, Valkey, Meilisearch, other apps' Octane/Reverb) are refused. MCP: `ProxyList`, `ProxyAdd`, `ProxyRemove`.
+- **Node apps + runtimes** (Cipi ≥ 5.4.0):
+  - `POST /api/apps` accepts `node` (`spa|static|ssr`), `framework` (`next|nuxt|sveltekit|astro|remix|vite`), `node_version`, `build`, `start`, `output`, `health_path`. Node apps require a repository and refuse `custom`/`octane`/`engine`/`php`.
+  - `PUT /api/apps/{name}` accepts the same Node fields; `node_version` also pins a **Laravel** app to a Node major (`default` follows the server default again).
+  - `GET /api/node` — installed runtimes with server default and apps per major (`node-view`). `GET /api/apps/{name}/node` — app Node status from apps.json (`node-view`). `POST /api/apps/{name}/node/restart` — blue/green restart, async job `node-restart` (`node-manage`).
+  - App list/show expose `node`, `node_mode`, `node_version`. MCP: `NodeRuntimes`, `NodeStatus`, `NodeRestart`.
+- **Deploy audit** (Cipi ≥ 5.4.0) — `GET /api/apps/{name}/deploy/audit?days=90` returns the app's hash-chained ledger records (`deploy <app> --audit --json`): event, release, commit, origin (cli/panel/webhook/ssh/cron/…), operator, IP, `claimed`. Empty list when the ledger does not exist yet. Ability `deploy-manage`. MCP: `DeployAudit`.
+- **Search / Meilisearch** (Cipi ≥ 5.2.2) — `GET /api/search` (`search status --json`, ability `search-view`); `POST /api/apps/{name}/search/enable|disable` (ability `search-manage`, Laravel apps only). Engine install/upgrade/key-rotate/remove stay on the host CLI (not in the API sudoers). MCP: `SearchStatus`, `SearchEnable`, `SearchDisable`.
+- **Packages** (Cipi ≥ 5.2.2) — `GET /api/packages` — allowlisted optional host packages with install state (`package list --json`). Read-only; ability `packages-view`. MCP: `PackageList`.
+- **Monitor** (Cipi ≥ 5.3.0) — `GET /api/monitor` — system monitor checks with config, state, and last alert (`monitor list --json`). Read-only; ability `monitor-view`. MCP: `MonitorList`.
+- **Cloudflare Zero Trust** (Cipi ≥ 5.3.0) — `GET /api/zt` — parsed `zt status` (enabled, cloudflared, tunnel, real_ip, locks, SSH hostname) plus raw output. Read-only by design (the sudoers allow `zt status` only); ability `zt-view`. MCP: `ZtStatus`.
+- **Fix permissions** (Cipi ≥ 5.2.1) — `POST /api/apps/{name}/fix-permissions` — restore the app home permission model (ownership, 750 home, 700 `.ssh`, 640 `shared/.env`, log ACLs). Async job `app-fix-permissions`; ability `apps-edit`. MCP: `AppFixPermissions`.
+- **Wildcard domains** (Cipi ≥ 5.1.1) — `*.example.com` accepted as primary domain on app create/edit (REST + MCP).
+- **App list/show** expose `redirect`, `redirects`, `proxies` from apps.json alongside the new Node fields.
+- **Token abilities** — `redirects-view/manage`, `proxies-view/manage`, `node-view/manage`, `search-view/manage`, `packages-view`, `monitor-view`, `zt-view` in `config/cipi.php`.
+- **CLI whitelist** — `redirect *`, `proxy *`, `node list|status|restart`, `search status|list|enable|disable`, `package list`, `monitor list`, `zt status`, `app fix-permissions` in `CipiCliService::ALLOWED_COMMANDS`.
+- **Job result parsing** — `node-restart` (`{ app, restarted }`) and `app-fix-permissions` (`{ app, fixed }`) in `CipiOutputParser`.
+
+### Changed
+
+- **MCP server** — 20 new tools registered (65 total, one `tools/list` page); instructions mention Node apps, redirects, proxies, search, deploy audit, and monitor.
+- **OpenAPI** — `info.version` **1.20.0**; 16 new paths, 20 new schemas; `AppCreateRequest` / `AppEditRequest` / app list-show schemas extended with Node and routing fields.
+
 ## [1.19.1] - 2026-08-06
 
 ### Fixed

@@ -30,7 +30,7 @@ php artisan cipi:token-create
 
 ## Features
 
-- **REST API** — CRUD for apps, aliases, www redirects, databases, SSL, and async jobs (`/api/*`), secured with Laravel Sanctum and token abilities. App create supports optional Git for **custom** apps (SFTP-only), matching Cipi 4.4.4+. Apps can also be taken offline and restored with **suspend / unsuspend** (HTTP 503 maintenance page), matching Cipi 4.5.8+. **HTTP Basic Auth** can be enabled, disabled, and inspected per app via `/api/apps/{name}/basicauth/*` (synchronous, wraps `cipi basicauth`). **App `.env`** (`GET|PUT /api/apps/{name}/env`, ability `apps-env`) merges key/value pairs without replacing the whole file. **Shared `auth.json`** (`/api/apps/{name}/auth`, ability `apps-auth`) is Composer/structured JSON — not HTTP Basic Auth. **Artisan** (`POST /api/apps/{name}/artisan`, ability `apps-artisan`) runs as an async job; poll `GET /api/jobs/{id}` for output. **Whitelisted app run** (`POST /api/apps/{name}/run`, `GET /api/run-commands`, ability `apps-run`) executes non-interactive binaries as the app user (composer, npm, ls, rm, git, … — no nano/vim/less/bash/tinker). **Deploy config** (`GET|PUT /api/apps/{name}/deploy-config`, ability `apps-deploy-config`) edits structured Deployer options (keep_releases, hooks, node_build, extra_artisan) and regenerates `deploy.php` — not a raw PHP upload. Env/auth/artisan/run/deploy-config need **Cipi ≥ 5.0.3**. **WWW / apex redirects** (`/api/apps/{name}/www/*`, ability `www-manage`) and **`POST …/ssl/force`** match [Cipi 4.8+](https://cipi.sh/docs/). **Multi-engine databases** (MariaDB + optional PostgreSQL) via `engine` on `/api/dbs*` and `GET /api/dbs/engines`. **App logs** (`GET /api/apps/{name}/logs`) return paginated nginx, PHP-FPM, and Laravel snapshots (requires `apps-view`). **Server status** (`GET /api/status`) returns the same data as `cipi status` as structured JSON (requires `status-view`).
+- **REST API** — CRUD for apps, aliases, www redirects, app/path redirects, prefix proxies, Node apps, databases, SSL, and async jobs (`/api/*`), secured with Laravel Sanctum and token abilities. App create supports optional Git for **custom** apps (SFTP-only), matching Cipi 4.4.4+. Apps can also be taken offline and restored with **suspend / unsuspend** (HTTP 503 maintenance page), matching Cipi 4.5.8+. **HTTP Basic Auth** can be enabled, disabled, and inspected per app via `/api/apps/{name}/basicauth/*` (synchronous, wraps `cipi basicauth`). **App `.env`** (`GET|PUT /api/apps/{name}/env`, ability `apps-env`) merges key/value pairs without replacing the whole file. **Shared `auth.json`** (`/api/apps/{name}/auth`, ability `apps-auth`) is Composer/structured JSON — not HTTP Basic Auth. **Artisan** (`POST /api/apps/{name}/artisan`, ability `apps-artisan`) runs as an async job; poll `GET /api/jobs/{id}` for output. **Whitelisted app run** (`POST /api/apps/{name}/run`, `GET /api/run-commands`, ability `apps-run`) executes non-interactive binaries as the app user (composer, npm, ls, rm, git, … — no nano/vim/less/bash/tinker). **Deploy config** (`GET|PUT /api/apps/{name}/deploy-config`, ability `apps-deploy-config`) edits structured Deployer options (keep_releases, hooks, node_build, extra_artisan) and regenerates `deploy.php` — not a raw PHP upload. Env/auth/artisan/run/deploy-config need **Cipi ≥ 5.0.3**. **WWW / apex redirects** (`/api/apps/{name}/www/*`, ability `www-manage`) and **`POST …/ssl/force`** match [Cipi 4.8+](https://cipi.sh/docs/). **Multi-engine databases** (MariaDB + optional PostgreSQL) via `engine` on `/api/dbs*` and `GET /api/dbs/engines`. **App logs** (`GET /api/apps/{name}/logs`) return paginated nginx, PHP-FPM, and Laravel snapshots (requires `apps-view`). **Server status** (`GET /api/status`) returns the same data as `cipi status` as structured JSON (requires `status-view`). **App/path redirects** (`/api/apps/{name}/redirect*`, abilities `redirects-view`/`redirects-manage`) and **prefix proxies** (`/api/apps/{name}/proxies`, abilities `proxies-view`/`proxies-manage`) wrap `cipi redirect` / `cipi proxy` synchronously (nginx test + revert) — Cipi ≥ 5.3.1 with **API sudoers ≥ 5.4.1**. **Node apps** (Cipi 5.4.0+): app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`; `GET /api/node` lists runtimes, `GET /api/apps/{name}/node` shows app Node status, and `POST /api/apps/{name}/node/restart` does a blue/green restart (abilities `node-view`/`node-manage`). **Deploy audit** (`GET /api/apps/{name}/deploy/audit`, ability `deploy-manage`, Cipi 5.4.0+) returns the hash-chained ledger records. **Meilisearch** (`GET /api/search`, `POST /api/apps/{name}/search/enable|disable`, abilities `search-view`/`search-manage`, Cipi 5.2.2+). Read-only host insights: **`GET /api/packages`** (`packages-view`), **`GET /api/monitor`** (`monitor-view`), **`GET /api/zt`** (`zt-view`). **`POST /api/apps/{name}/fix-permissions`** (ability `apps-edit`, Cipi 5.2.1+) restores the app home permission model. Wildcard primary domains (`*.example.com`) are accepted since Cipi 5.1.1.
 - **IP whitelist** — optional client IP allowlist for `/api/*` and `/mcp` (`/etc/cipi/api-ip-whitelist`, default `*` = allow all). Manage with `cipi api ip-whitelist` or `GET|PUT|POST|DELETE /api/ip-whitelist` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Requires **Cipi ≥ 5.0.8**.
 - **MCP Server** — Model Context Protocol endpoint at `/mcp` for AI-powered integrations.
 - **Swagger Docs** — Interactive API reference at `/docs`, generated from `public/api-docs/openapi.json`. The spec covers apps (including env, auth.json, artisan), aliases, www, deploy, SSL, databases (`GET /api/dbs` / `/dbs/engines` via CLI; other `/api/dbs/*` actions use jobs), and job polling (including structured `result` types per job).
@@ -137,6 +137,7 @@ Once connected, the following tools are available to the AI agent:
 | `AppDeployUnlock`   | Unlock a stuck deploy                                 |
 | `AppSuspend`        | Take an app offline (HTTP 503) without deleting it    |
 | `AppUnsuspend`      | Bring a suspended app back online                     |
+| `AppFixPermissions` | Restore the app home permission model (async job; Cipi ≥ 5.2.1) |
 | `AppBasicAuthStatus`| Show HTTP Basic Auth status (enabled + usernames)     |
 | `AppBasicAuthEnable`| Enable Nginx HTTP Basic Auth on an app                |
 | `AppBasicAuthDisable` | Disable HTTP Basic Auth on an app                 |
@@ -148,6 +149,25 @@ Once connected, the following tools are available to the AI agent:
 | `WwwForceToRoot`    | 301 redirect www → apex                               |
 | `WwwForceFromRoot`  | 301 redirect apex → www                               |
 | `WwwClear`          | Clear www canonical redirect                          |
+| `RedirectList`      | List whole-app + path redirects (Cipi ≥ 5.4.1)        |
+| `RedirectSet`       | Redirect every hostname of an app to a URL            |
+| `RedirectToggle`    | Enable/disable the saved whole-app redirect           |
+| `RedirectUnset`     | Remove the whole-app redirect (forget target)         |
+| `RedirectAdd`       | Add/update a path redirect (prefix or exact)          |
+| `RedirectRemove`    | Remove a path redirect                                |
+| `ProxyList`         | List prefix reverse proxies                           |
+| `ProxyAdd`          | Add/update a prefix proxy (loopback guard enforced)   |
+| `ProxyRemove`       | Remove a prefix proxy                                 |
+| `NodeRuntimes`      | List installed Node runtimes + server default (Cipi 5.4.0+) |
+| `NodeStatus`        | Node status of an app (mode, framework, build/start)  |
+| `NodeRestart`       | Blue/green restart of an SSR Node app (async job)     |
+| `DeployAudit`       | Deploy audit ledger records for an app (Cipi 5.4.0+)  |
+| `SearchStatus`      | Meilisearch status + search-enabled apps (Cipi 5.2.2+) |
+| `SearchEnable`      | Enable Meilisearch/Scout for a Laravel app            |
+| `SearchDisable`     | Disable search (restores previous SCOUT_DRIVER)       |
+| `PackageList`       | Optional host packages catalog (read-only)            |
+| `MonitorList`       | System monitor checks + state (read-only, Cipi 5.3.0+) |
+| `ZtStatus`          | Cloudflare Zero Trust status (read-only, Cipi 5.3.0+) |
 | `DbEngines`         | List installed DB engines and default (Cipi 4.8+)     |
 | `DbList`            | List databases (optional `engine` filter)             |
 | `DbCreate`          | Create a database (`engine` = mariadb\|pgsql)         |
@@ -179,6 +199,12 @@ Token abilities for `cipi api token create` are defined in `config/cipi.php` (`t
 **`AppRun` / `AppDeployConfig*`:** require **Cipi CLI ≥ 5.0.3**. App run is non-interactive only. Deploy config is structured knobs (never raw `deploy.php` upload).
 
 **`ServerStatus` / `ServiceList`:** `ServerStatus` returns structured JSON (same as `GET /api/status`), preferring `sudo cipi status` with a host-read fallback. `ServiceList` runs `sudo cipi service list` on the host. Both require `mcp-access` only on `/mcp`. Ensure `cipi-api` sudoers allows `status` and `service list` (see Cipi `setup.sh`).
+
+**Redirects / Proxies / Node:** require **Cipi CLI ≥ 5.4.1** (`cipi self-update`, migration 5.4.1) so `/etc/sudoers.d/cipi-api` allows `redirect *`, `proxy *`, and `node list|status|restart`. The commands themselves exist since Cipi 5.3.1 (redirect/proxy) and 5.4.0 (node). All redirect/proxy writes are synchronous: the CLI validates the rule (loops, collisions, reserved paths, charset), regenerates the vhost, runs `nginx -t`, and reverts on failure. The proxy loopback guard is never bypassed from the API (no `--force`).
+
+**Search / Packages / Monitor / Zero Trust:** the API exposes only what the panel sudoers allow — `search status|list|enable|disable`, `package list`, `monitor list`, `zt status`. Installing or upgrading Meilisearch, installing packages, changing monitor thresholds, and every `zt` mutation stay with the operator on the host CLI, by design.
+
+**Deploy audit:** `GET /api/apps/{name}/deploy/audit` and the `DeployAudit` MCP tool read the root-only hash-chained ledger via `sudo cipi deploy <app> --audit --json` (Cipi 5.4.0+). An empty list means the ledger has not been written yet (first deploy after `cipi self-update`).
 
 ## License
 

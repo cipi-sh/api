@@ -2,8 +2,8 @@
     "openapi": "3.0.3",
     "info": {
         "title": "Cipi API",
-        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status (any authenticated token). **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.",
-        "version": "1.19.1",
+        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status (any authenticated token). **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0).\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.",
+        "version": "1.20.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -288,6 +288,42 @@
                     },
                     "409": {
                         "$ref": "#/components/responses/Conflict"
+                    }
+                }
+            }
+        },
+        "/apps/{name}/fix-permissions": {
+            "post": {
+                "tags": [
+                    "Apps"
+                ],
+                "summary": "Fix app home permissions",
+                "description": "Restore the app home to the permission model Cipi created it with (`cipi app fix-permissions`): ownership, 750 home, 700 `.ssh`, 640 `shared/.env`, log ACLs, storage 775. Async job (`app-fix-permissions`); poll `GET /api/jobs/{id}`. Requires `apps-edit` ability and Cipi CLI >= 5.2.1.",
+                "operationId": "appFixPermissions",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
                     }
                 }
             }
@@ -1292,6 +1328,556 @@
                 }
             }
         },
+        "/apps/{name}/redirects": {
+            "get": {
+                "tags": [
+                    "Redirects"
+                ],
+                "summary": "List app + path redirects",
+                "description": "Whole-app redirect and path redirects of an app (`cipi redirect list --json`). Synchronous. Requires `redirects-view` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "redirectList",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Redirects",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RedirectsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Redirects"
+                ],
+                "summary": "Add / update a path redirect",
+                "description": "Add (or update) a path redirect (`cipi redirect add`). A `from` ending in `/` is a prefix match: the rest of the request URI is appended to the target (`--no-path` behaviour via `keep_path: false`). `to` is a same-app `/path` or an `http(s)://` URL. Reserved paths (ACME, `/cipi/webhook`, Reverb, `/index.php`, ...) and colliding rules are refused by the CLI. Synchronous with nginx test + revert. Requires `redirects-manage` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "redirectAdd",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RedirectAddRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated redirects",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RedirectsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Redirects"
+                ],
+                "summary": "Remove a path redirect",
+                "description": "Remove a path redirect by its `from` path (`cipi redirect remove`). Requires `redirects-manage` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "redirectRemove",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RedirectRemoveRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated redirects",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RedirectsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/redirect": {
+            "put": {
+                "tags": [
+                    "Redirects"
+                ],
+                "summary": "Set the whole-app redirect",
+                "description": "Every hostname of the app (www host included) redirects to the target URL in one hop (`cipi redirect set`). Path and query are kept by default (`keep_path`). ACME stays public so certificates keep renewing; a target served by the app itself is refused (loop). Path redirects and proxies keep working (more specific than `location /`). Requires `redirects-manage` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "redirectSet",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RedirectSetRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated redirects",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RedirectsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Redirects"
+                ],
+                "summary": "Unset the whole-app redirect",
+                "description": "Remove the whole-app redirect and forget its target (`cipi redirect unset`). Requires `redirects-manage` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "redirectUnset",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated redirects",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RedirectsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/redirect/enable": {
+            "post": {
+                "tags": [
+                    "Redirects"
+                ],
+                "summary": "Enable the saved whole-app redirect",
+                "description": "`cipi redirect enable` \u2014 toggles the saved redirect without forgetting its target. Requires `redirects-manage` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "redirectEnable",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated redirects",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RedirectsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/redirect/disable": {
+            "post": {
+                "tags": [
+                    "Redirects"
+                ],
+                "summary": "Disable the saved whole-app redirect",
+                "description": "`cipi redirect disable` \u2014 toggles the saved redirect without forgetting its target. Requires `redirects-manage` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "redirectDisable",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated redirects",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RedirectsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/proxies": {
+            "get": {
+                "tags": [
+                    "Proxies"
+                ],
+                "summary": "List prefix proxies",
+                "description": "Prefix reverse proxies of an app (`cipi proxy list --json`). Synchronous. Requires `proxies-view` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "proxyList",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Proxies",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProxiesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Proxies"
+                ],
+                "summary": "Add / update a prefix proxy",
+                "description": "Add (or update) a reverse proxy on a path prefix (`cipi proxy add`): `location ^~ <prefix>` with `proxy_pass`, WebSocket upgrade, `X-Real-IP` / `X-Forwarded-*` and `proxy_ssl_server_name` for HTTPS upstreams. An upstream with a path requires `strip_prefix: true`. The CLI loopback guard is never bypassed from the API: proxies to 127.0.0.1 ports Cipi already uses (nginx, SSH, MariaDB, PostgreSQL, Valkey, Meilisearch, other apps\u2019 Octane/Reverb) are refused. Synchronous with nginx test + revert. Requires `proxies-manage` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "proxyAdd",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ProxyAddRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated proxies",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProxiesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Proxies"
+                ],
+                "summary": "Remove a prefix proxy",
+                "description": "Remove the proxy on a prefix (`cipi proxy remove`). Requires `proxies-manage` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "proxyRemove",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ProxyRemoveRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated proxies",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProxiesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/apps/{name}/deploy": {
             "post": {
                 "tags": [
@@ -1396,6 +1982,64 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            }
+        },
+        "/apps/{name}/deploy/audit": {
+            "get": {
+                "tags": [
+                    "Deploy"
+                ],
+                "summary": "Deploy audit ledger",
+                "description": "Deploy audit records for the app (`cipi deploy <app> --audit --json`): one record per deploy event (published / failed / rollback), whatever started it \u2014 CLI, panel, webhook, SSH, cron \u2014 with origin, operator, IP and `claimed` metadata from the root-only hash-chained ledger. Empty list when the ledger does not exist yet. Query `days` (default 90). Synchronous. Requires `deploy-manage` ability and Cipi 5.4.0+.",
+                "operationId": "deployAudit",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    },
+                    {
+                        "name": "days",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 3650,
+                            "default": 90
+                        },
+                        "description": "Look-back window in days"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Audit records",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeployAuditResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1536,6 +2180,380 @@
                     },
                     "403": {
                         "$ref": "#/components/responses/Forbidden"
+                    }
+                }
+            }
+        },
+        "/node": {
+            "get": {
+                "tags": [
+                    "Node"
+                ],
+                "summary": "List Node runtimes",
+                "description": "Installed Node runtimes with the server default and the apps on each major (`cipi node list`). Installing/removing runtimes and changing the default stay on the host CLI. Requires `node-view` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "nodeRuntimes",
+                "responses": {
+                    "200": {
+                        "description": "Runtimes",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NodeRuntimesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/node": {
+            "get": {
+                "tags": [
+                    "Node"
+                ],
+                "summary": "Node status for an app",
+                "description": "Node status from apps.json: mode (spa/static/ssr), framework, Node major, build/start commands, output dir and health path. `node: false` for non-Node apps (with `version` still set when a Laravel app is pinned to a Node major). Requires `node-view` ability and Cipi 5.4.0+.",
+                "operationId": "nodeStatus",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Node status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NodeStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            }
+        },
+        "/apps/{name}/node/restart": {
+            "post": {
+                "tags": [
+                    "Node"
+                ],
+                "summary": "Restart a Node app (blue/green)",
+                "description": "Restart an SSR Node app with a blue/green switch \u2014 no downtime (`cipi node restart`). Returns 409 for non-Node apps. Async job (`node-restart`); poll `GET /api/jobs/{id}`. Requires `node-manage` ability and Cipi CLI >= 5.4.1.",
+                "operationId": "nodeRestart",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "409": {
+                        "description": "Not a Node app",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/search": {
+            "get": {
+                "tags": [
+                    "Search"
+                ],
+                "summary": "Meilisearch status",
+                "description": "Meilisearch (Laravel Scout) status: installed, running, version, health, data size and search-enabled apps (`cipi search status --json`). Requires `search-view` ability and Cipi 5.2.2+.",
+                "operationId": "searchStatus",
+                "responses": {
+                    "200": {
+                        "description": "Search status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SearchStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/search/enable": {
+            "post": {
+                "tags": [
+                    "Search"
+                ],
+                "summary": "Enable search for an app",
+                "description": "Enable Meilisearch for a Laravel app (`cipi search enable`): mints an API key scoped to the `<app>-*` index prefix and writes `SCOUT_*` / `MEILISEARCH_*` into `shared/.env`. Meilisearch must already be installed on the host (`cipi search install` stays with the operator). Returns 422 for custom/Node apps. Requires `search-manage` ability and Cipi 5.2.2+.",
+                "operationId": "searchEnable",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search enabled",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SearchToggleResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "description": "Validation error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/search/disable": {
+            "post": {
+                "tags": [
+                    "Search"
+                ],
+                "summary": "Disable search for an app",
+                "description": "Disable Meilisearch for an app (`cipi search disable`): restores the previous `SCOUT_DRIVER` and revokes the app key. Indexes are never purged from the API (root-only `--purge-indexes`). Requires `search-manage` ability and Cipi 5.2.2+.",
+                "operationId": "searchDisable",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Search disabled",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SearchToggleResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/packages": {
+            "get": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Optional host packages catalog",
+                "description": "Allowlisted optional host packages with install state (`cipi package list --json`): image-optimizers, ffmpeg, imagemagick, poppler-utils, \u2026 Read-only: install/remove run as root and stay on the host CLI. Requires `packages-view` ability and Cipi 5.2.2+.",
+                "operationId": "packageList",
+                "responses": {
+                    "200": {
+                        "description": "Packages",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PackagesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/monitor": {
+            "get": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "System monitor checks",
+                "description": "Monitor checks with config, current state and last alert (`cipi monitor list --json`): disk, ssl, services, workers, http_5xx, fs, load. The cron runs every 5 minutes and alerts edge-triggered. Read-only: thresholds and enable/disable stay on the host CLI. Requires `monitor-view` ability and Cipi 5.3.0+.",
+                "operationId": "monitorList",
+                "responses": {
+                    "200": {
+                        "description": "Monitor checks",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/MonitorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/zt": {
+            "get": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Cloudflare Zero Trust status",
+                "description": "Cloudflare Zero Trust status (`cipi zt status`): cloudflared/tunnel state, real_ip, HTTP/SSH locks and SSH hostname, plus the raw CLI output. Read-only by design \u2014 the API sudoers allow `zt status` only. Requires `zt-view` ability and Cipi 5.3.0+.",
+                "operationId": "ztStatus",
+                "responses": {
+                    "200": {
+                        "description": "Zero Trust status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ZtStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2112,6 +3130,54 @@
                         ],
                         "description": "Serve Laravel via Octane (FrankenPHP) instead of PHP-FPM. Requires Cipi 5.0+ and laravel/octane in the app repository. Not compatible with custom apps. Boolean true is equivalent to frankenphp.",
                         "example": true
+                    },
+                    "node": {
+                        "type": "string",
+                        "enum": [
+                            "spa",
+                            "static",
+                            "ssr"
+                        ],
+                        "description": "Create a Node frontend app (Cipi 5.4.0+). Not compatible with custom/octane/engine/php. Repository required.",
+                        "example": "ssr"
+                    },
+                    "framework": {
+                        "type": "string",
+                        "enum": [
+                            "next",
+                            "nuxt",
+                            "sveltekit",
+                            "astro",
+                            "remix",
+                            "vite"
+                        ],
+                        "description": "Node framework preset (fills mode/build/start/output defaults; explicit fields win)",
+                        "example": "next"
+                    },
+                    "node_version": {
+                        "type": "string",
+                        "description": "Node major (even LTS major)",
+                        "example": "22"
+                    },
+                    "build": {
+                        "type": "string",
+                        "description": "Node build command (npm/npx/yarn/pnpm/bun/node + args)",
+                        "example": "npm run build"
+                    },
+                    "start": {
+                        "type": "string",
+                        "description": "Start command for ssr apps (Node runner + args)",
+                        "example": "npm run start"
+                    },
+                    "output": {
+                        "type": "string",
+                        "description": "Build output directory for spa/static apps",
+                        "example": "dist"
+                    },
+                    "health_path": {
+                        "type": "string",
+                        "description": "Health path for ssr apps (blue/green switch checks it)",
+                        "example": "/"
                     }
                 }
             },
@@ -2144,6 +3210,36 @@
                         "type": "string",
                         "description": "New primary domain. The previous primary becomes an alias; promoting an existing alias to primary is supported. Requires Cipi 4.6.2+.",
                         "example": "new.example.com"
+                    },
+                    "node": {
+                        "type": "string",
+                        "enum": [
+                            "spa",
+                            "static",
+                            "ssr"
+                        ],
+                        "description": "Node app mode (Node apps only, Cipi 5.4.0+)"
+                    },
+                    "node_version": {
+                        "type": "string",
+                        "description": "Node major (22, 24, ...). On a Laravel app pins the app to that major; \"default\" follows the server default again",
+                        "example": "24"
+                    },
+                    "build": {
+                        "type": "string",
+                        "description": "Node build command (Node apps only)"
+                    },
+                    "start": {
+                        "type": "string",
+                        "description": "Start command (ssr Node apps only)"
+                    },
+                    "output": {
+                        "type": "string",
+                        "description": "Build output directory (spa/static Node apps only)"
+                    },
+                    "health_path": {
+                        "type": "string",
+                        "description": "Health path (ssr Node apps only)"
                     }
                 }
             },
@@ -2236,6 +3332,43 @@
                                     "nullable": true,
                                     "description": "Localhost port for the Octane process (null for FPM apps). Cipi 5.0+.",
                                     "example": 8100
+                                },
+                                "node": {
+                                    "type": "boolean",
+                                    "description": "Whether the app is a Node frontend app (Cipi 5.4.0+)",
+                                    "example": false
+                                },
+                                "node_mode": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "enum": [
+                                        "spa",
+                                        "static",
+                                        "ssr"
+                                    ],
+                                    "description": "Node app mode (null for non-Node apps)"
+                                },
+                                "node_version": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Node major (Node apps, or Laravel apps pinned via app edit)"
+                                },
+                                "redirect": {
+                                    "$ref": "#/components/schemas/AppRedirect"
+                                },
+                                "redirects": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/RedirectRule"
+                                    },
+                                    "description": "Path redirects (Cipi 5.3.1+)"
+                                },
+                                "proxies": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/ProxyRule"
+                                    },
+                                    "description": "Prefix reverse proxies (Cipi 5.3.1+)"
                                 }
                             }
                         }
@@ -2318,6 +3451,43 @@
                                 "nullable": true,
                                 "description": "Localhost port for the Octane process (null for FPM apps). Cipi 5.0+.",
                                 "example": 8100
+                            },
+                            "node": {
+                                "type": "boolean",
+                                "description": "Whether the app is a Node frontend app (Cipi 5.4.0+)",
+                                "example": false
+                            },
+                            "node_mode": {
+                                "type": "string",
+                                "nullable": true,
+                                "enum": [
+                                    "spa",
+                                    "static",
+                                    "ssr"
+                                ],
+                                "description": "Node app mode (null for non-Node apps)"
+                            },
+                            "node_version": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Node major (Node apps, or Laravel apps pinned via app edit)"
+                            },
+                            "redirect": {
+                                "$ref": "#/components/schemas/AppRedirect"
+                            },
+                            "redirects": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/RedirectRule"
+                                },
+                                "description": "Path redirects (Cipi 5.3.1+)"
+                            },
+                            "proxies": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/ProxyRule"
+                                },
+                                "description": "Prefix reverse proxies (Cipi 5.3.1+)"
                             }
                         }
                     }
@@ -3572,6 +4742,698 @@
                         "description": "IPv4, IPv6, or CIDR"
                     }
                 }
+            },
+            "AppRedirect": {
+                "type": "object",
+                "nullable": true,
+                "description": "Whole-app redirect (null when none is saved)",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "to": {
+                        "type": "string",
+                        "example": "https://new.example.com"
+                    },
+                    "code": {
+                        "type": "integer",
+                        "enum": [
+                            301,
+                            302,
+                            307,
+                            308
+                        ],
+                        "example": 301
+                    },
+                    "keep_path": {
+                        "type": "boolean",
+                        "description": "Whether the request path and query are appended to the target",
+                        "example": true
+                    }
+                }
+            },
+            "RedirectRule": {
+                "type": "object",
+                "properties": {
+                    "from": {
+                        "type": "string",
+                        "description": "Source path. Ending in / = prefix match",
+                        "example": "/blog/"
+                    },
+                    "to": {
+                        "type": "string",
+                        "description": "Target /path or http(s):// URL",
+                        "example": "https://blog.example.com/"
+                    },
+                    "code": {
+                        "type": "integer",
+                        "enum": [
+                            301,
+                            302,
+                            307,
+                            308
+                        ],
+                        "example": 301
+                    },
+                    "keep_path": {
+                        "type": "boolean",
+                        "example": true
+                    }
+                }
+            },
+            "RedirectsResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": {
+                                "type": "string",
+                                "example": "myapp"
+                            },
+                            "redirect": {
+                                "$ref": "#/components/schemas/AppRedirect"
+                            },
+                            "redirects": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/RedirectRule"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "RedirectSetRequest": {
+                "type": "object",
+                "required": [
+                    "to"
+                ],
+                "properties": {
+                    "to": {
+                        "type": "string",
+                        "description": "Target URL (http(s)://host[/path])",
+                        "example": "https://new.example.com"
+                    },
+                    "code": {
+                        "type": "integer",
+                        "enum": [
+                            301,
+                            302,
+                            307,
+                            308
+                        ],
+                        "default": 301
+                    },
+                    "keep_path": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Keep request path and query on the target"
+                    }
+                }
+            },
+            "RedirectAddRequest": {
+                "type": "object",
+                "required": [
+                    "from",
+                    "to"
+                ],
+                "properties": {
+                    "from": {
+                        "type": "string",
+                        "description": "Source path, written decoded. Ending in / = prefix match (e.g. /blog/)",
+                        "example": "/blog/"
+                    },
+                    "to": {
+                        "type": "string",
+                        "description": "Target: same-app /path or http(s):// URL",
+                        "example": "https://blog.example.com/"
+                    },
+                    "code": {
+                        "type": "integer",
+                        "enum": [
+                            301,
+                            302,
+                            307,
+                            308
+                        ],
+                        "default": 301
+                    },
+                    "keep_path": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "For prefix redirects: append the rest of the URI to the target"
+                    }
+                }
+            },
+            "RedirectRemoveRequest": {
+                "type": "object",
+                "required": [
+                    "from"
+                ],
+                "properties": {
+                    "from": {
+                        "type": "string",
+                        "description": "Source path of the redirect to remove",
+                        "example": "/blog/"
+                    }
+                }
+            },
+            "ProxyRule": {
+                "type": "object",
+                "properties": {
+                    "prefix": {
+                        "type": "string",
+                        "example": "/api/"
+                    },
+                    "upstream": {
+                        "type": "string",
+                        "example": "http://127.0.0.1:8090"
+                    },
+                    "strip_prefix": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "preserve_host": {
+                        "type": "boolean",
+                        "example": false
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "example": 60
+                    },
+                    "buffering": {
+                        "type": "boolean",
+                        "example": true
+                    }
+                }
+            },
+            "ProxiesResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": {
+                                "type": "string",
+                                "example": "myapp"
+                            },
+                            "proxies": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/ProxyRule"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "ProxyAddRequest": {
+                "type": "object",
+                "required": [
+                    "prefix",
+                    "upstream"
+                ],
+                "properties": {
+                    "prefix": {
+                        "type": "string",
+                        "description": "Path prefix to proxy (normalized to trailing /)",
+                        "example": "/api/"
+                    },
+                    "upstream": {
+                        "type": "string",
+                        "description": "http(s)://host[:port][/path] \u2014 an upstream path requires strip_prefix",
+                        "example": "https://api.internal.example.com"
+                    },
+                    "strip_prefix": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Strip the prefix before passing upstream (sends X-Forwarded-Prefix)"
+                    },
+                    "preserve_host": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Send the original Host header instead of the upstream host"
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3600,
+                        "default": 60
+                    },
+                    "buffering": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "false for SSE / long polling / streamed downloads"
+                    }
+                }
+            },
+            "ProxyRemoveRequest": {
+                "type": "object",
+                "required": [
+                    "prefix"
+                ],
+                "properties": {
+                    "prefix": {
+                        "type": "string",
+                        "example": "/api/"
+                    }
+                }
+            },
+            "NodeRuntimesResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "major": {
+                                    "type": "string",
+                                    "description": "Node major, or \"system\" for the NodeSource package",
+                                    "example": "22"
+                                },
+                                "version": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "example": "22.9.0"
+                                },
+                                "default": {
+                                    "type": "boolean",
+                                    "description": "Whether this is the server default (cipi node default)",
+                                    "example": true
+                                },
+                                "apps": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "example": [
+                                        "myspa"
+                                    ]
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "NodeStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": {
+                                "type": "string",
+                                "example": "myspa"
+                            },
+                            "node": {
+                                "type": "boolean",
+                                "description": "Whether the app is a Node app",
+                                "example": true
+                            },
+                            "mode": {
+                                "type": "string",
+                                "nullable": true,
+                                "enum": [
+                                    "spa",
+                                    "static",
+                                    "ssr"
+                                ],
+                                "example": "ssr"
+                            },
+                            "framework": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "next"
+                            },
+                            "version": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Node major (also set on Laravel apps pinned to a major)",
+                                "example": "22"
+                            },
+                            "build": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "npm run build"
+                            },
+                            "start": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "ssr only",
+                                "example": "next start -H 127.0.0.1"
+                            },
+                            "health_path": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "ssr only",
+                                "example": "/"
+                            },
+                            "output": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "spa/static only",
+                                "example": "dist"
+                            }
+                        }
+                    }
+                }
+            },
+            "DeployAuditResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": {
+                                "type": "string",
+                                "example": "myapp"
+                            },
+                            "records": {
+                                "type": "array",
+                                "description": "Ledger records (JSONL lines), oldest first",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ts": {
+                                            "type": "string",
+                                            "example": "2026-09-17T10:12:33Z"
+                                        },
+                                        "app": {
+                                            "type": "string",
+                                            "example": "myapp"
+                                        },
+                                        "event": {
+                                            "type": "string",
+                                            "enum": [
+                                                "published",
+                                                "failed",
+                                                "rollback"
+                                            ],
+                                            "example": "published"
+                                        },
+                                        "release": {
+                                            "type": "string",
+                                            "example": "42"
+                                        },
+                                        "commit": {
+                                            "type": "string",
+                                            "example": "7dff7cc0aa11..."
+                                        },
+                                        "origin": {
+                                            "type": "string",
+                                            "description": "cipi-cli, panel, webhook, app-web, app-queue, ssh, cron or root-shell",
+                                            "example": "panel"
+                                        },
+                                        "trigger": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "example": "cli"
+                                        },
+                                        "operator": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "description": "Audit login uid (PAM)",
+                                            "example": "andrea"
+                                        },
+                                        "ip": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "example": "203.0.113.7"
+                                        },
+                                        "claimed": {
+                                            "type": "object",
+                                            "nullable": true,
+                                            "description": "App-supplied metadata (source, actor, ip, ref, request_id)"
+                                        },
+                                        "seq": {
+                                            "type": "integer",
+                                            "example": 17
+                                        },
+                                        "prev_sha256": {
+                                            "type": "string",
+                                            "description": "SHA-256 of the previous ledger line (hash chain)"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "SearchStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "installed": {
+                                "type": "boolean",
+                                "example": true
+                            },
+                            "running": {
+                                "type": "boolean",
+                                "example": true
+                            },
+                            "version": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "1.12.0"
+                            },
+                            "host": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "127.0.0.1"
+                            },
+                            "port": {
+                                "type": "integer",
+                                "nullable": true,
+                                "example": 7700
+                            },
+                            "health": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "available"
+                            },
+                            "data_size": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "58M"
+                            },
+                            "apps": {
+                                "type": "object",
+                                "description": "Search-enabled apps keyed by name ({uid, prefix, enabled_at})",
+                                "additionalProperties": {
+                                    "type": "object",
+                                    "properties": {
+                                        "uid": {
+                                            "type": "string"
+                                        },
+                                        "prefix": {
+                                            "type": "string",
+                                            "example": "myapp-"
+                                        },
+                                        "enabled_at": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "SearchToggleResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": {
+                                "type": "string",
+                                "example": "myapp"
+                            },
+                            "enabled": {
+                                "type": "boolean",
+                                "example": true
+                            }
+                        }
+                    }
+                }
+            },
+            "PackagesResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "example": "image-optimizers"
+                                },
+                                "packages": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "example": [
+                                        "jpegoptim",
+                                        "optipng",
+                                        "pngquant",
+                                        "gifsicle",
+                                        "webp"
+                                    ]
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "example": "Image optimizer binaries for spatie/laravel-image-optimizer"
+                                },
+                                "installed": {
+                                    "type": "boolean",
+                                    "example": false
+                                },
+                                "partial": {
+                                    "type": "boolean",
+                                    "example": false
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "MonitorResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "reminder_minutes": {
+                                "type": "integer",
+                                "example": 240
+                            },
+                            "checks": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "check": {
+                                            "type": "string",
+                                            "enum": [
+                                                "disk",
+                                                "ssl",
+                                                "services",
+                                                "workers",
+                                                "http_5xx",
+                                                "fs",
+                                                "load"
+                                            ],
+                                            "example": "disk"
+                                        },
+                                        "config": {
+                                            "type": "object",
+                                            "description": "Check config (enabled, thresholds)"
+                                        },
+                                        "state": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "example": "ok"
+                                        },
+                                        "last_alert": {
+                                            "type": "integer",
+                                            "nullable": true,
+                                            "description": "Unix timestamp of the last alert",
+                                            "example": 1758100000
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "ZtStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "enabled": {
+                                "type": "boolean",
+                                "example": false
+                            },
+                            "cloudflared": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "running"
+                            },
+                            "tunnel": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "cipi-server"
+                            },
+                            "real_ip": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "CF-Connecting-IP"
+                            },
+                            "lock_http": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "false"
+                            },
+                            "lock_ssh": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "false"
+                            },
+                            "ssh_hostname": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "ssh.example.com"
+                            },
+                            "raw": {
+                                "type": "string",
+                                "description": "Raw `cipi zt status` output (ANSI stripped)"
+                            }
+                        }
+                    }
+                }
+            },
+            "JobResultNodeRestart": {
+                "type": "object",
+                "description": "Result of a node-restart job",
+                "properties": {
+                    "app": {
+                        "type": "string",
+                        "example": "myssr"
+                    },
+                    "restarted": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "note": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "JobResultAppFixPermissions": {
+                "type": "object",
+                "description": "Result of an app-fix-permissions job",
+                "properties": {
+                    "app": {
+                        "type": "string",
+                        "example": "myapp"
+                    },
+                    "fixed": {
+                        "type": "boolean",
+                        "example": true
+                    }
+                }
             }
         },
         "responses": {
@@ -3695,6 +5557,22 @@
         {
             "name": "Server",
             "description": "Host status (`GET /status`) and API IP whitelist (`GET|PUT|POST|DELETE /ip-whitelist`, `POST /ip-whitelist/allow-all`)"
+        },
+        {
+            "name": "Redirects",
+            "description": "Whole-app and path redirects rendered into the nginx vhost (Cipi 5.3.1+)"
+        },
+        {
+            "name": "Proxies",
+            "description": "Prefix reverse proxies (location ^~ + proxy_pass) on app vhosts (Cipi 5.3.1+)"
+        },
+        {
+            "name": "Node",
+            "description": "Node frontend apps (spa/static/ssr) and Node runtimes (Cipi 5.4.0+)"
+        },
+        {
+            "name": "Search",
+            "description": "Meilisearch for Laravel Scout (Cipi 5.2.2+)"
         }
     ]
 }

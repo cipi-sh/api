@@ -14,13 +14,20 @@ use CipiApi\Http\Controllers\EnvController;
 use CipiApi\Http\Controllers\JobController;
 use CipiApi\Http\Controllers\HealthController;
 use CipiApi\Http\Controllers\IpWhitelistController;
+use CipiApi\Http\Controllers\MonitorController;
+use CipiApi\Http\Controllers\NodeController;
+use CipiApi\Http\Controllers\PackageController;
 use CipiApi\Http\Controllers\PhpController;
+use CipiApi\Http\Controllers\ProxyController;
+use CipiApi\Http\Controllers\RedirectController;
+use CipiApi\Http\Controllers\SearchController;
 use CipiApi\Http\Controllers\ServiceController;
 use CipiApi\Http\Controllers\SmtpController;
 use CipiApi\Http\Controllers\SshController;
 use CipiApi\Http\Controllers\SslController;
 use CipiApi\Http\Controllers\StatusController;
 use CipiApi\Http\Controllers\WwwController;
+use CipiApi\Http\Controllers\ZtController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function () {
@@ -34,6 +41,7 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::delete('/apps/{name}', [AppController::class, 'delete'])->middleware('ability:apps-delete');
     Route::post('/apps/{name}/suspend', [AppController::class, 'suspend'])->middleware('ability:apps-suspend');
     Route::post('/apps/{name}/unsuspend', [AppController::class, 'unsuspend'])->middleware('ability:apps-suspend');
+    Route::post('/apps/{name}/fix-permissions', [AppController::class, 'fixPermissions'])->middleware('ability:apps-edit');
     Route::get('/apps/{name}/basicauth', [BasicAuthController::class, 'status'])->middleware('ability:apps-basicauth');
     Route::post('/apps/{name}/basicauth/enable', [BasicAuthController::class, 'enable'])->middleware('ability:apps-basicauth');
     Route::post('/apps/{name}/basicauth/disable', [BasicAuthController::class, 'disable'])->middleware('ability:apps-basicauth');
@@ -71,10 +79,30 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/apps/{name}/www/force-from-root', [WwwController::class, 'forceFromRoot'])->middleware('ability:www-manage');
     Route::post('/apps/{name}/www/clear', [WwwController::class, 'clear'])->middleware('ability:www-manage');
 
+    // App redirects and path redirects (Cipi CLI ≥ 5.3.1 + API sudoers ≥ 5.4.1)
+    Route::get('/apps/{name}/redirects', [RedirectController::class, 'list'])->middleware('ability:redirects-view');
+    Route::put('/apps/{name}/redirect', [RedirectController::class, 'set'])->middleware('ability:redirects-manage');
+    Route::post('/apps/{name}/redirect/enable', [RedirectController::class, 'enable'])->middleware('ability:redirects-manage');
+    Route::post('/apps/{name}/redirect/disable', [RedirectController::class, 'disable'])->middleware('ability:redirects-manage');
+    Route::delete('/apps/{name}/redirect', [RedirectController::class, 'unset'])->middleware('ability:redirects-manage');
+    Route::post('/apps/{name}/redirects', [RedirectController::class, 'add'])->middleware('ability:redirects-manage');
+    Route::delete('/apps/{name}/redirects', [RedirectController::class, 'remove'])->middleware('ability:redirects-manage');
+
+    // Prefix reverse proxies (Cipi CLI ≥ 5.3.1 + API sudoers ≥ 5.4.1)
+    Route::get('/apps/{name}/proxies', [ProxyController::class, 'list'])->middleware('ability:proxies-view');
+    Route::post('/apps/{name}/proxies', [ProxyController::class, 'add'])->middleware('ability:proxies-manage');
+    Route::delete('/apps/{name}/proxies', [ProxyController::class, 'remove'])->middleware('ability:proxies-manage');
+
+    // Node apps + runtimes (Cipi CLI ≥ 5.4.0 + API sudoers ≥ 5.4.1)
+    Route::get('/node', [NodeController::class, 'runtimes'])->middleware('ability:node-view');
+    Route::get('/apps/{name}/node', [NodeController::class, 'status'])->middleware('ability:node-view');
+    Route::post('/apps/{name}/node/restart', [NodeController::class, 'restart'])->middleware('ability:node-manage');
+
     // Deploy
     Route::post('/apps/{name}/deploy', [DeployController::class, 'deploy'])->middleware('ability:deploy-manage');
     Route::post('/apps/{name}/deploy/rollback', [DeployController::class, 'rollback'])->middleware('ability:deploy-manage');
     Route::post('/apps/{name}/deploy/unlock', [DeployController::class, 'unlock'])->middleware('ability:deploy-manage');
+    Route::get('/apps/{name}/deploy/audit', [DeployController::class, 'audit'])->middleware('ability:deploy-manage');
 
     // SSL
     Route::post('/apps/{name}/ssl', [SslController::class, 'install'])->middleware('ability:ssl-manage');
@@ -119,6 +147,20 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::put('/apps/{name}/health', [HealthController::class, 'update'])->middleware('ability:health-manage');
     Route::delete('/apps/{name}/health', [HealthController::class, 'destroy'])->middleware('ability:health-manage');
     Route::post('/apps/{name}/health/check', [HealthController::class, 'check'])->middleware('ability:health-view');
+
+    // Meilisearch / Laravel Scout (Cipi CLI ≥ 5.2.2)
+    Route::get('/search', [SearchController::class, 'status'])->middleware('ability:search-view');
+    Route::post('/apps/{name}/search/enable', [SearchController::class, 'enable'])->middleware('ability:search-manage');
+    Route::post('/apps/{name}/search/disable', [SearchController::class, 'disable'])->middleware('ability:search-manage');
+
+    // Optional host packages — read-only catalog (Cipi CLI ≥ 5.2.2)
+    Route::get('/packages', [PackageController::class, 'list'])->middleware('ability:packages-view');
+
+    // System monitor checks — read-only (Cipi CLI ≥ 5.3.0)
+    Route::get('/monitor', [MonitorController::class, 'list'])->middleware('ability:monitor-view');
+
+    // Cloudflare Zero Trust — read-only status (Cipi CLI ≥ 5.3.0)
+    Route::get('/zt', [ZtController::class, 'status'])->middleware('ability:zt-view');
 
     // Jobs
     Route::get('/jobs/{id}', [JobController::class, 'show']);

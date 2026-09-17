@@ -42,6 +42,8 @@ class CipiOutputParser
             'basicauth-enable' => $this->parseBasicAuthEnable($plain),
             'basicauth-disable' => $this->parseBasicAuthDisable($plain),
             'basicauth-status' => $this->parseBasicAuthStatus($plain),
+            'node-restart' => $this->parseNodeRestart($plain),
+            'app-fix-permissions' => $this->parseAppFixPermissions($plain),
             'status' => $this->parseStatus($plain),
             default => null,
         };
@@ -321,6 +323,27 @@ class CipiOutputParser
                 'app' => $app,
                 'unlocked' => true,
             ], fn ($v) => $v !== null);
+        }
+
+        return null;
+    }
+
+    protected function parseNodeRestart(string $text): ?array
+    {
+        if (preg_match("/'([^']+)'\s+restarted\s+with\s+no\s+downtime/i", $text, $m)) {
+            return ['app' => $m[1], 'restarted' => true];
+        }
+        if (preg_match("/'([^']+)'\s+is served by nginx/i", $text, $m)) {
+            return ['app' => $m[1], 'restarted' => false, 'note' => 'spa/static app — no Node process to restart'];
+        }
+
+        return null;
+    }
+
+    protected function parseAppFixPermissions(string $text): ?array
+    {
+        if (preg_match("/Permissions restored for\s+(\S+)/i", $text, $m)) {
+            return ['app' => trim($m[1], "'\""), 'fixed' => true];
         }
 
         return null;
