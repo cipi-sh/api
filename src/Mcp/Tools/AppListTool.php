@@ -10,7 +10,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('List all Cipi apps. Returns app names, domains, PHP versions, and aliases.')]
+#[Description('List all Cipi apps. Returns app names, domains, PHP versions, aliases, and type (laravel, custom, node).')]
 #[IsReadOnly]
 class AppListTool extends Tool
 {
@@ -19,7 +19,8 @@ class AppListTool extends Tool
     ) {}
 
     public function handle(Request $request): Response
-    {        $apps = $this->validator->getApps();
+    {
+        $apps = $this->validator->getApps();
         $data = [];
         foreach ($apps as $name => $app) {
             $data[] = [
@@ -28,9 +29,14 @@ class AppListTool extends Tool
                 'php' => $app['php'] ?? '',
                 'branch' => $app['branch'] ?? '',
                 'aliases' => $app['aliases'] ?? [],
+                'type' => $this->validator->getAppType($name),
+                'custom' => $this->validator->isCustomApp($name),
                 'engine' => $this->validator->getAppEngine($name),
                 'octane' => $this->validator->getAppOctane($name),
                 'octane_port' => $this->validator->getAppOctanePort($name),
+                'node' => $this->validator->isNodeApp($name),
+                'node_mode' => $this->validator->getNodeMode($name),
+                'node_version' => $this->validator->getNodeVersion($name),
                 'www_redirect' => $this->validator->getWwwRedirect($name),
                 'force_https' => $this->validator->isForceHttps($name),
                 'suspended' => $this->validator->isSuspended($name),

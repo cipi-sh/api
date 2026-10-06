@@ -89,6 +89,11 @@ class CipiCliService
         'node list',
         'node status',
         'node restart',
+        // Cipi CLI ≥ 5.5.0 (`app limits` is older; `--disk` is 5.5.0)
+        'app limits',
+        'ssl dns list',
+        'ssl dns set',
+        'ssl dns remove',
     ];
 
     /**

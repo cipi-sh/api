@@ -1,6 +1,7 @@
 <?php
 
 use CipiApi\Http\Controllers\AliasController;
+use CipiApi\Http\Controllers\AppLimitsController;
 use CipiApi\Http\Controllers\AppLogsController;
 use CipiApi\Http\Controllers\AppController;
 use CipiApi\Http\Controllers\AppRunController;
@@ -42,6 +43,8 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/apps/{name}/suspend', [AppController::class, 'suspend'])->middleware('ability:apps-suspend');
     Route::post('/apps/{name}/unsuspend', [AppController::class, 'unsuspend'])->middleware('ability:apps-suspend');
     Route::post('/apps/{name}/fix-permissions', [AppController::class, 'fixPermissions'])->middleware('ability:apps-edit');
+    Route::get('/apps/{name}/limits', [AppLimitsController::class, 'show'])->middleware('ability:apps-view');
+    Route::put('/apps/{name}/limits', [AppLimitsController::class, 'update'])->middleware('ability:apps-edit');
     Route::get('/apps/{name}/basicauth', [BasicAuthController::class, 'status'])->middleware('ability:apps-basicauth');
     Route::post('/apps/{name}/basicauth/enable', [BasicAuthController::class, 'enable'])->middleware('ability:apps-basicauth');
     Route::post('/apps/{name}/basicauth/disable', [BasicAuthController::class, 'disable'])->middleware('ability:apps-basicauth');
@@ -107,6 +110,9 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     // SSL
     Route::post('/apps/{name}/ssl', [SslController::class, 'install'])->middleware('ability:ssl-manage');
     Route::post('/apps/{name}/ssl/force', [SslController::class, 'force'])->middleware('ability:ssl-manage');
+    Route::get('/ssl/dns', [SslController::class, 'dnsList'])->middleware('ability:ssl-manage');
+    Route::put('/ssl/dns', [SslController::class, 'dnsSet'])->middleware('ability:ssl-manage');
+    Route::delete('/ssl/dns/{account}', [SslController::class, 'dnsRemove'])->middleware('ability:ssl-manage');
 
     // Databases
     Route::get('/dbs/engines', [DbController::class, 'engines'])->middleware('ability:dbs-view');

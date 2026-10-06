@@ -11,7 +11,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Show details of a specific app. Returns domain, PHP version, branch, aliases, etc.')]
+#[Description('Show details of a specific app. Returns type (laravel, custom, node), domain, PHP version, branch, aliases, etc.')]
 #[IsReadOnly]
 class AppShowTool extends Tool
 {
@@ -32,11 +32,16 @@ class AppShowTool extends Tool
         $apps = $this->validator->getApps();
         $app = $apps[$name];
         $app['app'] = $name;
+        $app['type'] = $this->validator->getAppType($name);
+        $app['custom'] = $this->validator->isCustomApp($name);
         $app['suspended'] = $this->validator->isSuspended($name);
         $app['basic_auth'] = $this->validator->isBasicAuthEnabled($name);
         $app['engine'] = $this->validator->getAppEngine($name);
         $app['octane'] = $this->validator->getAppOctane($name);
         $app['octane_port'] = $this->validator->getAppOctanePort($name);
+        $app['node'] = $this->validator->isNodeApp($name);
+        $app['node_mode'] = $this->validator->getNodeMode($name);
+        $app['node_version'] = $this->validator->getNodeVersion($name);
         $app['www_redirect'] = $this->validator->getWwwRedirect($name);
         $app['force_https'] = $this->validator->isForceHttps($name);
         return Response::text(json_encode($app, JSON_PRETTY_PRINT));

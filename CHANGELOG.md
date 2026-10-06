@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.32.0] - 2026-10-07
+
+Covers Cipi 5.5.0 → 5.5.1: soft disk limit per app, several Cloudflare accounts for DNS-01, and wildcard certificate options. The commands are already in `/etc/sudoers.d/cipi-api` (`app limits *`, `ssl install *`, `ssl dns *`), so no sudoers migration is needed; **Cipi CLI ≥ 5.5.0** is required for `disk_limit_gb` and `/ssl/dns`, **≥ 5.5.1** for `http` / `wildcard: false` on SSL install.
+
+### Fixed
+
+- **`GET /api/apps`** did not return `custom`, so clients showed custom apps as Laravel. List and show now return `custom` (normalized boolean) and a new `type` field: `laravel`, `custom` or `node`. Cipi stores `custom: true` on Node apps too, so `type` is the field to tell them apart. The list also returns `docroot`.
+- **MCP `AppList` / `AppShow`** — same `type` / `custom` fields, plus `node`, `node_mode`, `node_version` (they were only in the REST responses).
+
+### Added
+
+- **Limits** (`cipi app limits`):
+  - `GET /api/apps/{name}/limits` — `fpm_max_children`, `memory_limit`, `octane_workers`, `worker_procs` (null = CLI default), the defaults, and `disk_limit_gb`. Ability `apps-view`.
+  - `PUT /api/apps/{name}/limits` — any of those fields, plus `disk_limit_gb` (GB, files + database, at most two decimals; `null` removes it). Async job `app-limits`; the result reports `disk_used_gb`, `disk_percent`, `over_limit`. Node apps accept only `disk_limit_gb`. Ability `apps-edit`.
+  - The disk limit is soft (Cipi 5.5.0): the monitor check `app_disk` warns at 90% and alerts when over; nothing is blocked.
+- **DNS-01 / wildcard SSL** (Cipi ≥ 5.5.0):
+  - `POST /api/apps/{name}/ssl` accepts an optional body `{ dns: "cloudflare", account, wildcard, http }`. Without a body Cipi ≥ 5.5.1 reissues a DNS-01 certificate over DNS-01 with its own account.
+  - `GET /api/ssl/dns` — Cloudflare accounts and the certificates that renew with each (`ssl dns list --json`).
+  - `PUT /api/ssl/dns` — `{ name?, token }` adds an account or rotates its token. Synchronous, so the token is never queued or stored by the API; it is never returned.
+  - `DELETE /api/ssl/dns/{account}` — refused with 409 while a certificate still renews with the account.
+  - All with ability `ssl-manage`. The `ssl-install` job result now includes `challenge` (`http-01` / `dns-01`), `dns`, and `account`.
+- **MCP** — `AppLimitsShow`, `AppLimitsUpdate`, `SslDnsList`; `SslInstall` accepts `dns`, `account`, `wildcard`, `http`. Account tokens are deliberately not settable over MCP.
+- **CLI whitelist** — `app limits`, `ssl dns list|set|remove` in `CipiCliService::ALLOWED_COMMANDS`.
+
+### Changed
+
+- **Dependencies** — `laravel/framework` `^12.41.1 || ^13.0`, `laravel/sanctum` `^4.3.1` (first release with Laravel 13 support), suggested `laravel/mcp` `^1.0` (new installs already get 1.0.x; tool names and `tools/list` are unchanged).
+- **MCP server** — version 1.2.0; 71 tools, still one `tools/list` page.
+- **OpenAPI** — `info.version` **1.32.0**; 3 new paths, 6 new schemas. The `JobStatusResponse` type enum and result `oneOf` now also list `node-restart`, `app-fix-permissions` and `app-limits`.
+
 ## [1.31.0] - 2026-09-17
 
 Covers Cipi 5.1.1 → 5.4.0: app/path redirects, prefix proxies, Node apps and runtimes, deploy audit ledger, Meilisearch, packages/monitor/Zero Trust status, fix-permissions, and wildcard domains. Requires **Cipi CLI ≥ 5.4.1** (`cipi self-update`, migration 5.4.1) so `/etc/sudoers.d/cipi-api` allows `redirect *`, `proxy *`, and `node list|status|restart`; the read-only search/package/monitor/zt entries exist since their feature releases.

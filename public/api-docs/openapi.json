@@ -2,8 +2,8 @@
     "openapi": "3.0.3",
     "info": {
         "title": "Cipi API",
-        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status (any authenticated token). **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0).\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.",
-        "version": "1.31.0",
+        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status (any authenticated token). **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0).\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).",
+        "version": "1.32.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -324,6 +324,106 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            }
+        },
+        "/apps/{name}/limits": {
+            "get": {
+                "tags": [
+                    "Apps"
+                ],
+                "summary": "Show app limits",
+                "description": "PHP-FPM / Octane / worker limits from apps.json and the soft disk limit (`disk_limit_gb`, Cipi CLI >= 5.5.0). When the apps.json projection does not carry `disk_limit_gb`, it is read from `cipi app limits <app>`. Requires `apps-view` ability.",
+                "operationId": "appLimitsShow",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Limits",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AppLimitsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Apps"
+                ],
+                "summary": "Update app limits",
+                "description": "Set limits with `cipi app limits` (async job `app-limits`). FPM/Octane/worker changes rebuild the FPM pool or Supervisor programs. `disk_limit_gb` is a soft limit for files + database (Cipi CLI >= 5.5.0): the monitor warns at 90% and alerts when over; nothing is blocked. `disk_limit_gb: null` removes it. The job result reports current usage. Requires `apps-edit` ability.",
+                "operationId": "appLimitsUpdate",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AppLimitsUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "description": "Validation error (out of range, nothing to update, or FPM/worker limits on a Node app)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2050,7 +2150,7 @@
                     "SSL"
                 ],
                 "summary": "Install SSL",
-                "description": "Install Let's Encrypt SSL certificate for an app. Validates app exists synchronously. Dispatches CLI command as async job. Requires `ssl-manage` ability.",
+                "description": "Install (or reissue) the Let's Encrypt certificate for an app (`cipi ssl install`). Optional body: `dns` + `account` for DNS-01 through a Cloudflare account, `wildcard` to add/drop `*.<apex>`, `http` to force HTTP-01 (Cipi CLI >= 5.5.0; `http` / `wildcard: false` need 5.5.1). Without a body a DNS-01 certificate is reissued over DNS-01 (Cipi >= 5.5.1). Async job (`ssl-install`). Requires `ssl-manage` ability.",
                 "operationId": "sslInstall",
                 "parameters": [
                     {
@@ -2076,6 +2176,26 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "description": "Options that exclude each other, or invalid account name",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                },
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SslInstallRequest"
+                            }
+                        }
                     }
                 }
             }
@@ -2112,6 +2232,160 @@
                     },
                     "404": {
                         "$ref": "#/components/responses/NotFound"
+                    }
+                }
+            }
+        },
+        "/ssl/dns": {
+            "get": {
+                "tags": [
+                    "SSL"
+                ],
+                "summary": "List Cloudflare DNS-01 accounts",
+                "description": "Cloudflare accounts configured for DNS-01 certificates and the certificates that renew with each (`cipi ssl dns list --json`). Tokens are never returned. Requires `ssl-manage` ability and Cipi CLI >= 5.5.0.",
+                "operationId": "sslDnsList",
+                "responses": {
+                    "200": {
+                        "description": "Accounts",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SslDnsAccountsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "SSL"
+                ],
+                "summary": "Add a Cloudflare account / rotate its token",
+                "description": "Synchronous `cipi ssl dns set --name=\u2026 --token=\u2026` (the token is never queued or stored by the API). Without `name` it is the `default` account. The first account may install the certbot Cloudflare plugin on the host. Certificates issued with an account renew with its new token. Requires `ssl-manage` ability and Cipi CLI >= 5.5.0.",
+                "operationId": "sslDnsSet",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SslDnsSetRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated accounts",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SslDnsAccountsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Validation or CLI error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/ssl/dns/{account}": {
+            "delete": {
+                "tags": [
+                    "SSL"
+                ],
+                "summary": "Remove a Cloudflare DNS-01 account",
+                "description": "Synchronous `cipi ssl dns remove <account>`. Refused with 409 while a certificate still renews with the account (reissue it with another account first). Requires `ssl-manage` ability and Cipi CLI >= 5.5.0.",
+                "operationId": "sslDnsRemove",
+                "parameters": [
+                    {
+                        "name": "account",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$"
+                        },
+                        "example": "client-a"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Remaining accounts",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SslDnsAccountsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "description": "Account not configured",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Account still used to renew certificates",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Invalid account name or CLI error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -3280,6 +3554,27 @@
                                         "www.myapp.example.com"
                                     ]
                                 },
+                                "type": {
+                                    "type": "string",
+                                    "enum": [
+                                        "laravel",
+                                        "custom",
+                                        "node"
+                                    ],
+                                    "description": "App kind. Node apps are `node` even though Cipi stores `custom: true` on them.",
+                                    "example": "laravel"
+                                },
+                                "custom": {
+                                    "type": "boolean",
+                                    "description": "Non-Laravel app (custom PHP/static, and Node apps as stored by Cipi). Use `type` to tell custom and Node apps apart.",
+                                    "example": false
+                                },
+                                "docroot": {
+                                    "type": "string",
+                                    "nullable": true,
+                                    "description": "Custom app document root relative to the release (null for Laravel/Node apps)",
+                                    "example": "public"
+                                },
                                 "suspended": {
                                     "type": "boolean",
                                     "example": false
@@ -3401,6 +3696,27 @@
                                 "items": {
                                     "type": "string"
                                 }
+                            },
+                            "type": {
+                                "type": "string",
+                                "enum": [
+                                    "laravel",
+                                    "custom",
+                                    "node"
+                                ],
+                                "description": "App kind. Node apps are `node` even though Cipi stores `custom: true` on them.",
+                                "example": "laravel"
+                            },
+                            "custom": {
+                                "type": "boolean",
+                                "description": "Non-Laravel app (custom PHP/static, and Node apps as stored by Cipi). Use `type` to tell custom and Node apps apart.",
+                                "example": false
+                            },
+                            "docroot": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Custom app document root relative to the release (null for Laravel/Node apps)",
+                                "example": "public"
                             },
                             "suspended": {
                                 "type": "boolean"
@@ -3956,7 +4272,10 @@
                                     "www-force-to-root",
                                     "www-force-from-root",
                                     "www-clear",
-                                    "ssl-force"
+                                    "ssl-force",
+                                    "node-restart",
+                                    "app-fix-permissions",
+                                    "app-limits"
                                 ],
                                 "example": "app-create"
                             },
@@ -4022,6 +4341,15 @@
                                     },
                                     {
                                         "$ref": "#/components/schemas/JobResultDbPassword"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/JobResultNodeRestart"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/JobResultAppFixPermissions"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/JobResultAppLimits"
                                     },
                                     {
                                         "$ref": "#/components/schemas/JobResultError"
@@ -4246,6 +4574,28 @@
                     "installed": {
                         "type": "boolean",
                         "example": true
+                    },
+                    "force_https": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "challenge": {
+                        "type": "string",
+                        "enum": [
+                            "http-01",
+                            "dns-01"
+                        ],
+                        "example": "dns-01"
+                    },
+                    "dns": {
+                        "type": "string",
+                        "description": "DNS-01 provider",
+                        "example": "cloudflare"
+                    },
+                    "account": {
+                        "type": "string",
+                        "description": "Cloudflare account used for DNS-01",
+                        "example": "default"
                     }
                 }
             },
@@ -5434,6 +5784,244 @@
                         "example": true
                     }
                 }
+            },
+            "AppLimitsResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": {
+                                "type": "string",
+                                "example": "myapp"
+                            },
+                            "limits": {
+                                "type": "object",
+                                "description": "Configured limits; null means the CLI default applies",
+                                "properties": {
+                                    "fpm_max_children": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 50,
+                                        "description": "PHP-FPM pm.max_children (default 5)",
+                                        "example": 10,
+                                        "nullable": true
+                                    },
+                                    "memory_limit": {
+                                        "type": "string",
+                                        "pattern": "^[0-9]+[MmGg]?$",
+                                        "description": "PHP memory_limit (default 256M)",
+                                        "example": "512M",
+                                        "nullable": true
+                                    },
+                                    "octane_workers": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 16,
+                                        "description": "Octane workers (default 2; Octane apps)",
+                                        "example": 4,
+                                        "nullable": true
+                                    },
+                                    "worker_procs": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 20,
+                                        "description": "Default queue worker processes (default 1)",
+                                        "example": 2,
+                                        "nullable": true
+                                    }
+                                }
+                            },
+                            "defaults": {
+                                "type": "object",
+                                "properties": {
+                                    "fpm_max_children": {
+                                        "type": "integer",
+                                        "example": 5
+                                    },
+                                    "memory_limit": {
+                                        "type": "string",
+                                        "example": "256M"
+                                    },
+                                    "octane_workers": {
+                                        "type": "integer",
+                                        "example": 2
+                                    },
+                                    "worker_procs": {
+                                        "type": "integer",
+                                        "example": 1
+                                    }
+                                }
+                            },
+                            "disk_limit_gb": {
+                                "type": "number",
+                                "nullable": true,
+                                "description": "Soft disk limit in GB for files + database (null = unlimited). Alerts only (monitor check `app_disk`); nothing is blocked. Cipi 5.5.0+.",
+                                "example": 10
+                            }
+                        }
+                    }
+                }
+            },
+            "AppLimitsUpdateRequest": {
+                "type": "object",
+                "description": "Send at least one field. Node apps accept only `disk_limit_gb`.",
+                "properties": {
+                    "fpm_max_children": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "description": "PHP-FPM pm.max_children (default 5)",
+                        "example": 10
+                    },
+                    "memory_limit": {
+                        "type": "string",
+                        "pattern": "^[0-9]+[MmGg]?$",
+                        "description": "PHP memory_limit (default 256M)",
+                        "example": "512M"
+                    },
+                    "octane_workers": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 16,
+                        "description": "Octane workers (default 2; Octane apps)",
+                        "example": 4
+                    },
+                    "worker_procs": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 20,
+                        "description": "Default queue worker processes (default 1)",
+                        "example": 2
+                    },
+                    "disk_limit_gb": {
+                        "type": "number",
+                        "nullable": true,
+                        "minimum": 0,
+                        "exclusiveMinimum": true,
+                        "maximum": 999999.99,
+                        "multipleOf": 0.01,
+                        "description": "Soft disk limit in GB (at most two decimals); `null` removes it (`--disk=none`). Cipi 5.5.0+.",
+                        "example": 2.5
+                    }
+                }
+            },
+            "SslInstallRequest": {
+                "type": "object",
+                "description": "All fields optional (Cipi 5.5.0+). Without a body a DNS-01 certificate is reissued over DNS-01 with the account it was issued with (Cipi 5.5.1+), otherwise HTTP-01.",
+                "properties": {
+                    "dns": {
+                        "type": "string",
+                        "enum": [
+                            "cloudflare"
+                        ],
+                        "description": "Issue over DNS-01 with this provider"
+                    },
+                    "account": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+                        "description": "Cloudflare account (`GET /ssl/dns`); requires `dns`. Default: the account the certificate was last issued with, else `default`.",
+                        "example": "client-a"
+                    },
+                    "wildcard": {
+                        "type": "boolean",
+                        "description": "`true` adds `*.<apex>` (DNS-01 only), `false` drops it; omit to keep the previous choice"
+                    },
+                    "http": {
+                        "type": "boolean",
+                        "description": "Force HTTP-01 (e.g. move a DNS-01 certificate back). Excludes `dns`."
+                    }
+                }
+            },
+            "SslDnsAccountsResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "account": {
+                                    "type": "string",
+                                    "example": "default"
+                                },
+                                "provider": {
+                                    "type": "string",
+                                    "example": "cloudflare"
+                                },
+                                "certificates": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "description": "Certificate lineages that renew with this account",
+                                    "example": [
+                                        "example.com"
+                                    ]
+                                }
+                            }
+                        }
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "CLI output (PUT / DELETE only)"
+                    }
+                }
+            },
+            "SslDnsSetRequest": {
+                "type": "object",
+                "required": [
+                    "token"
+                ],
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9][a-z0-9_-]{0,31}$",
+                        "description": "Account name (default `default`). An existing name rotates its token.",
+                        "example": "client-a"
+                    },
+                    "token": {
+                        "type": "string",
+                        "format": "password",
+                        "minLength": 20,
+                        "maxLength": 255,
+                        "description": "Cloudflare API token with Zone:DNS:Edit on the zones of this account. Stored root-only, never returned."
+                    }
+                }
+            },
+            "JobResultAppLimits": {
+                "type": "object",
+                "description": "Result of an app-limits job",
+                "properties": {
+                    "app": {
+                        "type": "string",
+                        "example": "myapp"
+                    },
+                    "limits_updated": {
+                        "type": "boolean",
+                        "description": "FPM/Octane/worker limits changed",
+                        "example": true
+                    },
+                    "disk_limit_gb": {
+                        "type": "number",
+                        "nullable": true,
+                        "description": "New disk limit (null when removed)",
+                        "example": 10
+                    },
+                    "disk_used_gb": {
+                        "type": "number",
+                        "description": "Files + database right now",
+                        "example": 6.4
+                    },
+                    "disk_percent": {
+                        "type": "integer",
+                        "example": 64
+                    },
+                    "over_limit": {
+                        "type": "boolean",
+                        "example": false
+                    }
+                }
             }
         },
         "responses": {
@@ -5544,7 +6132,7 @@
         },
         {
             "name": "SSL",
-            "description": "Let's Encrypt SSL install and force HTTPS redirect \u2014 ability `ssl-manage`"
+            "description": "Let's Encrypt SSL install (HTTP-01 or Cloudflare DNS-01 / wildcard), force HTTPS redirect, and DNS-01 accounts \u2014 ability `ssl-manage`"
         },
         {
             "name": "Jobs",

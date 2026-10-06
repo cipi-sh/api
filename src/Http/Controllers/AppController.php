@@ -29,6 +29,9 @@ class AppController extends Controller
                 'branch' => $app['branch'] ?? '',
                 'repository' => $app['repository'] ?? '',
                 'aliases' => $app['aliases'] ?? [],
+                'type' => $this->validator->getAppType($name),
+                'custom' => $this->validator->isCustomApp($name),
+                'docroot' => $app['docroot'] ?? null,
                 'engine' => $this->validator->getAppEngine($name),
                 'octane' => $this->validator->getAppOctane($name),
                 'octane_port' => $this->validator->getAppOctanePort($name),
@@ -56,6 +59,8 @@ class AppController extends Controller
         $apps = $this->validator->getApps();
         $app = $apps[$name];
         $app['app'] = $name;
+        $app['type'] = $this->validator->getAppType($name);
+        $app['custom'] = $this->validator->isCustomApp($name);
         $app['suspended'] = $this->validator->isSuspended($name);
         $app['basic_auth'] = $this->validator->isBasicAuthEnabled($name);
         $app['engine'] = $this->validator->getAppEngine($name);

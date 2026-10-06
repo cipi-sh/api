@@ -44,6 +44,7 @@ class CipiOutputParser
             'basicauth-status' => $this->parseBasicAuthStatus($plain),
             'node-restart' => $this->parseNodeRestart($plain),
             'app-fix-permissions' => $this->parseAppFixPermissions($plain),
+            'app-limits' => $this->parseAppLimits($plain),
             'status' => $this->parseStatus($plain),
             default => null,
         };
@@ -349,6 +350,29 @@ class CipiOutputParser
         return null;
     }
 
+    protected function parseAppLimits(string $text): ?array
+    {
+        $result = [];
+        if (preg_match("/Limits updated for\s+'([^']+)'/", $text, $m)) {
+            $result['app'] = $m[1];
+            $result['limits_updated'] = true;
+        }
+        if (preg_match("/Disk limit for\s+'([^']+)':\s*([0-9.]+)\s*GB/", $text, $m)) {
+            $result['app'] = $m[1];
+            $result['disk_limit_gb'] = $m[2] + 0;
+        } elseif (preg_match("/Disk limit removed for\s+'([^']+)'/", $text, $m)) {
+            $result['app'] = $m[1];
+            $result['disk_limit_gb'] = null;
+        }
+        if (preg_match('/It (already )?uses\s+([0-9.]+)\s*GB(?: now)?\s*\((\d+)%\)/', $text, $m)) {
+            $result['disk_used_gb'] = $m[2] + 0;
+            $result['disk_percent'] = (int) $m[3];
+            $result['over_limit'] = $m[1] !== '';
+        }
+
+        return $result !== [] ? $result : null;
+    }
+
     protected function parseAliasCreate(string $text): ?array
     {
         if (preg_match("/'([^']+)'\s+added\s+to\s+'([^']+)'/", $text, $m)) {
@@ -405,8 +429,18 @@ class CipiOutputParser
 
     protected function parseSslInstall(string $text): ?array
     {
+        if (preg_match('/SSL\s+installed\s+for\s+(\S+)\s+via\s+DNS-01\s+\(([^,)]+),\s*account\s+([^)]+)\)/', $text, $m)) {
+            return [
+                'domain' => trim($m[1]),
+                'installed' => true,
+                'force_https' => true,
+                'challenge' => 'dns-01',
+                'dns' => trim($m[2]),
+                'account' => trim($m[3]),
+            ];
+        }
         if (preg_match('/SSL\s+installed\s+for\s+(\S+)/', $text, $m)) {
-            return ['domain' => trim($m[1]), 'installed' => true, 'force_https' => true];
+            return ['domain' => trim($m[1]), 'installed' => true, 'force_https' => true, 'challenge' => 'http-01'];
         }
         return null;
     }

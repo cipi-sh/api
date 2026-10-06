@@ -267,6 +267,19 @@ class CipiValidationService
         return $value === true || $value === 'true' || $value === 1 || $value === '1';
     }
 
+    /**
+     * App kind: `node` (runtime: node), `custom` (non-Laravel PHP/static), or `laravel`.
+     * Cipi stores `custom: true` on Node apps too, so `node` is checked first.
+     */
+    public function getAppType(string $name): string
+    {
+        if ($this->isNodeApp($name)) {
+            return 'node';
+        }
+
+        return $this->isCustomApp($name) ? 'custom' : 'laravel';
+    }
+
     public function isForceHttps(string $name): bool
     {
         $apps = $this->getApps();

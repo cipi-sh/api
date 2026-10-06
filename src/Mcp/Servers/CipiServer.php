@@ -8,6 +8,8 @@ use CipiApi\Mcp\Tools\AliasRemoveTool;
 use CipiApi\Mcp\Tools\AppCreateTool;
 use CipiApi\Mcp\Tools\AppDeleteTool;
 use CipiApi\Mcp\Tools\AppFixPermissionsTool;
+use CipiApi\Mcp\Tools\AppLimitsShowTool;
+use CipiApi\Mcp\Tools\AppLimitsUpdateTool;
 use CipiApi\Mcp\Tools\DeployAuditTool;
 use CipiApi\Mcp\Tools\MonitorListTool;
 use CipiApi\Mcp\Tools\NodeRestartTool;
@@ -63,6 +65,7 @@ use CipiApi\Mcp\Tools\JobShowTool;
 use CipiApi\Mcp\Tools\PhpListTool;
 use CipiApi\Mcp\Tools\ServerStatusTool;
 use CipiApi\Mcp\Tools\ServiceListTool;
+use CipiApi\Mcp\Tools\SslDnsListTool;
 use CipiApi\Mcp\Tools\SslForceTool;
 use CipiApi\Mcp\Tools\SslInstallTool;
 use CipiApi\Mcp\Tools\WwwAddTool;
@@ -76,8 +79,8 @@ use Laravel\Mcp\Server\Attributes\Version;
 use Laravel\Mcp\Server;
 
 #[Name('Cipi Server')]
-#[Version('1.1.0')]
-#[Instructions('Cipi server management: apps (Laravel, custom, Node), aliases, www redirects, app/path redirects, prefix proxies, databases (MariaDB/PostgreSQL), SSL, Meilisearch, deploy audit, monitor, jobs, logs, and server status. Requires mcp-access token ability only.')]
+#[Version('1.2.0')]
+#[Instructions('Cipi server management: apps (Laravel, custom, Node), aliases, www redirects, app/path redirects, prefix proxies, databases (MariaDB/PostgreSQL), resource and soft disk limits, SSL (HTTP-01 or Cloudflare DNS-01 / wildcard), Meilisearch, deploy audit, monitor, jobs, logs, and server status. Requires mcp-access token ability only.')]
 class CipiServer extends Server
 {
     /**
@@ -112,6 +115,8 @@ class CipiServer extends Server
         AppSuspendTool::class,
         AppUnsuspendTool::class,
         AppFixPermissionsTool::class,
+        AppLimitsShowTool::class,
+        AppLimitsUpdateTool::class,
         AppBasicAuthStatusTool::class,
         AppBasicAuthEnableTool::class,
         AppBasicAuthDisableTool::class,
@@ -150,6 +155,7 @@ class CipiServer extends Server
         DbPasswordTool::class,
         SslInstallTool::class,
         SslForceTool::class,
+        SslDnsListTool::class,
         JobShowTool::class,
         AppLogsTool::class,
         ApiLogShowTool::class,
