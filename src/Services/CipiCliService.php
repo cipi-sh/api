@@ -94,6 +94,8 @@ class CipiCliService
         'ssl dns list',
         'ssl dns set',
         'ssl dns remove',
+        // Cipi CLI ≥ 5.5.0 (API sudoers ≥ 5.5.2): `disk --json`, `disk db --json`
+        'disk',
     ];
 
     /**

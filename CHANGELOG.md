@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.33.0] - 2026-10-09
+
+Disk usage over the API — the last host insight that was CLI-only. Requires **Cipi CLI ≥ 5.5.2** (`cipi self-update`, migration 5.5.2) so `/etc/sudoers.d/cipi-api` allows `cipi disk` and `cipi disk *`; the command itself exists since 5.5.0. Nothing changes for older servers: the two new endpoints answer 503 there, every other route is as in 1.32.0.
+
+### Added
+
+- **`GET /api/disk`** — what `cipi disk --json` prints: the filesystem `/home` is on (`mount`, `size_gb`, `used_gb`, `free_gb`, `used_percent`), every app largest first with `files_gb`, `database_gb`, `total_gb`, `percent` of the disk, the KiB figures, the soft limit (`limit_gb`, `limit_percent`, `over_limit`), and the `apps_total_gb` / `apps_percent` / `other_gb` / `other_percent` totals. Synchronous; sizes are measured on request, so a server with large apps takes a few seconds. Ability `disk-view`.
+- **`GET /api/disk/dbs`** — what `cipi disk db --json` prints, as one entry per installed engine (`mariadb`, `pgsql`, `valkey`, `meilisearch`): `databases` (`name`, `size_mb`, plus `keys` for Valkey and `documents` for Meilisearch), `on_disk_mb`, `memory_mb` (Valkey), `note` when the engine did not answer. Ability `disk-view`.
+- **Token ability** `disk-view` in `config/cipi.php` (`cipi api token create` lists it).
+- **MCP** — `DiskUsage`, `DiskDatabases` (read-only).
+- **CLI whitelist** — `disk` in `CipiCliService::ALLOWED_COMMANDS`.
+
+### Changed
+
+- **MCP server** — version 1.3.0; 73 tools, still one `tools/list` page.
+- **OpenAPI** — `info.version` **1.33.0**; 2 new paths, 2 new schemas; the `Server` tag covers disk usage.
+
 ## [1.32.0] - 2026-10-07
 
 Covers Cipi 5.5.0 → 5.5.1: soft disk limit per app, several Cloudflare accounts for DNS-01, and wildcard certificate options. The commands are already in `/etc/sudoers.d/cipi-api` (`app limits *`, `ssl install *`, `ssl dns *`), so no sudoers migration is needed; **Cipi CLI ≥ 5.5.0** is required for `disk_limit_gb` and `/ssl/dns`, **≥ 5.5.1** for `http` / `wildcard: false` on SSL install.

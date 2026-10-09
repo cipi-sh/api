@@ -11,6 +11,7 @@ use CipiApi\Http\Controllers\BasicAuthController;
 use CipiApi\Http\Controllers\DbController;
 use CipiApi\Http\Controllers\DeployConfigController;
 use CipiApi\Http\Controllers\DeployController;
+use CipiApi\Http\Controllers\DiskController;
 use CipiApi\Http\Controllers\EnvController;
 use CipiApi\Http\Controllers\JobController;
 use CipiApi\Http\Controllers\HealthController;
@@ -167,6 +168,10 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
 
     // Cloudflare Zero Trust — read-only status (Cipi CLI ≥ 5.3.0)
     Route::get('/zt', [ZtController::class, 'status'])->middleware('ability:zt-view');
+
+    // Disk usage — the server, every app, every database (Cipi CLI ≥ 5.5.0 + API sudoers ≥ 5.5.2)
+    Route::get('/disk', [DiskController::class, 'usage'])->middleware('ability:disk-view');
+    Route::get('/disk/dbs', [DiskController::class, 'databases'])->middleware('ability:disk-view');
 
     // Jobs
     Route::get('/jobs/{id}', [JobController::class, 'show']);

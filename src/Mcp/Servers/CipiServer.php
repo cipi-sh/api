@@ -11,6 +11,8 @@ use CipiApi\Mcp\Tools\AppFixPermissionsTool;
 use CipiApi\Mcp\Tools\AppLimitsShowTool;
 use CipiApi\Mcp\Tools\AppLimitsUpdateTool;
 use CipiApi\Mcp\Tools\DeployAuditTool;
+use CipiApi\Mcp\Tools\DiskDatabasesTool;
+use CipiApi\Mcp\Tools\DiskUsageTool;
 use CipiApi\Mcp\Tools\MonitorListTool;
 use CipiApi\Mcp\Tools\NodeRestartTool;
 use CipiApi\Mcp\Tools\NodeRuntimesTool;
@@ -79,8 +81,8 @@ use Laravel\Mcp\Server\Attributes\Version;
 use Laravel\Mcp\Server;
 
 #[Name('Cipi Server')]
-#[Version('1.2.0')]
-#[Instructions('Cipi server management: apps (Laravel, custom, Node), aliases, www redirects, app/path redirects, prefix proxies, databases (MariaDB/PostgreSQL), resource and soft disk limits, SSL (HTTP-01 or Cloudflare DNS-01 / wildcard), Meilisearch, deploy audit, monitor, jobs, logs, and server status. Requires mcp-access token ability only.')]
+#[Version('1.3.0')]
+#[Instructions('Cipi server management: apps (Laravel, custom, Node), aliases, www redirects, app/path redirects, prefix proxies, databases (MariaDB/PostgreSQL), resource and soft disk limits, disk usage (server, apps, databases), SSL (HTTP-01 or Cloudflare DNS-01 / wildcard), Meilisearch, deploy audit, monitor, jobs, logs, and server status. Requires mcp-access token ability only.')]
 class CipiServer extends Server
 {
     /**
@@ -147,6 +149,8 @@ class CipiServer extends Server
         PackageListTool::class,
         MonitorListTool::class,
         ZtStatusTool::class,
+        DiskUsageTool::class,
+        DiskDatabasesTool::class,
         DbEnginesTool::class,
         DbListTool::class,
         DbCreateTool::class,
