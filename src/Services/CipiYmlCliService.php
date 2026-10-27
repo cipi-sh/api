@@ -9,6 +9,10 @@ namespace CipiApi\Services;
  * The plan is read-only: it parses the cipi.yml of the live release and
  * compares it with the server. Applying it is a job (`app-yml-apply`), since
  * it may switch PHP, rewrite vhosts and restart workers.
+ *
+ * Since Cipi 5.8.0 the file is picked per environment (`cipi-<env>.yml` or
+ * `.yaml` before `cipi.yml`/`cipi.yaml`) and the JSON names the `env` the plan
+ * was read for; older cores print none, which means production.
  */
 class CipiYmlCliService
 {
@@ -20,7 +24,7 @@ class CipiYmlCliService
      * What `cipi yml plan <app> --json` prints: the file, auto-apply, validity and
      * what applying would change.
      *
-     * @return array{app: string, file: ?string, auto: bool, valid: ?bool, in_sync: ?bool, errors: list<string>, warnings: list<string>, changes: list<array{kind: string, summary: string}>, blockers: list<string>, notes: list<string>}
+     * @return array{app: string, env: string, file: ?string, auto: bool, valid: ?bool, in_sync: ?bool, errors: list<string>, warnings: list<string>, changes: list<array{kind: string, summary: string}>, blockers: list<string>, notes: list<string>}
      */
     public function plan(string $app): array
     {
@@ -39,6 +43,7 @@ class CipiYmlCliService
 
         return [
             'app' => $app,
+            'env' => $this->envOrDefault($decoded['env'] ?? null),
             'file' => $this->stringOrNull($decoded['file'] ?? null),
             'auto' => (bool) ($decoded['auto'] ?? false),
             'valid' => $this->boolOrNull($decoded['valid'] ?? null),
@@ -54,7 +59,7 @@ class CipiYmlCliService
     /**
      * `cipi yml auto <app> status --json`.
      *
-     * @return array{app: string, auto: bool, sudoers: bool, file: ?string}
+     * @return array{app: string, env: string, auto: bool, sudoers: bool, file: ?string}
      */
     public function autoStatus(string $app): array
     {
@@ -62,6 +67,7 @@ class CipiYmlCliService
 
         return [
             'app' => $app,
+            'env' => $this->envOrDefault($decoded['env'] ?? null),
             'auto' => (bool) ($decoded['auto'] ?? false),
             'sudoers' => (bool) ($decoded['sudoers'] ?? false),
             'file' => $this->stringOrNull($decoded['file'] ?? null),
@@ -71,7 +77,7 @@ class CipiYmlCliService
     /**
      * Turn automatic apply after every successful deploy on or off. Idempotent.
      *
-     * @return array{app: string, auto: bool, sudoers: bool, file: ?string}
+     * @return array{app: string, env: string, auto: bool, sudoers: bool, file: ?string}
      */
     public function setAuto(string $app, bool $enabled): array
     {
@@ -128,6 +134,15 @@ class CipiYmlCliService
     protected function stringOrNull(mixed $value): ?string
     {
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /**
+     * The environment label the CLI read the file for (Cipi 5.8.0); production
+     * when an older core prints no `env`.
+     */
+    protected function envOrDefault(mixed $value): string
+    {
+        return is_string($value) && $value !== '' ? $value : 'production';
     }
 
     protected function boolOrNull(mixed $value): ?bool

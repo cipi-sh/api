@@ -11,7 +11,7 @@ use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Create a new app: Laravel (default), custom (SFTP/classic deploy) or Node frontend (spa/static/ssr via node/framework, Cipi 5.4.0+). Validates domain/username/PHP synchronously and dispatches async job. Returns job_id for polling. The job result reports repository_access: whether the deploy key can read the repository (Cipi 5.6.0+).')]
+#[Description('Create a new app: Laravel (default), custom (SFTP/classic deploy) or Node frontend (spa/static/ssr via node/framework, Cipi 5.4.0+). Optional env label (production by default, e.g. staging; Cipi 5.8.0+ reads cipi-<env>.yml before cipi.yml). Validates domain/username/PHP/env synchronously and dispatches async job. Returns job_id for polling. The job result reports repository_access: whether the deploy key can read the repository (Cipi 5.6.0+).')]
 class AppCreateTool extends Tool
 {
     public function __construct(
@@ -45,6 +45,9 @@ class AppCreateTool extends Tool
         $engineRaw = $request->get('engine');
         $engine = is_string($engineRaw) && $engineRaw !== '' ? $engineRaw : null;
         $octaneRaw = $request->get('octane');
+        // Environment label (Cipi 5.8.0+): passed only when given, production otherwise.
+        $envRaw = $request->get('env');
+        $env = is_string($envRaw) && trim($envRaw) !== '' ? trim($envRaw) : null;
 
         // Node frontend app (Cipi 5.4.0+): node=spa|static|ssr and/or framework preset.
         $node = is_string($request->get('node')) && $request->get('node') !== '' ? $request->get('node') : null;
@@ -65,6 +68,9 @@ class AppCreateTool extends Tool
             return Response::text("Error: {$err}");
         }
         if ($err = $this->validator->octaneError($octaneRaw)) {
+            return Response::text("Error: {$err}");
+        }
+        if ($err = $this->validator->envError($env)) {
             return Response::text("Error: {$err}");
         }
         if ($engine !== null) {
@@ -138,6 +144,9 @@ class AppCreateTool extends Tool
         if ($nodeBuild !== null) {
             $params['node_build'] = $nodeBuild;
         }
+        if ($env !== null) {
+            $params['env'] = $env;
+        }
         if ($isNode) {
             $params += array_filter([
                 'node' => $node,
@@ -194,6 +203,7 @@ class AppCreateTool extends Tool
             'output' => $schema->string()->description('Build output directory for spa/static apps (e.g. dist)'),
             'health_path' => $schema->string()->description('Health path for ssr apps (blue/green switch checks it, default /)'),
             'node_build' => $schema->string()->description('Laravel apps: asset build run inside every deploy before the release goes live, e.g. "npm ci && npm run build" (npm/npx/yarn/pnpm/bun/node; && and ; allowed). Cipi 5.6.0+.'),
+            'env' => $schema->string()->description('Environment label (Cipi 5.8.0+): lowercase letters, digits, - and _, max 32 chars, e.g. production (default when omitted) or staging. Cipi reads cipi-<env>.yml (or .yaml) before cipi.yml for the app.'),
         ];
     }
 }

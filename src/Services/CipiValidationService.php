@@ -204,6 +204,10 @@ class CipiValidationService
                 continue;
             }
             $cur = trim((string) ($current[$key] ?? ''));
+            if ($key === 'env' && $cur === '') {
+                // Missing on cores < 5.8.0 and on apps created before: production.
+                $cur = 'production';
+            }
             if ($value === $cur) {
                 continue;
             }
@@ -278,6 +282,34 @@ class CipiValidationService
         }
 
         return $this->isCustomApp($name) ? 'custom' : 'laravel';
+    }
+
+    /**
+     * Environment label of an app (Cipi 5.8.0, `env` in apps.json): `production`
+     * when the projection has no key (older cores) or an empty one.
+     */
+    public function getAppEnv(string $name): string
+    {
+        $apps = $this->getApps();
+        $env = $apps[$name]['env'] ?? null;
+
+        return is_string($env) && $env !== '' ? $env : 'production';
+    }
+
+    /**
+     * Validate an environment label for app create/edit (`cipi app create|edit --env`):
+     * lowercase letters, digits, '-' and '_', 32 characters at most — the CLI's own rule.
+     */
+    public function envError(?string $env): ?string
+    {
+        if ($env === null || $env === '') {
+            return null;
+        }
+        if (! preg_match('/^[a-z0-9][a-z0-9_-]{0,31}$/', $env)) {
+            return "Invalid env '{$env}'. Use lowercase letters, digits, '-' and '_' (max 32 chars), such as production or staging";
+        }
+
+        return null;
     }
 
     public function isForceHttps(string $name): bool

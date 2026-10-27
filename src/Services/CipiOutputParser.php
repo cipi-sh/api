@@ -93,6 +93,8 @@ class CipiOutputParser
         $domain = $this->extractLabel($text, 'Domain:');
         $php = $this->extractLabel($text, 'PHP:');
         $home = $this->extractLabel($text, 'Home:');
+        // Environment label (Cipi 5.8.0+ prints it; absent on older cores).
+        $env = $this->extractLabel($text, 'Env:');
 
         $sshUser = $sshPassword = null;
         if (preg_match('/SSH\s+(\S+)\s*\/\s*(\S+)/', $text, $m)) {
@@ -128,6 +130,7 @@ class CipiOutputParser
             'app' => $app,
             'domain' => $domain,
             'php' => $php,
+            'env' => $env,
             'home' => $home,
             'ssh' => ($sshUser || $sshPassword) ? [
                 'user' => $sshUser,

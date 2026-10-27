@@ -11,7 +11,7 @@ use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Turn automatic cipi.yml apply after every successful deploy on or off (cipi yml auto on|off). When on, anyone who can commit to the repository can change the app\'s aliases, PHP settings, limits, workers, deploy recipe, crons, databases and backups — confirm with the user first. Synchronous, idempotent; returns {app, auto, sudoers, file}. Requires Cipi 5.6.4+.')]
+#[Description('Turn automatic cipi.yml apply after every successful deploy on or off (cipi yml auto on|off). When on, anyone who can commit to the repository can change the app\'s aliases, PHP settings, limits, workers, deploy recipe, crons, databases and backups — confirm with the user first. Synchronous, idempotent; returns {app, env, auto, sudoers, file}. Requires Cipi 5.6.4+.')]
 class AppYmlAutoTool extends Tool
 {
     public function __construct(

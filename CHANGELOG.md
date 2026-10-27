@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.36.0] - 2026-10-27
+
+Per-app environments, covering Cipi 5.8.0: every app carries an `env` label (`production` unless set) and Cipi reads `cipi-<env>.yml` before `cipi.yml`. **Cipi CLI ≥ 5.8.0** for `--env` on `app create` / `app edit` and for `env` in the `yml plan` / `yml auto status` JSON; on older servers the API answers `env: production` everywhere (the projection has no key) and clients must not send `env`. No sudoers change: `app create *`, `app edit *` and `yml *` are already allowed.
+
+### Added
+
+- **`env` on `POST /api/apps`** — optional environment label, passed as `cipi app create --env=<label>` only when the client sends one. Validated before the job is queued with the CLI's own rule — lowercase letters, digits, `-` and `_`, 32 characters at most (`^[a-z0-9][a-z0-9_-]{0,31}$`) — and refused with 422 otherwise (`CipiValidationService::envError()`). MCP `AppCreate` takes the same field.
+- **`env` on `PUT /api/apps/{name}`** — `cipi app edit --env=<label>`, same validation. A value equal to the current one is dropped like the other edit fields; an app without the key counts as `production`. MCP `AppEdit` takes the same field.
+- **`env` in `GET /api/apps` and `GET /api/apps/{name}`** — read from the apps.json projection (`CipiValidationService::getAppEnv()`), `production` when the key is missing. Same field in MCP `AppList` / `AppShow`.
+- **`env` in `GET /api/apps/{name}/yml`** and in the `yml/auto/enable|disable` responses — the environment the plan was read for, as `cipi yml plan --json` / `cipi yml auto status --json` print it, `production` when an older core prints none. MCP `AppYmlShow` / `AppYmlAuto` return it too.
+- **`env` in the `app-create` job result** when the CLI prints an `Env:` line; an env change on `app-edit` shows under `changes` like the other fields.
+
+### Changed
+
+- **MCP server** — version 1.6.0: `AppCreate` and `AppEdit` gain `env`; `AppList`, `AppShow`, `AppYmlShow` and `AppYmlAuto` return it. Still 76 tools, one `tools/list` page.
+- **OpenAPI** — `info.version` **1.36.0**; `env` on `AppCreateRequest`, `AppEditRequest`, `AppListResponse`, `AppShowResponse`, `YmlPlanResponse`, `YmlAutoResponse` and `JobResultAppCreate`; the app create/edit and cipi.yml descriptions mention the per-environment file.
+
+### Compatibility
+
+- Cipi 5.8.0 also adds `deploy.branch` to the cipi.yml schema (the branch the app deploys, validated and applied like `cipi app edit --branch`). The API does not parse cipi.yml itself: a branch change shows in the plan's `changes` like any other key.
+
 ## [1.35.0] - 2026-10-22
 
 cipi.yml over the API. Requires **Cipi CLI ≥ 5.6.4** (`cipi self-update`, migration 5.6.4): it adds `cipi yml plan --json` and `cipi yml auto status --json`, and lets `/etc/sudoers.d/cipi-api` run `cipi yml plan *`, `cipi yml apply *` and `cipi yml auto *`. On older servers the new endpoints answer 503; every other route is as in 1.34.0. Cipi 5.6.4 is also the release where auto-apply finally works on Git-webhook deploys.

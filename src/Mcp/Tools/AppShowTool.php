@@ -11,7 +11,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Show details of a specific app. Returns type (laravel, custom, node), domain, PHP version, branch, aliases, etc.')]
+#[Description('Show details of a specific app. Returns type (laravel, custom, node), env label (production unless set, Cipi 5.8.0+), domain, PHP version, branch, aliases, etc.')]
 #[IsReadOnly]
 class AppShowTool extends Tool
 {
@@ -34,6 +34,7 @@ class AppShowTool extends Tool
         $app['app'] = $name;
         $app['type'] = $this->validator->getAppType($name);
         $app['custom'] = $this->validator->isCustomApp($name);
+        $app['env'] = $this->validator->getAppEnv($name);
         $app['suspended'] = $this->validator->isSuspended($name);
         $app['basic_auth'] = $this->validator->isBasicAuthEnabled($name);
         $app['engine'] = $this->validator->getAppEngine($name);

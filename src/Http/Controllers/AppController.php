@@ -28,6 +28,7 @@ class AppController extends Controller
                 'php' => $app['php'] ?? '',
                 'branch' => $app['branch'] ?? '',
                 'repository' => $app['repository'] ?? '',
+                'env' => $this->validator->getAppEnv($name),
                 'aliases' => $app['aliases'] ?? [],
                 'type' => $this->validator->getAppType($name),
                 'custom' => $this->validator->isCustomApp($name),
@@ -61,6 +62,7 @@ class AppController extends Controller
         $app['app'] = $name;
         $app['type'] = $this->validator->getAppType($name);
         $app['custom'] = $this->validator->isCustomApp($name);
+        $app['env'] = $this->validator->getAppEnv($name);
         $app['suspended'] = $this->validator->isSuspended($name);
         $app['basic_auth'] = $this->validator->isBasicAuthEnabled($name);
         $app['engine'] = $this->validator->getAppEngine($name);
@@ -103,12 +105,20 @@ class AppController extends Controller
             'health_path' => 'nullable|string|max:128',
             // Laravel asset build run inside every deploy (Cipi CLI ≥ 5.6.0)
             'node_build' => 'nullable|string|max:200',
+            // Environment label, production when omitted (Cipi CLI ≥ 5.8.0)
+            'env' => 'nullable|string|max:32',
         ]);
 
         if (isset($validated['repository'])) {
             $validated['repository'] = trim((string) $validated['repository']);
             if ($validated['repository'] === '') {
                 $validated['repository'] = null;
+            }
+        }
+        if (array_key_exists('env', $validated)) {
+            $validated['env'] = trim((string) $validated['env']);
+            if ($validated['env'] === '') {
+                unset($validated['env']);
             }
         }
         if ($request->boolean('custom') && empty($validated['repository'])) {
@@ -128,6 +138,9 @@ class AppController extends Controller
             return response()->json(['error' => $err], 422);
         }
         if ($err = $this->validator->octaneError($validated['octane'] ?? null)) {
+            return response()->json(['error' => $err], 422);
+        }
+        if ($err = $this->validator->envError($validated['env'] ?? null)) {
             return response()->json(['error' => $err], 422);
         }
         if (! empty($validated['engine'])) {
@@ -244,6 +257,8 @@ class AppController extends Controller
             'branch' => 'nullable|string|max:64',
             'repository' => 'nullable|string',
             'domain' => 'nullable|string',
+            // Environment label (Cipi CLI ≥ 5.8.0)
+            'env' => 'nullable|string|max:32',
             // Node fields (Cipi CLI ≥ 5.4.0): Node apps, plus node_version to pin a Laravel app
             'node' => 'nullable|string|max:16',
             'node_version' => 'nullable|string|max:8',
@@ -264,11 +279,16 @@ class AppController extends Controller
 
         $filtered = $this->validator->filterUnchangedAppEditFields($name, $validated);
         if (empty($filtered) && empty($nodeFields)) {
-            return response()->json(['error' => 'Nothing to change. Provide a different php, branch, repository, domain, or a Node field.'], 422);
+            return response()->json(['error' => 'Nothing to change. Provide a different php, branch, repository, domain, env, or a Node field.'], 422);
         }
 
         if (isset($filtered['php'])) {
             if ($err = $this->validator->phpInstalledError($filtered['php'])) {
+                return response()->json(['error' => $err], 422);
+            }
+        }
+        if (isset($filtered['env'])) {
+            if ($err = $this->validator->envError($filtered['env'])) {
                 return response()->json(['error' => $err], 422);
             }
         }

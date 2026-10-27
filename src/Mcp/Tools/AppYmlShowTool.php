@@ -12,7 +12,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Show an app\'s cipi.yml and what applying it would change (cipi yml plan --json): file (null when the live release has none), auto (applied after every successful deploy), valid + errors/warnings, changes [{kind, summary}], blockers (apply refuses while any is listed), notes, in_sync. Read-only. Requires Cipi 5.6.4+.')]
+#[Description('Show an app\'s cipi.yml and what applying it would change (cipi yml plan --json): file (null when the live release has none), env (the app\'s environment label; Cipi 5.8.0+ reads cipi-<env>.yml before cipi.yml), auto (applied after every successful deploy), valid + errors/warnings, changes [{kind, summary}], blockers (apply refuses while any is listed), notes, in_sync. Read-only. Requires Cipi 5.6.4+.')]
 #[IsReadOnly]
 class AppYmlShowTool extends Tool
 {

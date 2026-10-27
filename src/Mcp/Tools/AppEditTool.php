@@ -11,7 +11,7 @@ use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Edit an app: PHP, branch, repository, primary domain, or Node fields (mode/build/start/output/health_path on Node apps; node_version also pins a Laravel app to a Node major, "default" follows the server again). Validates synchronously, dispatches async job. Returns job_id for polling.')]
+#[Description('Edit an app: PHP, branch, repository, primary domain, env label (Cipi 5.8.0+, e.g. staging), or Node fields (mode/build/start/output/health_path on Node apps; node_version also pins a Laravel app to a Node major, "default" follows the server again). Validates synchronously, dispatches async job. Returns job_id for polling.')]
 class AppEditTool extends Tool
 {
     public function __construct(
@@ -35,6 +35,7 @@ class AppEditTool extends Tool
             'branch' => $request->get('branch'),
             'repository' => $request->get('repository'),
             'domain' => $request->get('domain'),
+            'env' => $request->get('env'),
         ], fn ($v) => $v !== null && $v !== ''));
 
         $nodeFields = array_filter([
@@ -48,10 +49,15 @@ class AppEditTool extends Tool
         $nodeFields = array_map(fn ($v) => trim($v), $nodeFields);
 
         if (empty($params) && empty($nodeFields)) {
-            return Response::text('Error: Nothing to change. Provide a different php, branch, repository, domain, or a Node field.');
+            return Response::text('Error: Nothing to change. Provide a different php, branch, repository, domain, env, or a Node field.');
         }
         if (isset($params['php'])) {
             if ($err = $this->validator->phpInstalledError($params['php'])) {
+                return Response::text("Error: {$err}");
+            }
+        }
+        if (isset($params['env'])) {
+            if ($err = $this->validator->envError($params['env'])) {
                 return Response::text("Error: {$err}");
             }
         }
@@ -107,6 +113,7 @@ class AppEditTool extends Tool
             'branch' => $schema->string()->description('Branch'),
             'repository' => $schema->string()->description('Repository URL'),
             'domain' => $schema->string()->description('New primary domain (previous primary becomes an alias; promoting an existing alias works too). Requires Cipi 4.6.2+'),
+            'env' => $schema->string()->description('Environment label (Cipi 5.8.0+): lowercase letters, digits, - and _, max 32 chars, e.g. production or staging. Cipi then reads cipi-<env>.yml before cipi.yml for the app.'),
             'node' => $schema->string()->description('Node app mode: spa, static or ssr (Node apps only, Cipi 5.4.0+)'),
             'node_version' => $schema->string()->description('Node major (22, 24, …). On a Laravel app this pins the app to that major; "default" follows the server default again'),
             'build' => $schema->string()->description('Node build command (Node apps only)'),

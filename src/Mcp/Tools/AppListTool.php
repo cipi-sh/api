@@ -10,7 +10,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('List all Cipi apps. Returns app names, domains, PHP versions, aliases, and type (laravel, custom, node).')]
+#[Description('List all Cipi apps. Returns app names, domains, PHP versions, branches, env labels (production unless set, Cipi 5.8.0+), aliases, and type (laravel, custom, node).')]
 #[IsReadOnly]
 class AppListTool extends Tool
 {
@@ -28,6 +28,7 @@ class AppListTool extends Tool
                 'domain' => $app['domain'] ?? '',
                 'php' => $app['php'] ?? '',
                 'branch' => $app['branch'] ?? '',
+                'env' => $this->validator->getAppEnv($name),
                 'aliases' => $app['aliases'] ?? [],
                 'type' => $this->validator->getAppType($name),
                 'custom' => $this->validator->isCustomApp($name),
