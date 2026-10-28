@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.36.1] - 2026-10-28
+
+Security release. `GET /api/jobs/{id}` was the one route without an ability: any token of the API, however narrow, could read any job's result and CLI output by id — and the output of `app-create`, `db-create` and `db-password` holds a password. Reported privately. No change to what is stored or to any other route. `cipi api update` brings it in, as does the nightly `cipi self-update` / `cipi-api-update` cron; Cipi 5.8.3 keeps the jobs that hold a password for a day instead of fourteen.
+
+### Security
+
+- **`GET /api/jobs/{id}` requires the ability the job was created under** (CWE-862, missing authorization). `app-create` needs `apps-create`, `db-password` `dbs-manage`, `app-deploy` `deploy-manage`, `app-artisan` `apps-artisan`, and so on: the table is `CipiJobAbilities::ABILITIES`, one ability per job type, the same one the route that queued the job enforces. A token without it gets the same `404 Job not found` as an unknown id, so an id alone tells nothing. Every token that could start a job can still poll it: the panel's token has every ability, a CI token reads the deploy it started.
+- `CipiJobService::dispatch()` refuses a job type missing from that table (`UnmappedJobTypeException`): a type added without an ability cannot be queued at all, let alone read by everybody.
+- MCP `JobShow` is unchanged: `mcp-access` is the one ability of every MCP tool, `DbPassword` included.
+
+### Changed
+
+- **OpenAPI** — `info.version` **1.36.1**; `/jobs/{id}` and the introduction describe the ability and the 404.
+
 ## [1.36.0] - 2026-10-27
 
 Per-app environments, covering Cipi 5.8.0: every app carries an `env` label (`production` unless set) and Cipi reads `cipi-<env>.yml` before `cipi.yml`. **Cipi CLI ≥ 5.8.0** for `--env` on `app create` / `app edit` and for `env` in the `yml plan` / `yml auto status` JSON; on older servers the API answers `env: production` everywhere (the projection has no key) and clients must not send `env`. No sudoers change: `app create *`, `app edit *` and `yml *` are already allowed.
