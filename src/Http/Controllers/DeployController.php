@@ -3,6 +3,7 @@
 namespace CipiApi\Http\Controllers;
 
 use CipiApi\Services\CipiDeployAuditCliService;
+use CipiApi\Services\CipiDeployStatusCliService;
 use CipiApi\Services\CipiJobService;
 use CipiApi\Services\CipiValidationService;
 use Illuminate\Http\JsonResponse;
@@ -15,6 +16,7 @@ class DeployController extends Controller
         protected CipiJobService $jobs,
         protected CipiValidationService $validator,
         protected CipiDeployAuditCliService $audit,
+        protected CipiDeployStatusCliService $status,
     ) {}
 
     public function deploy(string $name): JsonResponse
@@ -72,6 +74,34 @@ class DeployController extends Controller
             $records = $this->audit->show($name, (int) ($validated['days'] ?? 90));
 
             return response()->json(['data' => ['app' => $name, 'records' => $records]], 200);
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 503);
+        }
+    }
+
+    /**
+     * Is a deploy running for this app right now (Cipi CLI ≥ 5.8.4)? Synchronous.
+     * Reads the deploy log's banners and the live processes, so it sees a deploy
+     * whoever started it — Git webhook, CLI, panel, rollback — and how the last
+     * one ended. `tail` adds the last N lines of the deploy log (max 500).
+     *
+     * 503 on an older core: the flag is never sent to a Cipi that does not know
+     * it, because there `cipi deploy <app>` would start a deploy.
+     */
+    public function status(Request $request, string $name): JsonResponse
+    {
+        if (! $this->validator->appExists($name)) {
+            return response()->json(['error' => "App '{$name}' not found"], 404);
+        }
+
+        $validated = $request->validate([
+            'tail' => 'nullable|integer|min:0|max:' . CipiDeployStatusCliService::MAX_TAIL,
+        ]);
+
+        try {
+            $data = $this->status->show($name, (int) ($validated['tail'] ?? 0));
+
+            return response()->json(['data' => $data], 200);
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 503);
         }

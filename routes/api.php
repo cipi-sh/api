@@ -114,6 +114,8 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/apps/{name}/deploy/rollback', [DeployController::class, 'rollback'])->middleware('ability:deploy-manage');
     Route::post('/apps/{name}/deploy/unlock', [DeployController::class, 'unlock'])->middleware('ability:deploy-manage');
     Route::get('/apps/{name}/deploy/audit', [DeployController::class, 'audit'])->middleware('ability:deploy-manage');
+    // Cipi CLI ≥ 5.8.4: is a deploy running now (whoever started it)? 503 on an older core.
+    Route::get('/apps/{name}/deploy/status', [DeployController::class, 'status'])->middleware('ability:deploy-manage');
 
     // SSL
     Route::post('/apps/{name}/ssl', [SslController::class, 'install'])->middleware('ability:ssl-manage');

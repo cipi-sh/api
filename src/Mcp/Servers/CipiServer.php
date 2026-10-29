@@ -14,6 +14,7 @@ use CipiApi\Mcp\Tools\AppYmlApplyTool;
 use CipiApi\Mcp\Tools\AppYmlAutoTool;
 use CipiApi\Mcp\Tools\AppYmlShowTool;
 use CipiApi\Mcp\Tools\DeployAuditTool;
+use CipiApi\Mcp\Tools\DeployStatusTool;
 use CipiApi\Mcp\Tools\DiskDatabasesTool;
 use CipiApi\Mcp\Tools\DiskUsageTool;
 use CipiApi\Mcp\Tools\MonitorListTool;
@@ -84,7 +85,7 @@ use Laravel\Mcp\Server\Attributes\Version;
 use Laravel\Mcp\Server;
 
 #[Name('Cipi Server')]
-#[Version('1.6.0')]
+#[Version('1.7.0')]
 #[Instructions('Cipi server management: apps (Laravel, custom, Node) with an environment label each (production, staging, …), aliases, www redirects, app/path redirects, prefix proxies, databases (MariaDB/PostgreSQL), resource and soft disk limits, disk usage (server, apps, databases), cipi.yml (plan, apply, auto-apply after deploy; cipi-<env>.yml per environment), SSL (HTTP-01 or Cloudflare DNS-01 / wildcard), Meilisearch, deploy audit, monitor, jobs, logs, and server status. Requires mcp-access token ability only.')]
 class CipiServer extends Server
 {
@@ -149,6 +150,7 @@ class CipiServer extends Server
         NodeStatusTool::class,
         NodeRestartTool::class,
         DeployAuditTool::class,
+        DeployStatusTool::class,
         SearchStatusTool::class,
         SearchEnableTool::class,
         SearchDisableTool::class,

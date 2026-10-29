@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.37.0] - 2026-10-29
+
+A deploy started by a Git push was invisible while it ran: the panel learned of it from the audit ledger once it had ended, and whoever was watching the app saw nothing in between. Cipi 5.8.4 adds `cipi deploy <app> --status`, which reads the deploy log's start/end banners and the live processes and says whether a deploy is in flight whoever started it — webhook, CLI, panel, rollback. This release exposes it. **Cipi CLI ≥ 5.8.4** for the flag; no sudoers change (`cipi deploy *` is already allowed).
+
+### Added
+
+- **`GET /api/apps/{name}/deploy/status`** (ability `deploy-manage`, synchronous) — `state` is `running`, `queued` (a webhook push the per-minute cron has not picked up yet), `interrupted` (a run that never wrote its end banner and nothing is running it — the deploy lock may be stuck) or `idle`; `running` and `phase` (`deploy` while Deployer builds the release, `post-deploy` during the steps, cipi.yml and the healthcheck); `queued` and `locked`; `current` — the run in flight with `trigger` (`webhook`, `cli`, `panel`, `rollback`, or the source a cipi/agent trigger reported), `branch`, `from_release`, `started_at` (ISO 8601 with the server's offset), `elapsed` seconds and `pids`; `last` — how the previous run ended (`result` ok/failed, `kind` deploy/rollback, `release`, `duration`, `exit`, its trigger and times); `log`, the deploy log path. `?tail=N` (0-500) adds the last N lines of the deploy log as `tail`. 404 for an unknown app, 503 with the CLI's message on failure. `CipiDeployStatusCliService`.
+- **The call is refused with `503` on a core older than 5.8.4** — `Deploy status needs Cipi 5.8.4+ — this server runs Cipi 5.8.3. Run: cipi self-update` — and the flag is never sent there: on an older core `--status` is unknown to `cipi deploy` and the command would start a deploy. `CipiVersionService` reads `/etc/cipi/version` (`cipi version` as the fallback) and treats an unknown version as too old.
+- **MCP `DeployStatus`** — the same answer for an agent (`name`, optional `tail`), read-only.
+
+### Changed
+
+- **MCP server** — version 1.7.0: 77 tools, still one `tools/list` page.
+- **OpenAPI** — `info.version` **1.37.0**; the new path, `DeployStatusResponse`, and a **Deploy status** paragraph in the introduction.
+
+### Ecosystem
+
+- cipi/gui 4.1.0 polls this endpoint on an app's page to show a deploy in progress whoever started it — a Git push included — with its trigger and elapsed time, and to refresh the deploy list and log when it ends.
+
 ## [1.36.1] - 2026-10-28
 
 Security release. `GET /api/jobs/{id}` was the one route without an ability: any token of the API, however narrow, could read any job's result and CLI output by id — and the output of `app-create`, `db-create` and `db-password` holds a password. Reported privately. No change to what is stored or to any other route. `cipi api update` brings it in, as does the nightly `cipi self-update` / `cipi-api-update` cron; Cipi 5.8.3 keeps the jobs that hold a password for a day instead of fourteen.
