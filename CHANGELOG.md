@@ -2,6 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.39.0] - 2026-11-16
+
+The endpoints for what Cipi 5.9.0 adds, and for what the panel could not do: see when each app was last deployed, manage Node runtimes and backup profiles, show a database as an app's, upload a dump. Everything new answers `503` on a core older than 5.9.0, with the version it needs. Nothing existing changes.
+
+One of these closes a bug report — "deploys started by the webhook do not save how long they took". They do: the duration is in the deploy log's end banner. But `deploy.log` is rotated every night, and a client that read it through `GET /api/apps/{name}/logs?type=deploy` (cipi/gui did) found the banner only until the first rotation. A deploy somebody starts is looked at while it runs; one a push starts, the day after.
+
+A token for an integration that is meant to do everything had to be given every ability, one by one — and stopped being "everything" with the next release that added one. This release gives that role a name: a full-access token. Existing tokens are not changed.
+
+### Added
+
+- **Full-access tokens** — `php artisan cipi:token-create --name=<slug> --full-access` (or `--abilities=*`, or `full-access` in the list) creates a token with Sanctum's wildcard ability `*` instead of a list. Every check in the package goes through `tokenCan()`, which answers yes to a wildcard token: the `ability:` middleware of each REST route, `GET /api/jobs/{id}` (the ability of the job's type) and `/mcp` (`mcp-access`) — and it keeps answering yes for the abilities later versions add. The wildcard stands alone on the token: abilities passed next to it are dropped. From the Cipi CLI: `cipi api token create --full-access` (Cipi ≥ 5.9.0).
+- **`cipi:token-list`** shows such a token as `* (full access)`.
+- **`GET /api/apps/{name}/deploy/history`** (`apps-view` or `deploy-manage`; `limit` 1–500, default 30) — past deploys and rollbacks, newest first, from the deploy log and its rotated files: `result`, `kind`, `release`, `duration`, `exit`, `trigger`, `branch`, `from_release`, `started_at`, `finished_at`. **`GET /api/deploys/last`** — the last run of every app in one call, `null` for an app never deployed. Both go through `cipi deploy --history <app>` / `cipi deploy --last`, flag first: a core that does not know the flag answers "app not found" to that form and cannot deploy on it.
+- **Node runtimes** (ability **`node-runtimes-manage`**) — `POST /api/node/install`, `POST /api/node/upgrade` (optional `major`, `restart`), `PUT /api/node/default` (`major` or `system`), `DELETE /api/node/{major}`: async jobs `node-install`, `node-upgrade`, `node-default`, `node-remove`.
+- **Backups** (abilities **`backups-view`**, **`backups-manage`**) — `GET /api/backups` (destinations without keys, profiles with what each covers, last run, `overdue`, `running`, `uncovered`), `GET /api/backups/runs`, `POST /api/backups/run` (starts `cipi backup run --detach`, `202` at once), `POST /api/backups/verify` (job `backup-verify`), `POST /api/backups/profiles`, `PUT|DELETE /api/backups/profiles/{name}`, `POST /api/backups/profiles/{name}/enable|disable`, `POST /api/backups/destinations/test`. Profile fields are validated here with the shapes the CLI and `cipi.yml` use, and every value is quoted before it reaches the command line; what the CLI itself refuses comes back as `422` with its message.
+- **Databases linked to an app** — `POST /api/dbs` takes `app`; `POST|DELETE /api/dbs/{name}/link`; `GET /api/dbs` returns `app`, `link` and `size_mb` for each database (asked as JSON on Cipi 5.9.0+, the table parsed as before on an older core); `GET /api/apps` returns each app's `databases`.
+- **Dump upload** — `GET /api/dbs/uploads/limits`, `POST /api/dbs/uploads`, `POST /api/dbs/uploads/{id}/chunks`, `DELETE /api/dbs/uploads/{id}`, and `upload_id` on `POST /api/dbs/{name}/restore`. Chunked, so the dump does not have to fit one request; limited in size (`db_upload.max_mb`, default 2 GB), in chunk size and in how much may wait to be restored; `.sql` and `.sql.gz` only, the content checked against the name; stored 0600 in the API's storage and deleted when the restore job ends or after a day.
+- **`tests/standalone.php`** — 47 checks of the upload service, the backup flag builder, the deploy-history service and the command allow-list, runnable without `vendor/`.
+
+### Not added, on purpose
+
+- **Backup destinations stay read-only.** `cipi backup configure` and `cipi backup destination add|edit|remove` take an S3 secret key; the only way this API passes a value to the CLI is the command line. They are run on the server, and the API lists and tests what is there. `backup fetch`, `backup key`, `backup prune` and `profile remove --purge` stay there as well.
+- No MCP tools for the new endpoints in this release.
+
+### Changed
+
+- **`cipi:token-create`** refuses an empty ability list (the token could do nothing) and says so when an ability is not one of this API version's (`config/cipi.php`, `token_abilities`): it is kept on the token, as before, and grants nothing here.
+- **`POST /api/dbs/{name}/restore`** — `file` is required only without `upload_id`.
+- **`RunCipiCommand`** deletes the uploaded dump of a `db-restore` job when the job ends, also when it throws.
+- **OpenAPI** — `info.version` **1.39.0**; the new paths and tags **Backups**; the authentication paragraph mentions full-access tokens.
+
+### Requirements
+
+- **Cipi ≥ 5.9.0** for everything above (`cipi self-update`; migration 5.9.0 rewrites `/etc/sudoers.d/cipi-api`). A token created with a list of abilities needs the three new ones added — or is a full-access token (`--full-access`), which has them already.
+
 ## [1.37.0] - 2026-10-29
 
 A deploy started by a Git push was invisible while it ran: the panel learned of it from the audit ledger once it had ended, and whoever was watching the app saw nothing in between. Cipi 5.8.4 adds `cipi deploy <app> --status`, which reads the deploy log's start/end banners and the live processes and says whether a deploy is in flight whoever started it — webhook, CLI, panel, rollback. This release exposes it. **Cipi CLI ≥ 5.8.4** for the flag; no sudoers change (`cipi deploy *` is already allowed).

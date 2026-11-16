@@ -49,6 +49,11 @@ final class CipiJobAbilities
         'php-install' => 'php-manage',
         'service-restart' => 'services-manage',
         'node-restart' => 'node-manage',
+        'node-install' => 'node-runtimes-manage',
+        'node-upgrade' => 'node-runtimes-manage',
+        'node-default' => 'node-runtimes-manage',
+        'node-remove' => 'node-runtimes-manage',
+        'backup-verify' => 'backups-manage',
     ];
 
     public static function forType(string $type): ?string

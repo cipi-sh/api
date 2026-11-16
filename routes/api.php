@@ -7,6 +7,7 @@ use CipiApi\Http\Controllers\AppController;
 use CipiApi\Http\Controllers\AppRunController;
 use CipiApi\Http\Controllers\ArtisanController;
 use CipiApi\Http\Controllers\AuthJsonController;
+use CipiApi\Http\Controllers\BackupController;
 use CipiApi\Http\Controllers\BasicAuthController;
 use CipiApi\Http\Controllers\DbController;
 use CipiApi\Http\Controllers\DeployConfigController;
@@ -100,6 +101,12 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
 
     // Node apps + runtimes (Cipi CLI ≥ 5.4.0 + API sudoers ≥ 5.4.1)
     Route::get('/node', [NodeController::class, 'runtimes'])->middleware('ability:node-view');
+    // Node runtimes — install, upgrade, server default, remove (Cipi CLI ≥ 5.9.0 sudoers; 503 on an older core)
+    Route::post('/node/install', [NodeController::class, 'install'])->middleware('ability:node-runtimes-manage');
+    Route::post('/node/upgrade', [NodeController::class, 'upgrade'])->middleware('ability:node-runtimes-manage');
+    Route::put('/node/default', [NodeController::class, 'setDefault'])->middleware('ability:node-runtimes-manage');
+    Route::delete('/node/{major}', [NodeController::class, 'remove'])->middleware('ability:node-runtimes-manage')
+        ->where('major', '[0-9]{2}');
     Route::get('/apps/{name}/node', [NodeController::class, 'status'])->middleware('ability:node-view');
     Route::post('/apps/{name}/node/restart', [NodeController::class, 'restart'])->middleware('ability:node-manage');
 
@@ -116,6 +123,9 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::get('/apps/{name}/deploy/audit', [DeployController::class, 'audit'])->middleware('ability:deploy-manage');
     // Cipi CLI ≥ 5.8.4: is a deploy running now (whoever started it)? 503 on an older core.
     Route::get('/apps/{name}/deploy/status', [DeployController::class, 'status'])->middleware('ability:deploy-manage');
+    // Cipi CLI ≥ 5.9.0: past deploys with their duration (rotated logs included), and every app's last one.
+    Route::get('/apps/{name}/deploy/history', [DeployController::class, 'history'])->middleware('ability:apps-view,deploy-manage');
+    Route::get('/deploys/last', [DeployController::class, 'last'])->middleware('ability:apps-view,deploy-manage');
 
     // SSL
     Route::post('/apps/{name}/ssl', [SslController::class, 'install'])->middleware('ability:ssl-manage');
@@ -129,9 +139,29 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/dbs/engines/install', [DbController::class, 'installEngine'])->middleware('ability:dbs-manage');
     Route::get('/dbs', [DbController::class, 'list'])->middleware('ability:dbs-view');
     Route::post('/dbs', [DbController::class, 'create'])->middleware('ability:dbs-create');
+    // Dump upload in chunks, then POST /dbs/{name}/restore with upload_id (Cipi CLI ≥ 5.9.0)
+    Route::get('/dbs/uploads/limits', [DbController::class, 'uploadLimits'])->middleware('ability:dbs-manage');
+    Route::post('/dbs/uploads', [DbController::class, 'startUpload'])->middleware('ability:dbs-manage');
+    Route::post('/dbs/uploads/{id}/chunks', [DbController::class, 'uploadChunk'])->middleware('ability:dbs-manage')->whereUuid('id');
+    Route::delete('/dbs/uploads/{id}', [DbController::class, 'cancelUpload'])->middleware('ability:dbs-manage')->whereUuid('id');
+    // A database shown as an app's (Cipi CLI ≥ 5.9.0)
+    Route::post('/dbs/{name}/link', [DbController::class, 'link'])->middleware('ability:dbs-manage');
+    Route::delete('/dbs/{name}/link', [DbController::class, 'unlink'])->middleware('ability:dbs-manage');
     Route::post('/dbs/{name}/backup', [DbController::class, 'backup'])->middleware('ability:dbs-manage');
     Route::post('/dbs/{name}/restore', [DbController::class, 'restore'])->middleware('ability:dbs-manage');
     Route::post('/dbs/{name}/password', [DbController::class, 'password'])->middleware('ability:dbs-manage');
+
+    // Backup profiles (Cipi CLI ≥ 5.9.0; 503 on an older core). Destinations are created on the server.
+    Route::get('/backups', [BackupController::class, 'status'])->middleware('ability:backups-view');
+    Route::get('/backups/runs', [BackupController::class, 'runs'])->middleware('ability:backups-view');
+    Route::post('/backups/run', [BackupController::class, 'run'])->middleware('ability:backups-manage');
+    Route::post('/backups/verify', [BackupController::class, 'verify'])->middleware('ability:backups-manage');
+    Route::post('/backups/destinations/test', [BackupController::class, 'testDestinations'])->middleware('ability:backups-manage');
+    Route::post('/backups/profiles', [BackupController::class, 'createProfile'])->middleware('ability:backups-manage');
+    Route::put('/backups/profiles/{name}', [BackupController::class, 'updateProfile'])->middleware('ability:backups-manage');
+    Route::delete('/backups/profiles/{name}', [BackupController::class, 'deleteProfile'])->middleware('ability:backups-manage');
+    Route::post('/backups/profiles/{name}/enable', [BackupController::class, 'enableProfile'])->middleware('ability:backups-manage');
+    Route::post('/backups/profiles/{name}/disable', [BackupController::class, 'disableProfile'])->middleware('ability:backups-manage');
 
     // PHP versions (Cipi CLI ≥ 5.0.6)
     Route::get('/php', [PhpController::class, 'list'])->middleware('ability:php-view');

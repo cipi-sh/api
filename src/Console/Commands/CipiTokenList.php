@@ -29,6 +29,9 @@ class CipiTokenList extends Command
         $this->line('  ' . str_repeat('-', 90));
         foreach ($tokens as $token) {
             $abilities = $token->abilities ? implode(', ', $token->abilities) : 'none';
+            if (in_array('*', (array) $token->abilities, true)) {
+                $abilities = '* (full access)';
+            }
             $expires = $token->expires_at ? $token->expires_at->format('Y-m-d') : 'never';
             $this->line(sprintf('  %-20s %-50s %s', $token->name, $abilities, $expires));
         }

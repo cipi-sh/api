@@ -100,6 +100,24 @@ class CipiCliService
         'yml plan',
         'yml apply',
         'yml auto',
+        // Cipi CLI ≥ 5.9.0 (API sudoers ≥ 5.9.0). `deploy --last` and
+        // `deploy --history <app>` are covered by 'deploy ' above.
+        'node install',
+        'node default',
+        'node upgrade',
+        'node remove',
+        'db link',
+        'db unlink',
+        'backup status --json',
+        'backup list --json',
+        'backup run --detach',
+        'backup verify',
+        'backup profile add',
+        'backup profile edit',
+        'backup profile remove',
+        'backup profile enable',
+        'backup profile disable',
+        'backup destination test',
     ];
 
     /**
