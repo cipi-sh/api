@@ -33,7 +33,7 @@ return [
         'www-manage' => 'WWW / apex redirects',
         'dbs-view' => 'List databases',
         'dbs-create' => 'Create databases',
-        'dbs-manage' => 'Backup, restore, DB password, install engines',
+        'dbs-manage' => 'Backup, restore (file or uploaded dump), DB password, install engines, link to an app',
         'php-view' => 'List installed PHP versions',
         'php-manage' => 'Install PHP versions',
         'ssh-view' => 'List SSH keys (cipi user)',
@@ -50,6 +50,9 @@ return [
         'proxies-manage' => 'Manage prefix reverse proxies',
         'node-view' => 'View Node app status and runtimes',
         'node-manage' => 'Restart Node apps (blue/green)',
+        'node-runtimes-manage' => 'Install / upgrade / remove Node runtimes, set the server default',
+        'backups-view' => 'View backup destinations, profiles and runs',
+        'backups-manage' => 'Run and verify backups, manage backup profiles',
         'search-view' => 'View Meilisearch status',
         'search-manage' => 'Enable / disable search per app',
         'packages-view' => 'View optional host packages catalog',
@@ -62,6 +65,18 @@ return [
         'ip-whitelist-view' => 'View API IP whitelist',
         'ip-whitelist-manage' => 'Manage API IP whitelist',
         'mcp-access' => 'MCP server',
+    ],
+
+    /*
+    | Database dumps uploaded through the API (POST /api/dbs/uploads, Cipi CLI ≥ 5.9.0).
+    | max_mb    largest dump accepted (the file as sent: .sql.gz or .sql)
+    | chunk_mb  size of one piece; must fit upload_max_filesize / post_max_size (64M on a stock panel)
+    | spool_mb  how much the uploads waiting to be restored may take together
+    */
+    'db_upload' => [
+        'max_mb' => (int) env('CIPI_DB_UPLOAD_MAX_MB', 2048),
+        'chunk_mb' => (int) env('CIPI_DB_UPLOAD_CHUNK_MB', 8),
+        'spool_mb' => (int) env('CIPI_DB_UPLOAD_SPOOL_MB', 4096),
     ],
 
     'reserved_usernames' => [

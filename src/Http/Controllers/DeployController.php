@@ -3,6 +3,7 @@
 namespace CipiApi\Http\Controllers;
 
 use CipiApi\Services\CipiDeployAuditCliService;
+use CipiApi\Services\CipiDeployHistoryCliService;
 use CipiApi\Services\CipiDeployStatusCliService;
 use CipiApi\Services\CipiJobService;
 use CipiApi\Services\CipiValidationService;
@@ -17,6 +18,7 @@ class DeployController extends Controller
         protected CipiValidationService $validator,
         protected CipiDeployAuditCliService $audit,
         protected CipiDeployStatusCliService $status,
+        protected CipiDeployHistoryCliService $history,
     ) {}
 
     public function deploy(string $name): JsonResponse
@@ -102,6 +104,47 @@ class DeployController extends Controller
             $data = $this->status->show($name, (int) ($validated['tail'] ?? 0));
 
             return response()->json(['data' => $data], 200);
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 503);
+        }
+    }
+
+    /**
+     * Past deploys and rollbacks of an app, newest first (Cipi CLI ≥ 5.9.0):
+     * result, release, duration, exit code, trigger, branch, start and end.
+     * Read from the deploy log and its rotated files, so a deploy of last week
+     * — started by a Git push or by anything else — still has its duration.
+     * Synchronous; 503 on an older core.
+     */
+    public function history(Request $request, string $name): JsonResponse
+    {
+        if (! $this->validator->appExists($name)) {
+            return response()->json(['error' => "App '{$name}' not found"], 404);
+        }
+
+        $validated = $request->validate([
+            'limit' => 'nullable|integer|min:1|max:' . CipiDeployHistoryCliService::MAX_LIMIT,
+        ]);
+
+        try {
+            return response()->json(['data' => $this->history->history($name, (int) ($validated['limit'] ?? 30))], 200);
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 503);
+        }
+    }
+
+    /**
+     * The last finished deploy of every app in one call (Cipi CLI ≥ 5.9.0) —
+     * what an app list shows next to each name. `null` for an app that was
+     * never deployed. Synchronous; 503 on an older core.
+     */
+    public function last(): JsonResponse
+    {
+        try {
+            $apps = $this->history->last();
+
+            // An empty map must stay a JSON object, not become a list.
+            return response()->json(['data' => $apps === [] ? new \stdClass : $apps], 200);
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 503);
         }

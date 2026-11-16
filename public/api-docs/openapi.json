@@ -3,7 +3,7 @@
     "info": {
         "title": "Cipi API",
         "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`. Each endpoint names the ability it requires; a token created with `--full-access` (ability `*`) passes all of them, including the ones later versions add.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status: the token needs the ability the job was created under (`apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, \u2026 \u2014 since 1.36.1), otherwise `404`. **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Deploy status (Cipi >= 5.8.4):** `GET /apps/{name}/deploy/status` says whether a deploy is running right now \u2014 whoever started it: Git webhook, CLI, panel, rollback \u2014 with its trigger, branch, start time and elapsed seconds, and how the last one ended; `tail` adds the last lines of the deploy log (ability `deploy-manage`). `503` on an older core: the flag is never sent to a Cipi that does not know it.\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0), `GET /disk` and `GET /disk/dbs` (`disk-view`, Cipi >= 5.5.2 for the API sudoers) \u2014 the figures of `cipi disk --json` / `cipi disk db --json` (server filesystem, every app with files, database, total, share of the disk and soft limit; every database per engine), measured on request.\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).\n\n**App create & repository access (Cipi >= 5.6.0):** `POST /apps` accepts `node_build` (Laravel asset build run inside every deploy). The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access` (`ok` | `nobranch` | `denied`, with git's error and the CLI fix as `hint`): Cipi tests the deploy key against the repository on the spot.\n\n**cipi.yml (Cipi >= 5.6.4):** `GET /apps/{name}/yml` (ability `yml-view`) returns the app's cipi.yml plan: file, auto-apply, validity, changes, blockers. `POST /apps/{name}/yml/apply` applies it as an async job (`app-yml-apply`); `POST /apps/{name}/yml/auto/enable|disable` turn on or off the apply after every successful deploy (ability `yml-manage`). With auto-apply on, whoever can commit to the repository controls the app's server configuration.\n\n**Environments (Cipi >= 5.8.0):** every app carries an `env` label (`production` unless set). `POST /apps` and `PUT /apps/{name}` accept `env` (lowercase letters, digits, `-`, `_`, max 32 chars; 422 otherwise), app list/show return it, and the cipi.yml plan/auto responses report the `env` Cipi read the file for (`cipi-<env>.yml` before `cipi.yml`).",
-        "version": "1.38.0",
+        "version": "1.39.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -3168,7 +3168,7 @@
                     "Databases"
                 ],
                 "summary": "List databases",
-                "description": "Runs `sudo cipi db list` on the server (synchronous). Optional query `engine=mariadb|pgsql` filters to one engine (Cipi 4.8+). Returns engine, name, user, and size when available. Requires `dbs-view`.",
+                "description": "Runs `sudo cipi db list` on the server (synchronous). Optional query `engine=mariadb|pgsql` filters to one engine (Cipi 4.8+). Returns engine, name, user, and size when available. Requires `dbs-view`. On Cipi 5.9.0+ each database also carries `app` and `link` (`linked`, `own` \u2014 created with a Laravel app \u2014 or `namespace` \u2014 `<app>_\u2026`) and `size_mb`.",
                 "operationId": "dbList",
                 "responses": {
                     "200": {
@@ -3311,7 +3311,7 @@
                     "Databases"
                 ],
                 "summary": "Restore database",
-                "description": "Restore from a `.sql.gz` backup file path on the server. Optional `engine` (Cipi 4.8+). Dispatches async job. Requires `dbs-manage`.",
+                "description": "Restore from a `.sql.gz` backup file path on the server (`file`), or from a dump uploaded through `/dbs/uploads` (`upload_id`, Cipi 5.9.0+: `.sql` or `.sql.gz`; deleted when the job ends). Optional `engine` (Cipi 4.8+). Dispatches async job. Requires `dbs-manage`.",
                 "operationId": "dbRestore",
                 "parameters": [
                     {
@@ -3566,6 +3566,1455 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationError"
+                    }
+                }
+            }
+        },
+        "/apps/{name}/deploy/history": {
+            "get": {
+                "tags": [
+                    "Deploy"
+                ],
+                "summary": "Deploy history",
+                "description": "Past deploys and rollbacks of the app, newest first (`cipi deploy --history <app> --json`): result, release, duration, exit code, trigger, branch, start and end. Read from the deploy log **and its rotated files** \u2014 `deploy.log` is rotated every night, so reading it through `/apps/{name}/logs?type=deploy` loses the duration of every deploy older than the last rotation (a deploy started by a Git push is typically looked at the day after). Synchronous. Requires `apps-view` or `deploy-manage` and Cipi 5.9.0+ (`503` below; the command is sent flag-first, a form an older core cannot deploy on).",
+                "operationId": "deployHistory",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 500,
+                            "default": 30
+                        },
+                        "description": "How many runs (default 30)"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Runs",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeployHistoryResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/deploys/last": {
+            "get": {
+                "tags": [
+                    "Deploy"
+                ],
+                "summary": "Last deploy of every app",
+                "description": "The last finished deploy (or rollback) of every app in one call (`cipi deploy --last --json`) \u2014 what an app list shows next to each name. `null` for an app that was never deployed. Synchronous. Requires `apps-view` or `deploy-manage` and Cipi 5.9.0+ (`503` below).",
+                "operationId": "deploysLast",
+                "responses": {
+                    "200": {
+                        "description": "Last runs",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/DeployLastResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/node/install": {
+            "post": {
+                "tags": [
+                    "Node"
+                ],
+                "summary": "Install a Node major",
+                "description": "`cipi node install <major>`: the official build from nodejs.org, checksum-verified, next to the ones already installed. Async job. Requires `node-runtimes-manage` and the panel sudoers of Cipi 5.9.0+ (`503` on an older core).",
+                "operationId": "nodeInstall",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "major": {
+                                        "description": "An even Node major, e.g. `22` or `24`",
+                                        "type": "string",
+                                        "example": "24"
+                                    }
+                                },
+                                "required": [
+                                    "major"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/node/upgrade": {
+            "post": {
+                "tags": [
+                    "Node"
+                ],
+                "summary": "Upgrade Node to the latest patch",
+                "description": "`cipi node upgrade [major] [--restart]`: one major, or every installed one when `major` is omitted. With `restart` the SSR apps on it move to the new binary blue/green, with no downtime; without it they take it at their next deploy. Async job. Requires `node-runtimes-manage` and the panel sudoers of Cipi 5.9.0+ (`503` on an older core).",
+                "operationId": "nodeUpgrade",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "major": {
+                                        "description": "An even Node major, e.g. `22` or `24`",
+                                        "type": "string",
+                                        "example": "24",
+                                        "nullable": true
+                                    },
+                                    "restart": {
+                                        "description": "Restart SSR apps on the new binary (blue/green)",
+                                        "type": "boolean"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/node/default": {
+            "put": {
+                "tags": [
+                    "Node"
+                ],
+                "summary": "Set the server-wide Node",
+                "description": "`cipi node default <major>|system`: what Laravel asset builds and `cipi app run npm` use. Node apps and apps pinned to a major keep theirs; a major that is not installed is installed first. Async job. Requires `node-runtimes-manage` and the panel sudoers of Cipi 5.9.0+ (`503` on an older core).",
+                "operationId": "nodeDefault",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "major": {
+                                        "description": "An even major, or `system` for the NodeSource package",
+                                        "type": "string",
+                                        "example": "22"
+                                    }
+                                },
+                                "required": [
+                                    "major"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/node/{major}": {
+            "delete": {
+                "tags": [
+                    "Node"
+                ],
+                "summary": "Remove a Node major",
+                "description": "`cipi node remove <major>`. The CLI refuses a major an app uses or that is the server default: the job then fails with its message. Async job. Requires `node-runtimes-manage` and the panel sudoers of Cipi 5.9.0+ (`503` on an older core).",
+                "operationId": "nodeRemove",
+                "parameters": [
+                    {
+                        "name": "major",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[0-9]{2}$"
+                        },
+                        "description": "Node major"
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/backups": {
+            "get": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Backup status",
+                "description": "`cipi backup status --json`: the destinations (never their keys), every profile with what its globs cover right now, its last run, whether it is overdue or running, and the apps and databases no enabled profile takes. Writes nothing and sends no mail: safe to poll. Synchronous. Requires `backups-view`. Requires Cipi 5.9.0+ (`503` below).",
+                "operationId": "backupStatus",
+                "responses": {
+                    "200": {
+                        "description": "Status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BackupStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/runs": {
+            "get": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Backup runs held on each destination",
+                "description": "`cipi backup list --json [--profile=]`: per profile, the runs each destination holds, newest first. It lists every bucket, so allow a few seconds. Synchronous. Requires `backups-view`. Requires Cipi 5.9.0+ (`503` below).",
+                "operationId": "backupRuns",
+                "parameters": [
+                    {
+                        "name": "profile",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "description": "Only this profile"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Runs",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BackupRunsResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/run": {
+            "post": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Start a backup run",
+                "description": "Starts `cipi backup run --detach [--profile=]` and returns at once: one profile, or every enabled one when `profile` is omitted. The run goes on by itself on the server (output in backup.log) and shows in the status as `running`, then in `last`. Requires `backups-manage`. Requires Cipi 5.9.0+ (`503` below).",
+                "operationId": "backupRun",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "profile": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Started",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "started": {
+                                                    "type": "boolean"
+                                                },
+                                                "profile": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/verify": {
+            "post": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Verify the newest run",
+                "description": "`cipi backup verify [--profile=]`: reads the newest run back and checks that every archive opens. Async job (`backup-verify`). Requires `backups-manage`. Requires Cipi 5.9.0+ (`503` below).",
+                "operationId": "backupVerify",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "profile": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/destinations/test": {
+            "post": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Test S3 destinations",
+                "description": "`cipi backup destination test [name]`: lists each bucket with its own credentials. Synchronous; `ok` is false when one cannot be reached, with the CLI output. Requires `backups-manage`. Requires Cipi 5.9.0+ (`503` below).",
+                "operationId": "backupDestinationsTest",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "nullable": true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "ok": {
+                                                    "type": "boolean"
+                                                },
+                                                "output": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/profiles": {
+            "post": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Create a backup profile",
+                "description": "`cipi backup profile add <name> \u2026`. `name` and `destinations` are required; what else is omitted takes the CLI defaults (scope `all`, nightly at 02:00, 28 days). Synchronous: a profile the CLI refuses (an unknown destination, a scope with nothing to take) is a `422` with its message. Requires `backups-manage`. Requires Cipi 5.9.0+ (`503` below).",
+                "operationId": "backupProfileCreate",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/BackupProfileCreateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "profile": {
+                                                    "type": "string"
+                                                },
+                                                "saved": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/profiles/{name}": {
+            "put": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Update a backup profile",
+                "description": "`cipi backup profile edit <name> \u2026`: only the fields sent change (retention travels whole; an empty exclusion list clears it). Synchronous. Requires `backups-manage`. Requires Cipi 5.9.0+ (`503` below).",
+                "operationId": "backupProfileUpdate",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                        },
+                        "description": "Profile name"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/BackupProfileRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Updated",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "profile": {
+                                                    "type": "string"
+                                                },
+                                                "saved": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Remove a backup profile",
+                "description": "`cipi backup profile remove <name>`. The archives it wrote stay on every destination \u2014 `message` says how many and for how long; deleting them (`--purge`) is done on the server. Synchronous. Requires `backups-manage`. Requires Cipi 5.9.0+ (`503` below).",
+                "operationId": "backupProfileDelete",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                        },
+                        "description": "Profile name"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Removed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "profile": {
+                                                    "type": "string"
+                                                },
+                                                "removed": {
+                                                    "type": "boolean"
+                                                },
+                                                "message": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/profiles/{name}/enable": {
+            "post": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Enable a backup profile",
+                "description": "`cipi backup profile enable <name>`: back in the schedule. Synchronous. Requires `backups-manage`. Requires Cipi 5.9.0+ (`503` below).",
+                "operationId": "backupProfileEnable",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                        },
+                        "description": "Profile name"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Done",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "profile": {
+                                                    "type": "string"
+                                                },
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/profiles/{name}/disable": {
+            "post": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Disable a backup profile",
+                "description": "`cipi backup profile disable <name>`: kept, but out of the schedule and never overdue. Synchronous. Requires `backups-manage`. Requires Cipi 5.9.0+ (`503` below).",
+                "operationId": "backupProfileDisable",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                        },
+                        "description": "Profile name"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Done",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "profile": {
+                                                    "type": "string"
+                                                },
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/dbs/uploads/limits": {
+            "get": {
+                "tags": [
+                    "Databases"
+                ],
+                "summary": "Dump upload limits",
+                "description": "Maximum size of a dump, chunk size, accepted extensions (`config/cipi.php`, `db_upload`). Requires `dbs-manage` and Cipi 5.9.0+ (`503` below).",
+                "operationId": "dbUploadLimits",
+                "responses": {
+                    "200": {
+                        "description": "Limits",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "max_size": {
+                                                    "description": "Bytes",
+                                                    "type": "integer"
+                                                },
+                                                "chunk_size": {
+                                                    "description": "Bytes",
+                                                    "type": "integer"
+                                                },
+                                                "extensions": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/dbs/uploads": {
+            "post": {
+                "tags": [
+                    "Databases"
+                ],
+                "summary": "Start a dump upload",
+                "description": "First step of uploading a database dump: `filename` (`.sql` or `.sql.gz`) and its `size` in bytes. Then send it in chunks of `chunk_size`, in order, to `/dbs/uploads/{id}/chunks`, and restore it with `POST /dbs/{name}/restore` and `upload_id`. The dump is kept 0600 in the API's storage, opened by Cipi as the API's user (not root), deleted when the restore job ends and swept after a day if never restored. Requires `dbs-manage` and Cipi 5.9.0+ (`503` below).",
+                "operationId": "dbUploadStart",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "filename": {
+                                        "type": "string",
+                                        "example": "shop-2026-11-16.sql.gz"
+                                    },
+                                    "size": {
+                                        "description": "Bytes",
+                                        "type": "integer",
+                                        "minimum": 1
+                                    }
+                                },
+                                "required": [
+                                    "filename",
+                                    "size"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "Upload started",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "upload_id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                },
+                                                "size": {
+                                                    "type": "integer"
+                                                },
+                                                "chunk_size": {
+                                                    "type": "integer"
+                                                },
+                                                "chunks": {
+                                                    "type": "integer"
+                                                },
+                                                "max_size": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "507": {
+                        "description": "No room on the server: disk space, or too many uploads waiting",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/dbs/uploads/{id}/chunks": {
+            "post": {
+                "tags": [
+                    "Databases"
+                ],
+                "summary": "Upload one chunk",
+                "description": "Appends the next chunk (multipart). `index` starts at 0; a chunk that is not the next one is a `409` naming the index expected. Requires `dbs-manage` and Cipi 5.9.0+ (`503` below).",
+                "operationId": "dbUploadChunk",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Upload id"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "index": {
+                                        "type": "integer",
+                                        "minimum": 0
+                                    },
+                                    "chunk": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                },
+                                "required": [
+                                    "index",
+                                    "chunk"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Chunk stored",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "upload_id": {
+                                                    "type": "string"
+                                                },
+                                                "received": {
+                                                    "type": "integer"
+                                                },
+                                                "size": {
+                                                    "type": "integer"
+                                                },
+                                                "next": {
+                                                    "type": "integer"
+                                                },
+                                                "complete": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "409": {
+                        "$ref": "#/components/responses/Conflict"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "507": {
+                        "description": "The chunk could not be written",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/dbs/uploads/{id}": {
+            "delete": {
+                "tags": [
+                    "Databases"
+                ],
+                "summary": "Cancel a dump upload",
+                "description": "Deletes what arrived. Unknown ids are ignored. Requires `dbs-manage`.",
+                "operationId": "dbUploadCancel",
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "description": "Upload id"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Cancelled",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "upload_id": {
+                                                    "type": "string"
+                                                },
+                                                "cancelled": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    }
+                }
+            }
+        },
+        "/dbs/{name}/link": {
+            "post": {
+                "tags": [
+                    "Databases"
+                ],
+                "summary": "Link a database to an app",
+                "description": "`cipi db link <database> <app>`: shows the database as that app's \u2014 in `GET /dbs` (`app`, `link: linked`) and in the app's `databases`. A label: the database keeps its user and password and stays when the app is deleted; a database is linked to one app at most. Synchronous. Requires `dbs-manage` and Cipi 5.9.0+ (`503` below).",
+                "operationId": "dbLink",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/DbName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "app": {
+                                        "type": "string"
+                                    },
+                                    "engine": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "enum": [
+                                            "mariadb",
+                                            "pgsql"
+                                        ]
+                                    }
+                                },
+                                "required": [
+                                    "app"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Linked",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "database": {
+                                                    "type": "string"
+                                                },
+                                                "app": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "linked": {
+                                                    "type": "boolean"
+                                                },
+                                                "message": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Databases"
+                ],
+                "summary": "Unlink a database from its app",
+                "description": "`cipi db unlink <database>`. Synchronous. Requires `dbs-manage` and Cipi 5.9.0+ (`503` below).",
+                "operationId": "dbUnlink",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/DbName"
+                    },
+                    {
+                        "name": "engine",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "mariadb",
+                                "pgsql"
+                            ]
+                        },
+                        "description": "Engine, when the name exists on both"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Unlinked",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "database": {
+                                                    "type": "string"
+                                                },
+                                                "app": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "linked": {
+                                                    "type": "boolean"
+                                                },
+                                                "message": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.9.0, or a CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -4512,14 +5961,16 @@
                         ],
                         "description": "Database engine (server default when omitted). Cipi 4.8+.",
                         "example": "pgsql"
+                    },
+                    "app": {
+                        "description": "Show the database as this app's (`cipi db create --app=`, Cipi 5.9.0+; `503` on an older core)",
+                        "type": "string",
+                        "nullable": true
                     }
                 }
             },
             "DbRestoreRequest": {
                 "type": "object",
-                "required": [
-                    "file"
-                ],
                 "properties": {
                     "file": {
                         "type": "string",
@@ -4534,6 +5985,11 @@
                             "pgsql"
                         ],
                         "description": "Database engine when ambiguous. Cipi 4.8+."
+                    },
+                    "upload_id": {
+                        "description": "Id of a dump uploaded through `/dbs/uploads` (Cipi 5.9.0+). Give this or `file`.",
+                        "type": "string",
+                        "format": "uuid"
                     }
                 }
             },
@@ -6939,6 +8395,546 @@
                         "example": []
                     }
                 }
+            },
+            "DeployRun": {
+                "type": "object",
+                "properties": {
+                    "result": {
+                        "type": "string",
+                        "enum": [
+                            "ok",
+                            "failed"
+                        ]
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "deploy",
+                            "rollback"
+                        ]
+                    },
+                    "release": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "duration": {
+                        "description": "Seconds",
+                        "type": "integer"
+                    },
+                    "exit": {
+                        "type": "integer"
+                    },
+                    "trigger": {
+                        "description": "webhook, cli, panel, \u2026",
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "branch": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "from_release": {
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "started_at": {
+                        "description": "ISO 8601 with the server's offset",
+                        "type": "string",
+                        "nullable": true
+                    },
+                    "finished_at": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "DeployHistoryResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": {
+                                "type": "string"
+                            },
+                            "count": {
+                                "type": "integer"
+                            },
+                            "runs": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/DeployRun"
+                                }
+                            },
+                            "log": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "DeployLastResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "description": "App name \u2192 its last finished run, or null when it was never deployed",
+                        "additionalProperties": {
+                            "allOf": [
+                                {
+                                    "$ref": "#/components/schemas/DeployRun"
+                                }
+                            ],
+                            "nullable": true
+                        }
+                    }
+                }
+            },
+            "BackupProfileRequest": {
+                "type": "object",
+                "properties": {
+                    "scope": {
+                        "description": "What a run takes",
+                        "type": "string",
+                        "enum": [
+                            "all",
+                            "files",
+                            "db"
+                        ]
+                    },
+                    "apps": {
+                        "description": "App names or globs (files)",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "databases": {
+                        "description": "Database names or globs, e.g. `shop`, `tenant_*`",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "exclude_databases": {
+                        "description": "On update an empty list clears it",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "exclude_tables": {
+                        "description": "`db.table` globs, e.g. `*.jobs`",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "every": {
+                        "description": "`30m`, `6h`, `1d` \u2014 or `cron`",
+                        "type": "string",
+                        "example": "6h"
+                    },
+                    "cron": {
+                        "description": "Five-field cron expression \u2014 or `every`",
+                        "type": "string",
+                        "example": "0 2 * * *"
+                    },
+                    "destinations": {
+                        "description": "`local`, `s3` (the default bucket) or named destinations",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "keep": {
+                        "description": "Runs to keep (retention: the three values travel together)",
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "keep_days": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "keep_weeks": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "encrypt": {
+                        "description": "Client-side AES-256; the key is created on the server on first use",
+                        "type": "boolean"
+                    }
+                }
+            },
+            "BackupProfileCreateRequest": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "description": "Lowercase letters, digits and dashes, 2-32 characters",
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                    },
+                    "scope": {
+                        "description": "What a run takes",
+                        "type": "string",
+                        "enum": [
+                            "all",
+                            "files",
+                            "db"
+                        ]
+                    },
+                    "apps": {
+                        "description": "App names or globs (files)",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "databases": {
+                        "description": "Database names or globs, e.g. `shop`, `tenant_*`",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "exclude_databases": {
+                        "description": "On update an empty list clears it",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "exclude_tables": {
+                        "description": "`db.table` globs, e.g. `*.jobs`",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "every": {
+                        "description": "`30m`, `6h`, `1d` \u2014 or `cron`",
+                        "type": "string",
+                        "example": "6h"
+                    },
+                    "cron": {
+                        "description": "Five-field cron expression \u2014 or `every`",
+                        "type": "string",
+                        "example": "0 2 * * *"
+                    },
+                    "destinations": {
+                        "description": "`local`, `s3` (the default bucket) or named destinations",
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "keep": {
+                        "description": "Runs to keep (retention: the three values travel together)",
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "keep_days": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "keep_weeks": {
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "encrypt": {
+                        "description": "Client-side AES-256; the key is created on the server on first use",
+                        "type": "boolean"
+                    }
+                },
+                "required": [
+                    "name",
+                    "destinations"
+                ]
+            },
+            "BackupStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "configured": {
+                                "type": "boolean"
+                            },
+                            "local_dir": {
+                                "type": "string",
+                                "nullable": true
+                            },
+                            "encryption_key": {
+                                "description": "Whether the encryption key exists on the server",
+                                "type": "boolean"
+                            },
+                            "destinations": {
+                                "description": "Never includes access keys or secrets",
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "type": {
+                                            "type": "string",
+                                            "enum": [
+                                                "local",
+                                                "s3"
+                                            ]
+                                        },
+                                        "path": {
+                                            "type": "string"
+                                        },
+                                        "bucket": {
+                                            "type": "string"
+                                        },
+                                        "region": {
+                                            "type": "string",
+                                            "nullable": true
+                                        },
+                                        "endpoint": {
+                                            "type": "string",
+                                            "nullable": true
+                                        },
+                                        "default": {
+                                            "type": "boolean"
+                                        },
+                                        "profiles": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "profiles": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "scope": {
+                                            "type": "string"
+                                        },
+                                        "enabled": {
+                                            "type": "boolean"
+                                        },
+                                        "cron": {
+                                            "type": "string",
+                                            "nullable": true
+                                        },
+                                        "interval_seconds": {
+                                            "type": "integer",
+                                            "nullable": true
+                                        },
+                                        "apps": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "databases": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "exclude_databases": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "exclude_tables": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "destinations": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "retention": {
+                                            "type": "object",
+                                            "properties": {
+                                                "keep": {
+                                                    "type": "integer"
+                                                },
+                                                "days": {
+                                                    "type": "integer"
+                                                },
+                                                "weeks": {
+                                                    "type": "integer"
+                                                }
+                                            }
+                                        },
+                                        "encrypt": {
+                                            "type": "boolean"
+                                        },
+                                        "created_at": {
+                                            "type": "integer",
+                                            "nullable": true
+                                        },
+                                        "covers": {
+                                            "type": "object",
+                                            "properties": {
+                                                "apps": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "databases": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "engine": {
+                                                                "type": "string"
+                                                            },
+                                                            "name": {
+                                                                "type": "string"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        "last": {
+                                            "type": "object",
+                                            "properties": {
+                                                "status": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "detail": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "started_at": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "finished_at": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "epoch": {
+                                                    "type": "integer",
+                                                    "nullable": true
+                                                },
+                                                "last_success_epoch": {
+                                                    "type": "integer",
+                                                    "nullable": true
+                                                }
+                                            },
+                                            "nullable": true
+                                        },
+                                        "overdue": {
+                                            "description": "No success within twice the profile's interval",
+                                            "type": "boolean"
+                                        },
+                                        "running": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            },
+                            "apps": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "databases": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "engine": {
+                                            "type": "string"
+                                        },
+                                        "name": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            },
+                            "uncovered": {
+                                "type": "object",
+                                "properties": {
+                                    "apps": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "databases": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "engine": {
+                                                    "type": "string"
+                                                },
+                                                "name": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "BackupRunsResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "profiles": {
+                                "type": "object",
+                                "additionalProperties": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "run": {
+                                                "description": "Timestamp of the run",
+                                                "type": "string",
+                                                "example": "2026-11-16_020000"
+                                            },
+                                            "destinations": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            "errors": {
+                                "description": "Buckets that could not be listed",
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         "responses": {
@@ -7082,6 +9078,10 @@
         {
             "name": "cipi.yml",
             "description": "An app's cipi.yml: plan, apply (async job `app-yml-apply`) and automatic apply after every deploy (Cipi 5.6.4+) \u2014 abilities `yml-view`, `yml-manage`"
+        },
+        {
+            "name": "Backups",
+            "description": "Backup profiles, runs and destinations (Cipi 5.9.0+). Destinations are created on the server: they take an S3 secret key."
         }
     ]
 }

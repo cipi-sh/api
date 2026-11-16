@@ -46,6 +46,8 @@ class AppController extends Controller
                 'force_https' => $this->validator->isForceHttps($name),
                 'suspended' => $this->validator->isSuspended($name),
                 'basic_auth' => $this->validator->isBasicAuthEnabled($name),
+                // Databases linked with `cipi db link` / `db create --app=` (Cipi CLI ≥ 5.9.0).
+                'databases' => is_array($app['databases'] ?? null) ? array_values($app['databases']) : [],
                 'created_at' => $app['created_at'] ?? '',
             ];
         }
