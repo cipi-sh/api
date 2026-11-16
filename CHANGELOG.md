@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.39.1] - 2026-11-16
+
+What `GET /api/backups` answers is either a backup status or an error that says why there is none; and the API reports its own version. No route, ability or request changes.
+
+### Fixed
+
+- **`GET /api/backups` never answers 200 without a status.** The answer of `cipi backup status --json` was passed on as it came, whatever it was: an empty object became `{"data": []}`, and a client read "backups are not configured" out of it (cipi/gui 4.2.0 did). The answer must now carry `configured` as a boolean; anything else is a `503` that says so, with the command to read the same on the server.
+- **A line printed around the JSON no longer turns a good answer into "returned no JSON".** stderr is read with stdout, so a warning from sudo (`sudo: unable to resolve host …`) before the object, or a notice after it, made `json_decode` fail and the whole Backups page "not available". The object is taken from its first `{` to its last `}`, as the disk and `cipi.yml` services already do. When there really is no JSON, the error quotes what was printed instead.
+- **sudo refusing the command is reported as that.** `sudo: a password is required` said nothing about its cause: the rule the panel runs `cipi` through (`/etc/sudoers.d/cipi-api`) lists every command by name, and the backup ones are written by the migration of Cipi 5.9.0. The error now names the command, sudo's own sentence, the file, and how to check it. A warning from sudo next to an error of the CLI is not mistaken for a refusal.
+
+### Added
+
+- **`GET /api/backups` says where its answer comes from**: `host` (the server's hostname) and `config_file` (`/etc/cipi/backup.json`, the file `cipi backup configure` writes and `cipi backup status` looks for). With `configured: false`, that is what tells "never configured" from "configured on another server" or "the panel does not see what a shell sees".
+- **`GET /api/status` → `system.api`**: the installed cipi/api release (`1.39.1`; a branch build reads `dev-main`), next to `system.cipi`. Left out when Composer cannot tell. The MCP `ServerStatus` tool returns the same snapshot.
+- `tests/standalone.php`: 23 more checks (70) — the status in each shape, sudo's and sudo-rs's refusals, the version.
+
 ## [1.39.0] - 2026-11-16
 
 The endpoints for what Cipi 5.9.0 adds, and for what the panel could not do: see when each app was last deployed, manage Node runtimes and backup profiles, show a database as an app's, upload a dump. Everything new answers `503` on a core older than 5.9.0, with the version it needs. Nothing existing changes.

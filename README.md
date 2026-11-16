@@ -35,7 +35,7 @@ php artisan cipi:token-create
 - **IP whitelist** — optional client IP allowlist for `/api/*` and `/mcp` (`/etc/cipi/api-ip-whitelist`, default `*` = allow all). Manage with `cipi api ip-whitelist` or `GET|PUT|POST|DELETE /api/ip-whitelist` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Requires **Cipi ≥ 5.0.8**.
 - **MCP Server** — Model Context Protocol endpoint at `/mcp` for AI-powered integrations.
 - **Swagger Docs** — Interactive API reference at `/docs`, generated from `public/api-docs/openapi.json`. The spec covers apps (including env, auth.json, artisan), aliases, www, deploy, SSL, databases (`GET /api/dbs` / `/dbs/engines` via CLI; other `/api/dbs/*` actions use jobs), and job polling (including structured `result` types per job).
-- **Since 1.39.0 (Cipi 5.9.0)** — deploy history and every app's last deploy, Node runtimes (install, upgrade, default, remove), backup profiles and runs, databases linked to an app, and database dumps uploaded in chunks. See *Configuration* below.
+- **Since 1.39.0 (Cipi 5.9.0)** — deploy history and every app's last deploy, Node runtimes (install, upgrade, default, remove), backup profiles and runs, databases linked to an app, and database dumps uploaded in chunks. See *Configuration* below. **1.39.1:** `GET /api/status` reports the installed API release as `system.api`; `GET /api/backups` always carries `configured` (an answer without it is a `503`, never an empty `200`) and says where it comes from with `host` and `config_file`.
 - **Artisan Commands** — `cipi:token-create`, `cipi:token-list`, `cipi:token-revoke`.
 
 ## MCP Integration
