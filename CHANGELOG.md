@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.38.0] - 2026-11-16
+
+A token for an integration that is meant to do everything had to be given every ability, one by one — and stopped being "everything" with the next release that added one. This release gives that role a name. No change to existing tokens, to any route or to the sudoers file.
+
+### Added
+
+- **Full-access tokens** — `php artisan cipi:token-create --name=<slug> --full-access` (or `--abilities=*`, or `full-access` in the list) creates a token with Sanctum's wildcard ability `*` instead of a list. Every check in the package goes through `tokenCan()`, which answers yes to a wildcard token: the `ability:` middleware of each REST route, `GET /api/jobs/{id}` (the ability of the job's type) and `/mcp` (`mcp-access`) — and it keeps answering yes for the abilities later versions add. The wildcard stands alone on the token: abilities passed next to it are dropped. From the Cipi CLI: `cipi api token create --full-access` (Cipi ≥ 5.8.6).
+- **`cipi:token-list`** shows such a token as `* (full access)`.
+
+### Changed
+
+- **`cipi:token-create`** refuses an empty ability list (the token could do nothing) and says so when an ability is not one of this API version's (`config/cipi.php`, `token_abilities`): it is kept on the token, as before, and grants nothing here.
+- **OpenAPI** — `info.version` **1.38.0**; the authentication paragraph mentions full-access tokens.
+
 ## [1.37.0] - 2026-10-29
 
 A deploy started by a Git push was invisible while it ran: the panel learned of it from the audit ledger once it had ended, and whoever was watching the app saw nothing in between. Cipi 5.8.4 adds `cipi deploy <app> --status`, which reads the deploy log's start/end banners and the live processes and says whether a deploy is in flight whoever started it — webhook, CLI, panel, rollback. This release exposes it. **Cipi CLI ≥ 5.8.4** for the flag; no sudoers change (`cipi deploy *` is already allowed).
