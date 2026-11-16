@@ -20,12 +20,40 @@ class CipiServerStatusService
 
     public function snapshot(): array
     {
-        $fromCli = $this->snapshotFromCli();
-        if ($fromCli !== null) {
-            return $fromCli;
+        $snapshot = $this->snapshotFromCli() ?? $this->snapshotFromHost();
+
+        // The version of this package, next to the core's (`system.cipi`):
+        // a panel shows what the server runs instead of what it was built for.
+        $api = self::apiVersion();
+        if ($api !== null && is_array($snapshot['system'] ?? null)) {
+            $snapshot['system']['api'] = $api;
         }
 
-        return $this->snapshotFromHost();
+        return $snapshot;
+    }
+
+    /**
+     * The installed cipi/api release ("1.39.1"), as Composer recorded it;
+     * a branch build reads "dev-main". Null when it cannot be told.
+     */
+    public static function apiVersion(): ?string
+    {
+        if (! class_exists(\Composer\InstalledVersions::class)) {
+            return null;
+        }
+
+        try {
+            if (! \Composer\InstalledVersions::isInstalled('cipi/api')) {
+                return null;
+            }
+            $version = \Composer\InstalledVersions::getPrettyVersion('cipi/api');
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $version = is_string($version) ? ltrim(trim($version), 'vV') : '';
+
+        return $version !== '' && preg_match('/^[A-Za-z0-9._+\/-]{1,40}$/', $version) ? $version : null;
     }
 
     /**

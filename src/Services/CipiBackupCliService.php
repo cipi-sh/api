@@ -21,6 +21,9 @@ class CipiBackupCliService
 {
     public const MIN_CIPI = '5.9.0';
 
+    /** What `cipi backup configure` writes and `cipi backup status` looks for. */
+    public const CONFIG_FILE = '/etc/cipi/backup.json';
+
     public const SCOPES = ['all', 'files', 'db'];
 
     /** Same shapes the CLI and cipi.yml accept. */
@@ -63,7 +66,24 @@ class CipiBackupCliService
     {
         $this->requireCore();
 
-        return $this->json('backup status --json', 'cipi backup status');
+        $status = $this->json('backup status --json', 'cipi backup status');
+
+        // "Not configured" is the CLI's to say, in so many words. An answer
+        // that is JSON but carries no `configured` (an empty object, another
+        // command's output) is not that answer: a client would draw a server
+        // without backups out of it.
+        if (! is_bool($status['configured'] ?? null)) {
+            throw new \RuntimeException('cipi backup status --json answered without a backup status (no "configured" in it). Read it on the server: sudo -u www-data sudo -n /usr/local/bin/cipi backup status --json');
+        }
+
+        // Where the answer comes from, for whoever reads "not configured" on
+        // a server they configured: which host, and the file the CLI looks for.
+        $host = gethostname();
+
+        return $status + [
+            'host' => is_string($host) && $host !== '' ? $host : null,
+            'config_file' => self::CONFIG_FILE,
+        ];
     }
 
     /**
@@ -325,15 +345,66 @@ class CipiBackupCliService
     protected function json(string $command, string $label): array
     {
         $result = $this->cli->run($command);
+        $output = (string) ($result['output'] ?? '');
         if ($result['exit_code'] !== 0) {
-            throw new \RuntimeException($this->firstError($result['output'] ?? '', "{$label} failed"));
+            throw new \RuntimeException($this->refusedBySudo($output, $command) ?? $this->firstError($output, "{$label} failed"));
         }
-        $decoded = json_decode(trim($result['output'] ?? ''), true);
-        if (! is_array($decoded)) {
-            throw new \RuntimeException("{$label} returned no JSON (Cipi CLI ≥ " . self::MIN_CIPI . ' required)');
+        $decoded = $this->decode($output);
+        if ($decoded === null) {
+            $said = $this->strip($output);
+            $said = $said === '' ? 'nothing' : '"' . mb_substr((string) preg_replace('/\s+/', ' ', $said), 0, 200) . '"';
+
+            throw new \RuntimeException("{$label} returned no JSON (Cipi CLI ≥ " . self::MIN_CIPI . " required) — it printed {$said}");
         }
 
         return $decoded;
+    }
+
+    /**
+     * The JSON object in the CLI's output. stderr is read together with
+     * stdout, so a line sudo or the shell prints around it ("sudo: unable to
+     * resolve host …") must not turn a good answer into "no JSON": the object
+     * is then taken from its first `{` to its last `}`, as the disk and
+     * cipi.yml services do.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function decode(string $output): ?array
+    {
+        $output = trim($output);
+        $decoded = json_decode($output, true);
+        if (! is_array($decoded)) {
+            $start = strpos($output, '{');
+            $end = strrpos($output, '}');
+            if ($start !== false && $end !== false && $end > $start) {
+                $decoded = json_decode(substr($output, $start, $end - $start + 1), true);
+            }
+        }
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
+     * sudo refusing the command, said as what it is. The rule the panel runs
+     * `cipi` through (/etc/sudoers.d/cipi-api) lists every command by name;
+     * the backup ones are written by Cipi 5.9.0's migration. A server whose
+     * rule is older answers with sudo's own sentence, which says nothing of
+     * that.
+     */
+    protected function refusedBySudo(string $output, string $command): ?string
+    {
+        $plain = $this->strip($output);
+        // sudo's and sudo-rs's refusals. Not every line sudo prints: "unable
+        // to resolve host" is a warning, and the command still ran.
+        if (! preg_match('/^.*(a password is required|a terminal is required|is not allowed to (?:run|execute)|not in the sudoers|may not run sudo|I\'m afraid I can\'t do that).*$/mi', $plain, $m)) {
+            return null;
+        }
+        $said = mb_substr(trim($m[0]), 0, 200);
+        $verb = implode(' ', array_slice(explode(' ', $command), 0, 2));
+
+        return "sudo refused `cipi {$verb}` for the panel ({$said}). The rule in /etc/sudoers.d/cipi-api does not list it: "
+            . 'the migration of Cipi ' . self::MIN_CIPI . ' writes it (cipi self-update). Check the file on the server: '
+            . "visudo -cf /etc/sudoers.d/cipi-api && grep -c 'cipi backup' /etc/sudoers.d/cipi-api";
     }
 
     protected function plain(string $command, string $label): string

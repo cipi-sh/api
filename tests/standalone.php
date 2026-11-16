@@ -18,19 +18,32 @@ namespace Illuminate\Support {
         }
     }
 }
+namespace Composer {
+    // What Composer writes for an installed package, as far as the status service asks.
+    class InstalledVersions {
+        public static array $pretty = [];
+        public static function isInstalled(string $package): bool { return array_key_exists($package, self::$pretty); }
+        public static function getPrettyVersion(string $package): ?string { return self::$pretty[$package] ?? null; }
+    }
+}
 namespace {
     $GLOBALS['T'] = sys_get_temp_dir() . '/cipi-api-t-' . getmypid();
     $GLOBALS['CFG'] = ['cipi.db_upload.max_mb' => 1, 'cipi.db_upload.chunk_mb' => 1, 'cipi.db_upload.spool_mb' => 1];
     function storage_path(string $p = ''): string { return $GLOBALS['T'] . '/storage/' . $p; }
     function config(string $k, mixed $d = null): mixed { return $GLOBALS['CFG'][$k] ?? $d; }
     $src = ($argv[1] ?? dirname(__DIR__)) . '/src/Services/';
-    foreach (['CipiCliService', 'CipiVersionService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService'] as $c) {
+    foreach (['CipiCliService', 'CipiVersionService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService'] as $c) {
         require $src . $c . '.php';
     }
 
     class FakeVersion extends CipiApi\Services\CipiVersionService {
         public function __construct(public ?string $v) {}
         public function installed(): ?string { return $this->v; }
+    }
+    class FakeStatus extends CipiApi\Services\CipiServerStatusService {
+        public ?array $fromCli = null;
+        protected function snapshotFromCli(): ?array { return $this->fromCli; }
+        protected function snapshotFromHost(): array { return ['system' => ['hostname' => 'host-read'], 'apps' => 0]; }
     }
     class FakeCli extends CipiApi\Services\CipiCliService {
         public array $ran = [];
@@ -125,6 +138,63 @@ namespace {
     ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.8.5')))->status()), 'needs Cipi 5.9.0+'), 'an older core is refused');
     $n = count($cli->ran); $r = $cli->run('backup configure'); $r2 = $cli->run('backup destination add x --secret=s'); $r3 = $cli->run('backup run --profile=x'); $r4 = $cli->run('backup key show');
     ok(! $r['success'] && ! $r2['success'] && ! $r3['success'] && ! $r4['success'] && count($cli->ran) === $n, 'not on the allow-list: backup configure, destination add, key, a run that is not detached');
+
+    echo "--- backup status (1.39.1)\n";
+    $cli = new FakeCli; $bk = new CipiApi\Services\CipiBackupCliService($cli, new FakeVersion('5.9.0'));
+    $answer = fn (string $output, int $exit = 0) => $cli->next = ['output' => $output, 'exit_code' => $exit, 'success' => $exit === 0];
+    $configured = '{"configured": true, "local_dir": "/var/backups/cipi", "destinations": [{"name": "local"}], "profiles": [{"name": "nightly"}]}';
+    $answer($configured);
+    $st = $bk->status();
+    ok($st['configured'] === true && $st['profiles'][0]['name'] === 'nightly' && $st['config_file'] === '/etc/cipi/backup.json' && $st['host'] === gethostname(), 'a configured server: the CLI\'s answer, plus the host and the file it looks for');
+    ok(end($cli->ran) === 'backup status --json', 'asked with: cipi backup status --json');
+    $answer('{"configured": false, "profiles": [], "destinations": []}');
+    $st = $bk->status();
+    ok($st['configured'] === false && $st['config_file'] === '/etc/cipi/backup.json' && is_string($st['host']), '"not configured" is passed on only when the CLI says it, with where it looked');
+    $answer('{"configured": false, "config_file": "/srv/cipi/backup.json", "host": "from-the-cli"}');
+    $st = $bk->status();
+    ok($st['config_file'] === '/srv/cipi/backup.json' && $st['host'] === 'from-the-cli', 'a core that says where it looked is believed over the default');
+    foreach (['an empty object' => '{}', 'an empty list' => '[]', 'another shape' => '{"profiles": {}, "errors": []}', 'a flag that is not one' => '{"configured": "yes"}', 'a null flag' => '{"configured": null}'] as $what => $out) {
+        $answer($out);
+        ok(str_starts_with((string) thrown(fn () => $bk->status()), 'RuntimeException: cipi backup status --json answered without a backup status'), "{$what} is refused: no client can read \"not configured\" out of it");
+    }
+    $answer("sudo: unable to resolve host fra1: Name or service not known\n" . $configured . "\n");
+    ok(($bk->status()['configured'] ?? null) === true, 'a line sudo prints before the JSON does not turn the answer into "no JSON"');
+    $answer($configured . "\n\033[2m→ shop (default app — cipi use)\033[0m");
+    ok(($bk->status()['configured'] ?? null) === true, 'nor does one after it');
+    $answer("\n  Backup\n  Not configured — run: cipi backup configure\n");
+    $e = (string) thrown(fn () => $bk->status());
+    ok(str_contains($e, 'returned no JSON') && str_contains($e, 'it printed "Backup Not configured'), 'text instead of JSON is an error that quotes what was printed: ' . substr($e, 18, 90) . '…');
+    $answer('');
+    ok(str_contains((string) thrown(fn () => $bk->status()), 'it printed nothing'), 'so is no output at all');
+    $answer("sudo: a terminal is required to read the password; either use the -S option to read from standard input or configure an askpass helper\nsudo: a password is required", 1);
+    $e = (string) thrown(fn () => $bk->status());
+    ok(str_contains($e, 'sudo refused `cipi backup status` for the panel') && str_contains($e, '/etc/sudoers.d/cipi-api') && str_contains($e, 'a terminal is required'), 'sudo refusing the command is said as that, with the file to look at');
+    $answer("Sorry, user www-data is not allowed to execute '/usr/local/bin/cipi backup status --json' as root on fra1.", 1);
+    ok(str_contains((string) thrown(fn () => $bk->status()), 'sudo refused `cipi backup status`'), 'the same for "not allowed to execute"');
+    $answer("sudo-rs: I'm sorry www-data. I'm afraid I can't do that", 1);
+    ok(str_contains((string) thrown(fn () => $bk->status()), 'sudo refused `cipi backup status`'), 'and for sudo-rs');
+    $answer("sudo: unable to resolve host fra1\n[ERROR] vault: failed to decrypt backup.json", 1);
+    ok(thrown(fn () => $bk->status()) === 'RuntimeException: vault: failed to decrypt backup.json', 'a warning from sudo is not a refusal: the CLI\'s own error is the one reported');
+    $answer('{"profiles": {"nightly": [{"run": "2026-11-16_020000", "destinations": ["local"]}]}, "errors": []}');
+    ok(($bk->runs()['profiles']['nightly'][0]['run'] ?? '') === '2026-11-16_020000', 'the runs are read as before');
+
+    echo "--- status: the API says its own version (1.39.1)\n";
+    $statusOf = function (?array $fromCli): array {
+        $svc = (new ReflectionClass(FakeStatus::class))->newInstanceWithoutConstructor();
+        $svc->fromCli = $fromCli;
+
+        return $svc->snapshot();
+    };
+    Composer\InstalledVersions::$pretty = ['cipi/api' => 'v1.39.1'];
+    $snap = $statusOf(['system' => ['hostname' => 'fra1', 'cipi' => '5.9.0'], 'apps' => 2]);
+    ok($snap['system'] === ['hostname' => 'fra1', 'cipi' => '5.9.0', 'api' => '1.39.1'] && $snap['apps'] === 2, 'GET /api/status: system.api next to system.cipi, nothing else touched');
+    ok($statusOf(null)['system']['api'] === '1.39.1', 'also when the snapshot is read from the host');
+    Composer\InstalledVersions::$pretty = ['cipi/api' => 'dev-main'];
+    ok($statusOf(['system' => []])['system']['api'] === 'dev-main', 'a branch build says so');
+    Composer\InstalledVersions::$pretty = ['cipi/api' => "1.39.1\n<script>"];
+    ok(! array_key_exists('api', $statusOf(['system' => ['cipi' => '5.9.0']])['system']), 'a version that is not one is left out');
+    Composer\InstalledVersions::$pretty = [];
+    ok($statusOf(['system' => ['cipi' => '5.9.0']])['system'] === ['cipi' => '5.9.0'], 'a package Composer does not know (a path checkout) reports no version rather than a guess');
 
     echo "--- deploy history\n";
     $cli = new FakeCli; $dh = new CipiApi\Services\CipiDeployHistoryCliService($cli, new FakeVersion('5.9.0'));
