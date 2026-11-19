@@ -7,7 +7,10 @@ return [
     'ip_whitelist_file' => env('CIPI_API_IP_WHITELIST', '/etc/cipi/api-ip-whitelist'),
 
     // Installable / assignable PHP versions (Cipi CLI ≥ 4.5.4 — Deployer 8 requires ≥ 8.3).
-    'php_versions' => ['8.3', '8.4', '8.5'],
+    // 7.4–8.2 (CipiValidationService::PHP_LEGACY) are not in it on purpose: where a server
+    // still has them they are listed and reported, and never installed or assigned.
+    // 8.6 needs Cipi ≥ 5.9.1 (CipiValidationService::PHP_MIN_CIPI): an older core refuses it.
+    'php_versions' => ['8.3', '8.4', '8.5', '8.6'],
 
     /*
     | Canonical REST token abilities (ability => description).

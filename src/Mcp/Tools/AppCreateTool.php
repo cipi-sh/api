@@ -53,7 +53,8 @@ class AppCreateTool extends Tool
         $node = is_string($request->get('node')) && $request->get('node') !== '' ? $request->get('node') : null;
         $framework = is_string($request->get('framework')) && $request->get('framework') !== '' ? $request->get('framework') : null;
         $isNode = $node !== null || $framework !== null;
-        $php = $isNode ? null : $request->get('php', '8.4');
+        // No version asked: the server's PHP (`cipi app create` without --php), as on POST /api/apps.
+        $php = $isNode || ! is_string($request->get('php')) || $request->get('php') === '' ? null : $request->get('php');
 
         if ($err = $this->validator->usernameError($user ?? '')) {
             return Response::text("Error: {$err}");
@@ -190,7 +191,7 @@ class AppCreateTool extends Tool
             'domain' => $schema->string()->description('Primary domain')->required(),
             'repository' => $schema->string()->description('Git repository URL (SSH). Required for Laravel apps; optional for custom apps (omit for SFTP-only / no Git, aligned with Cipi 4.4.4+)'),
             'branch' => $schema->string()->description('Git branch when a repository is set (default: main). Omitted when no repository (SFTP-only custom apps)'),
-            'php' => $schema->string()->description('PHP version (default: 8.4)'),
+            'php' => $schema->string()->description("PHP version: 8.3, 8.4, 8.5 or 8.6, installed on the server (PhpList). Omit it for the server's PHP"),
             'custom' => $schema->boolean()->description('Create a custom (non-Laravel) app with classic deploy (no zero-downtime)'),
             'docroot' => $schema->string()->description('Document root path for custom apps (e.g. dist, www, public). Default: /'),
             'engine' => $schema->string()->description('Database engine for Laravel apps: mariadb (default) or pgsql. Requires Cipi 4.8+ and installed engine.'),

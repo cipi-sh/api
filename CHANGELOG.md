@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.39.2] - 2026-11-19
+
+PHP 8.6 can be installed and assigned to an app through the API, on a server whose core knows it (Cipi 5.9.1). The legacy versions a server may still have (7.4–8.2) are reported where they run and refused by name where they cannot be used. No route, ability or response changes.
+
+### Added
+
+- **PHP 8.6** in `php_versions` (`config/cipi.php`): accepted by `POST /api/php/install`, by `php` on app create and app edit, and by the MCP `AppCreate` / `AppEdit` tools. Cipi does not publish this config; an application that published it (`--tag=cipi-config`) keeps its own list — add `'8.6'` there.
+- **Refused with `422` on a core older than 5.9.1**, before a job is queued: `PHP 8.6 needs Cipi 5.9.1+ — this server runs Cipi 5.9.0. Run: cipi self-update` (`CipiValidationService::PHP_MIN_CIPI`). That core's `cipi php install` does not know the version, and the job would only fail later with "Invalid PHP version". A core whose version cannot be read is let through: the CLI has the last word.
+- OpenAPI: `8.6` in the `php` enum of the app create and edit requests.
+- `tests/standalone.php`: 13 more checks (83).
+
+### Fixed
+
+- **`GET /api/status` lists the PHP-FPM of a legacy version that is running.** A server installed before Cipi 4.5.4 can still have PHP 7.4–8.2, with apps on it. `GET /api/php` has always listed them (it reads `cipi php list --json`), while the `php` section of the status only looked for the versions in `php_versions` when it read the host itself, and `cipi status` only printed 8.3 and later. Both now cover 7.4–8.6 (the CLI from Cipi 5.9.1).
+- **A legacy version is refused as one.** `php: "8.1"` on app create, app edit or `POST /api/php/install` answered `Invalid PHP version '8.1'. Allowed: …`, the same as a typo. It now says that the version is legacy, that an app already on it keeps it, and that it can no longer be installed or assigned (Deployer 8 needs PHP 8.3+), followed by the allowed ones. Still `422`. `CipiValidationService::PHP_LEGACY`.
+- **OpenAPI offered 7.4–8.2** in the `php` enum of the app create and edit requests, which the API has refused since 1.15.0. The enum is 8.3–8.6. The create request no longer documents `8.4` as the default: without `php` the core decides (the server's PHP on Cipi 5.9.1+, 8.5 before).
+- **The MCP `AppCreate` tool no longer asks for PHP 8.4 when none is given.** It sent `--php=8.4` on its own, and failed with "PHP 8.4 is not installed" on a server that has another one — every server installed with Cipi 5.9.1 once the repository carries 8.6. Without `php` it now leaves the choice to the core, as `POST /api/apps` does.
+
+### How legacy versions are handled
+
+- In `GET /api/php`, a row of `versions` whose version is not in `installable` is a legacy one: it is installed, `apps` says how many apps run on it, and it cannot be given to another app.
+- An app on a legacy version can be edited (`php` is only checked when it changes) and moved to a current one with `PUT /api/apps/{name}` and `php`. It cannot be moved back.
+- `POST /api/services/{name}/restart` takes `php8.1-fpm` like any other unit. Removing a version stays on the host (`cipi php remove 8.1`).
+
+### Notes
+
+- What `cipi php install 8.6` installs is whatever the server's PHP repository carries that day. PHP 8.6.0 was released on 19 November 2026; that afternoon packages.sury.org had 8.6.0 without the `redis`, `memcached` and `imagick` extensions, and `ppa:ondrej/php` still a release candidate. Cipi 5.9.1 installs the version without the extensions that are missing, says so in the job output, and adds them with the nightly `cipi php upgrade` once they are packaged.
+- The PHP security release of the same day (8.2.36, 8.3.37, 8.4.28, 8.5.13) is the core's business: Cipi 5.9.1 installs it and reports the patch level in `cipi php list --json` (`patch`, `security`, `security_floor`). `GET /api/php` does not pass those three fields on — it returns `version`, `status`, `apps` and `default` as before.
+- The package itself was only checked on PHP 8.6.0RC5 — the build at hand; not on 8.6.0 — as far as `tests/standalone.php` and a syntax check of every file go — it has no other test suite.
+
 ## [1.39.1] - 2026-11-16
 
 What `GET /api/backups` answers is either a backup status or an error that says why there is none; and the API reports its own version. No route, ability or request changes.

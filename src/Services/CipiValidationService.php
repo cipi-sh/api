@@ -6,6 +6,22 @@ use CipiApi\Exceptions\AppsJsonUnreadableException;
 
 class CipiValidationService
 {
+    /**
+     * PHP versions a core learned after the list in config/cipi.php was written:
+     * version => the first Cipi release whose `cipi php install` accepts it.
+     */
+    public const PHP_MIN_CIPI = ['8.6' => '5.9.1'];
+
+    /**
+     * Versions Cipi installed before 4.5.4 and no longer does (Deployer 8
+     * needs PHP 8.3). A server set up back then can still have them, with apps
+     * on them: they are listed and reported, and an app keeps the one it has,
+     * but none can be installed or given to an app.
+     */
+    public const PHP_LEGACY = ['7.4', '8.0', '8.1', '8.2'];
+
+    public function __construct(protected ?CipiVersionService $cipiVersion = null) {}
+
     public function getApps(): array
     {
         $path = config('cipi.apps_json', '/etc/cipi/apps.json');
@@ -102,9 +118,33 @@ class CipiValidationService
         }
         $allowed = config('cipi.php_versions', []);
         if (! in_array($version, $allowed, true)) {
+            if (in_array($version, self::PHP_LEGACY, true)) {
+                return "PHP {$version} is a legacy version: an app that already runs on it keeps it, but it can no longer be installed or assigned (Deployer 8 needs PHP 8.3+). Allowed: " . implode(', ', $allowed);
+            }
+
             return "Invalid PHP version '{$version}'. Allowed: " . implode(', ', $allowed);
         }
-        return null;
+
+        return $this->phpCoreError($version);
+    }
+
+    /**
+     * A version in the list that the installed core is known not to accept yet.
+     * A core whose version cannot be read is let through: the worst that
+     * follows is a job that fails with the CLI's own "Invalid PHP version".
+     */
+    protected function phpCoreError(string $version): ?string
+    {
+        $minimum = self::PHP_MIN_CIPI[$version] ?? null;
+        if ($minimum === null) {
+            return null;
+        }
+        $installed = ($this->cipiVersion ??= new CipiVersionService)->installed();
+        if ($installed === null || version_compare($installed, $minimum, '>=')) {
+            return null;
+        }
+
+        return "PHP {$version} needs Cipi {$minimum}+ — this server runs Cipi {$installed}. Run: cipi self-update";
     }
 
     /**

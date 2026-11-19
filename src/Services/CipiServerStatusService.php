@@ -138,8 +138,16 @@ class CipiServerStatusService
      */
     protected function phpInfo(): array
     {
+        // The legacy versions too: a server set up before Cipi 4.5.4 can still
+        // run apps on them, and `cipi status` (5.9.1+) lists their FPM as well.
+        $versions = array_values(array_unique(array_merge(
+            CipiValidationService::PHP_LEGACY,
+            array_map('strval', (array) config('cipi.php_versions', [])),
+        )));
+        usort($versions, 'version_compare');
+
         $running = [];
-        foreach (config('cipi.php_versions', []) as $version) {
+        foreach ($versions as $version) {
             if (! $this->serviceIsRunning("php{$version}-fpm")) {
                 continue;
             }

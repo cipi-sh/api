@@ -31,8 +31,9 @@ namespace {
     $GLOBALS['CFG'] = ['cipi.db_upload.max_mb' => 1, 'cipi.db_upload.chunk_mb' => 1, 'cipi.db_upload.spool_mb' => 1];
     function storage_path(string $p = ''): string { return $GLOBALS['T'] . '/storage/' . $p; }
     function config(string $k, mixed $d = null): mixed { return $GLOBALS['CFG'][$k] ?? $d; }
+    function env(string $k, mixed $d = null): mixed { return $d; }
     $src = ($argv[1] ?? dirname(__DIR__)) . '/src/Services/';
-    foreach (['CipiCliService', 'CipiVersionService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService'] as $c) {
+    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService'] as $c) {
         require $src . $c . '.php';
     }
 
@@ -44,6 +45,12 @@ namespace {
         public ?array $fromCli = null;
         protected function snapshotFromCli(): ?array { return $this->fromCli; }
         protected function snapshotFromHost(): array { return ['system' => ['hostname' => 'host-read'], 'apps' => 0]; }
+    }
+    class FakeHostPhp extends CipiApi\Services\CipiServerStatusService {
+        public array $active = [];
+        public function php(): array { return $this->phpInfo(); }
+        protected function serviceIsRunning(string $unit): bool { return in_array($unit, $this->active, true); }
+        protected function phpPoolCount(string $version): int { return $version === '8.1' ? 2 : 1; }
     }
     class FakeCli extends CipiApi\Services\CipiCliService {
         public array $ran = [];
@@ -210,6 +217,32 @@ namespace {
         if (! $cli->commandIsPermitted($c)) { ok(false, "not permitted: {$c}"); }
     }
     ok(true, 'the Node, link and verify commands the controllers build are on the allow-list');
+
+    echo "--- PHP 8.6 (1.39.2)\n";
+    $GLOBALS['CFG']['cipi.php_versions'] = (require dirname($src, 2) . '/config/cipi.php')['php_versions'];
+    $php = fn (?string $core) => new CipiApi\Services\CipiValidationService(new FakeVersion($core));
+    ok(in_array('8.6', $GLOBALS['CFG']['cipi.php_versions'], true) && $php('5.9.1')->phpVersionError('8.6') === null && $php('5.10.0')->isValidPhpVersion('8.6'), '8.6 is in the list and accepted on Cipi 5.9.1+');
+    ok($php('5.9.0')->phpVersionError('8.6') === 'PHP 8.6 needs Cipi 5.9.1+ — this server runs Cipi 5.9.0. Run: cipi self-update', 'on an older core it is refused with the version it needs, before a job is queued');
+    ok($php(null)->phpVersionError('8.6') === null, 'a core whose version cannot be read is let through (the CLI has the last word)');
+    ok($php('5.8.0')->phpVersionError('8.5') === null && $php('5.8.0')->phpVersionError(null) === null, 'the other versions do not depend on the core');
+    ok(str_starts_with((string) $php('5.9.1')->phpVersionError('8.7'), "Invalid PHP version '8.7'. Allowed: 8.3, 8.4, 8.5, 8.6") && $php('5.9.1')->phpVersionError('8.2') !== null, 'a version outside the list is still refused');
+    ok(str_contains((string) $php('5.9.0')->phpInstalledError('8.6'), 'needs Cipi 5.9.1+'), 'app create/edit get the same answer before the "not installed" one');
+    ok((new FakeCli)->commandIsPermitted("php install '8.6'"), 'php install 8.6 is on the allow-list');
+
+    echo "--- legacy PHP (7.4–8.2) on a server installed before Cipi 4.5.4\n";
+    $legacy = (string) $php('5.9.1')->phpVersionError('8.1');
+    ok(str_starts_with($legacy, 'PHP 8.1 is a legacy version') && str_contains($legacy, 'Allowed: 8.3, 8.4, 8.5, 8.6'), 'a legacy version is refused as one, with what can be used instead');
+    ok(str_starts_with((string) $php('5.9.1')->phpInstalledError('7.4'), 'PHP 7.4 is a legacy version'), 'app create/edit refuse it the same way, installed or not');
+    ok(array_intersect(CipiApi\Services\CipiValidationService::PHP_LEGACY, $GLOBALS['CFG']['cipi.php_versions']) === [], 'no legacy version is in the list of the assignable ones');
+    $host = (new ReflectionClass(FakeHostPhp::class))->newInstanceWithoutConstructor();
+    $host->active = ['php8.5-fpm', 'php8.1-fpm', 'nginx'];
+    ok($host->php() === [['version' => '8.1', 'status' => 'running', 'pools' => 2], ['version' => '8.5', 'status' => 'running', 'pools' => 1]], 'GET /api/status read from the host: a running legacy FPM is listed, oldest first');
+    $mcp = file_get_contents(dirname($src) . '/Mcp/Tools/AppCreateTool.php');
+    ok(! str_contains($mcp, "'8.4')") && ! str_contains($mcp, 'default: 8.4'), 'the MCP AppCreate tool has no PHP of its own: omitted, the server decides');
+    $spec = json_decode(file_get_contents(dirname($src, 2) . '/public/api-docs/openapi.json'), true);
+    $enums = [$spec['components']['schemas']['AppEditRequest']['properties']['php']['enum'] ?? null];
+    array_walk_recursive($spec, function ($v, $k) use (&$seen) { if ($v === '7.4' || $v === '8.2') { $seen = true; } });
+    ok($enums === [['8.3', '8.4', '8.5', '8.6']] && empty($seen), 'OpenAPI offers what the API accepts: no legacy version in any enum');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);
