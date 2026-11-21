@@ -33,7 +33,7 @@ namespace {
     function config(string $k, mixed $d = null): mixed { return $GLOBALS['CFG'][$k] ?? $d; }
     function env(string $k, mixed $d = null): mixed { return $d; }
     $src = ($argv[1] ?? dirname(__DIR__)) . '/src/Services/';
-    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService'] as $c) {
+    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService', 'CipiAppJitService', 'CipiFrankenPhpService', 'CipiOutputParser'] as $c) {
         require $src . $c . '.php';
     }
 
@@ -243,6 +243,48 @@ namespace {
     $enums = [$spec['components']['schemas']['AppEditRequest']['properties']['php']['enum'] ?? null];
     array_walk_recursive($spec, function ($v, $k) use (&$seen) { if ($v === '7.4' || $v === '8.2') { $seen = true; } });
     ok($enums === [['8.3', '8.4', '8.5', '8.6']] && empty($seen), 'OpenAPI offers what the API accepts: no legacy version in any enum');
+
+    echo "--- JIT per app, FrankenPHP builds (1.40.0, Cipi 5.10.0)\n";
+    $apps = $GLOBALS['T'] . '/apps.json';
+    file_put_contents($apps, json_encode(['shop' => ['php' => '8.5', 'octane' => 'frankenphp'], 'blog' => ['php' => '8.5'], 'spa' => ['php' => '8.5', 'runtime' => 'node']]));
+    $GLOBALS['CFG']['cipi.apps_json'] = $apps;
+    $cli = new FakeCli;
+    $jit = new CipiApi\Services\CipiAppJitService($cli, new CipiApi\Services\CipiValidationService(new FakeVersion('5.10.0')), new FakeVersion('5.10.0'));
+    ok($jit->command('blog', ['enabled' => true]) === "app jit 'blog' on", 'on, CLI defaults');
+    ok($jit->command('blog', ['enabled' => true, 'mode' => 'function', 'buffer' => '256m']) === "app jit 'blog' on --mode='function' --buffer='256M'", 'on with mode and buffer, quoted, the size upper-cased');
+    ok($jit->command('blog', ['enabled' => false]) === "app jit 'blog' off", 'off');
+    ok($jit->inputError('blog', ['enabled' => true, 'buffer' => '8M']) === 'buffer must be between 16M and 1G' && $jit->inputError('blog', ['enabled' => true, 'buffer' => '2G']) !== null && $jit->inputError('blog', ['enabled' => true, 'buffer' => '1G']) === null, 'buffer: 16M to 1G, the CLI\'s bounds');
+    ok($jit->inputError('blog', ['enabled' => false, 'mode' => 'tracing']) !== null, 'mode or buffer with enabled false is refused');
+    ok(str_contains((string) $jit->inputError('spa', ['enabled' => true]), 'Node app'), 'a Node app is refused');
+    $oldJit = new CipiApi\Services\CipiAppJitService(new FakeCli, new CipiApi\Services\CipiValidationService(new FakeVersion('5.9.1')), new FakeVersion('5.9.1'));
+    ok(str_contains((string) $oldJit->inputError('blog', ['enabled' => true]), 'needs Cipi 5.10.0+'), 'an older core is refused before a job is queued');
+    $cli->next = ['output' => "sudo: unable to resolve host x\n" . '{"app":"shop","runtime":"octane","php":"8.5.13","enabled":true,"mode":"tracing","buffer":"128M","supported":true,"note":null}', 'exit_code' => 0, 'success' => true];
+    $st = $jit->show('shop');
+    ok(end($cli->ran) === "app jit 'shop' --json" && $st['runtime'] === 'octane' && $st['php'] === '8.5.13', 'show: cipi app jit <app> --json, a sudo line around the JSON ignored');
+    foreach (["app jit 'blog' on --mode='tracing' --buffer='128M'", "app jit 'blog' off", 'frankenphp status --json', "frankenphp upgrade 'shop' --yes", 'frankenphp upgrade --all --yes'] as $c) {
+        ok((new FakeCli)->commandIsPermitted($c), "allow-list: {$c}");
+    }
+    ok(! (new FakeCli)->commandIsPermitted("frankenphp use 'shop' x --force") && ! (new FakeCli)->commandIsPermitted('frankenphp import /tmp/x'), 'not on the allow-list: frankenphp use, import');
+    $fp = new CipiApi\Services\CipiFrankenPhpService($cli, new FakeVersion('5.10.0'));
+    ok($fp->upgradeCommand('shop') === "frankenphp upgrade 'shop' --yes" && $fp->upgradeCommand(null) === 'frankenphp upgrade --all --yes', 'upgrade: one app, or --all');
+    $cli->next = ['output' => '{"builds":[{"id":"1.13.2-php8.5.13"}],"apps":[{"app":"shop","state":"ok"}],"autoupdate":true}', 'exit_code' => 0, 'success' => true];
+    $st = $fp->status();
+    ok(end($cli->ran) === 'frankenphp status --json' && $st['apps'][0]['state'] === 'ok' && $st['autoupdate'] === true, 'status: decoded');
+    $cli->next = ['output' => 'FrankenPHP — the binary each Octane app runs', 'exit_code' => 0, 'success' => true];
+    ok(str_contains((string) thrown(fn () => $fp->status()), 'returned no status'), 'a table instead of JSON is an error');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiFrankenPhpService(new FakeCli, new FakeVersion('5.9.1')))->upgradeCommand(null)), 'needs Cipi 5.10.0+'), 'FrankenPHP on an older core: refused');
+    $abil = file_get_contents(dirname($src) . '/Services/CipiJobAbilities.php');
+    ok(str_contains($abil, "'app-jit' => 'apps-edit'") && str_contains($abil, "'frankenphp-upgrade' => 'php-manage'"), 'job types have their ability');
+    $parser = (new ReflectionClass(CipiApi\Services\CipiOutputParser::class))->newInstanceWithoutConstructor();
+    $pj = new ReflectionMethod($parser, 'parseAppJit');
+    ok($pj->invoke($parser, "✓ JIT on for 'blog' (mode=tracing, buffer=128M)") === ['app' => 'blog', 'enabled' => true, 'mode' => 'tracing', 'buffer' => '128M'] && $pj->invoke($parser, "✓ JIT off for 'blog'") === ['app' => 'blog', 'enabled' => false], 'job result: JIT on / off parsed');
+    $pu = new ReflectionMethod($parser, 'parseFrankenPhpUpgrade');
+    $r = $pu->invoke($parser, "✓ 'shop' runs FrankenPHP 1.13.2 on PHP 8.5.13\n[INFO] 'api' is up to date (1.14.0-php8.6.0)\n[INFO] FrankenPHP 1.14.0 is out and carries PHP 8.6.0; 'shop' is on PHP 8.5, so Cipi keeps it");
+    ok($r['apps']['shop']['result'] === 'upgraded' && $r['apps']['api']['result'] === 'up-to-date' && $r['apps']['shop']['available_on_other_php']['php'] === '8.6.0' && $r['rolled_back'] === [], 'job result: per app, upgraded / up to date / a release on another PHP');
+    $spec = json_decode(file_get_contents(dirname($src, 2) . '/public/api-docs/openapi.json'), true);
+    ok(isset($spec['paths']['/apps/{name}/jit']['get'], $spec['paths']['/apps/{name}/jit']['put'], $spec['paths']['/frankenphp']['get'], $spec['paths']['/frankenphp/upgrade']['post']), 'OpenAPI documents the four routes');
+    $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
+    ok(str_contains($routes, "Route::put('/apps/{name}/jit', [AppJitController::class, 'update'])->middleware('ability:apps-edit')") && str_contains($routes, "Route::post('/frankenphp/upgrade', [FrankenPhpController::class, 'upgrade'])->middleware('ability:php-manage')"), 'routes and their abilities');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);

@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.40.0] - 2026-11-21
+
+JIT per app and the FrankenPHP builds of Octane apps, for a core that has them (Cipi 5.10.0).
+
+### Added
+
+- **`GET /api/apps/{name}/jit`** (`apps-view`) — `cipi app jit <app> --json`: `runtime`, `php` (for an Octane app the PHP inside its FrankenPHP build), `enabled`, `mode`, `buffer`, `supported`, `note`.
+- **`PUT /api/apps/{name}/jit`** (`apps-edit`) — `enabled`, and with it `mode` (`tracing`|`function`) and `buffer` (16M–1G): `cipi app jit <app> on|off` as an async job `app-jit`. The CLI checks the PHP starts with JIT before writing anything, restarts PHP-FPM of that PHP version (every app on it) or the app's Octane, and goes back to the previous setting when the app does not come up. The job result is `{app, enabled, mode, buffer}`. A Node app, `mode`/`buffer` with `enabled: false`, a buffer out of range and a core older than 5.10.0 are refused with `422` before a job is queued.
+- **`GET /api/frankenphp`** (`php-view`) — `cipi frankenphp status --json`: each Octane app's build, the PHP inside it, `state` (`ok`, `vulnerable`, `mismatch`, `unpinned`, `missing`) and `restart_pending`; the builds on the server; `autoupdate`.
+- **`POST /api/frankenphp/upgrade`** (`php-manage`) — optional `app` (an Octane app; without it, all of them): `cipi frankenphp upgrade` as an async job `frankenphp-upgrade`. Never another PHP minor or FrankenPHP major. The job result lists per app `upgraded` (with FrankenPHP and PHP), `up-to-date`, `available_on_other_php`, and `rolled_back`.
+- MCP tools `AppJitShow`, `AppJitUpdate`, `FrankenPhpStatus`, `FrankenPhpUpgrade`.
+- `CipiCliService::ALLOWED_COMMANDS`: `app jit`, `frankenphp status`, `frankenphp upgrade` (the core's sudoers lists them from 5.10.0). Not `frankenphp use` nor `import`.
+- OpenAPI: the four routes, `AppJitResponse`, `AppJitUpdateRequest`, `FrankenPhpStatusResponse`; `info.version` 1.40.0.
+- `tests/standalone.php`: 23 more checks (106).
+
+### Changed
+
+- Token ability descriptions: `apps-edit` includes JIT, `php-view` / `php-manage` the FrankenPHP builds.
+
 ## [1.39.2] - 2026-11-19
 
 PHP 8.6 can be installed and assigned to an app through the API, on a server whose core knows it (Cipi 5.9.1). The legacy versions a server may still have (7.4–8.2) are reported where they run and refused by name where they cannot be used. No route, ability or response changes.

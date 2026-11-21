@@ -118,6 +118,10 @@ class CipiCliService
         'backup profile enable',
         'backup profile disable',
         'backup destination test',
+        // Cipi CLI ≥ 5.10.0 (API sudoers ≥ 5.10.0)
+        'app jit',
+        'frankenphp status',
+        'frankenphp upgrade',
     ];
 
     /**

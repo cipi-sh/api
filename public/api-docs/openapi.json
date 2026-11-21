@@ -3,7 +3,7 @@
     "info": {
         "title": "Cipi API",
         "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`. Each endpoint names the ability it requires; a token created with `--full-access` (ability `*`) passes all of them, including the ones later versions add.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status: the token needs the ability the job was created under (`apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, \u2026 \u2014 since 1.36.1), otherwise `404`. **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Deploy status (Cipi >= 5.8.4):** `GET /apps/{name}/deploy/status` says whether a deploy is running right now \u2014 whoever started it: Git webhook, CLI, panel, rollback \u2014 with its trigger, branch, start time and elapsed seconds, and how the last one ended; `tail` adds the last lines of the deploy log (ability `deploy-manage`). `503` on an older core: the flag is never sent to a Cipi that does not know it.\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0), `GET /disk` and `GET /disk/dbs` (`disk-view`, Cipi >= 5.5.2 for the API sudoers) \u2014 the figures of `cipi disk --json` / `cipi disk db --json` (server filesystem, every app with files, database, total, share of the disk and soft limit; every database per engine), measured on request.\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).\n\n**App create & repository access (Cipi >= 5.6.0):** `POST /apps` accepts `node_build` (Laravel asset build run inside every deploy). The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access` (`ok` | `nobranch` | `denied`, with git's error and the CLI fix as `hint`): Cipi tests the deploy key against the repository on the spot.\n\n**cipi.yml (Cipi >= 5.6.4):** `GET /apps/{name}/yml` (ability `yml-view`) returns the app's cipi.yml plan: file, auto-apply, validity, changes, blockers. `POST /apps/{name}/yml/apply` applies it as an async job (`app-yml-apply`); `POST /apps/{name}/yml/auto/enable|disable` turn on or off the apply after every successful deploy (ability `yml-manage`). With auto-apply on, whoever can commit to the repository controls the app's server configuration.\n\n**Environments (Cipi >= 5.8.0):** every app carries an `env` label (`production` unless set). `POST /apps` and `PUT /apps/{name}` accept `env` (lowercase letters, digits, `-`, `_`, max 32 chars; 422 otherwise), app list/show return it, and the cipi.yml plan/auto responses report the `env` Cipi read the file for (`cipi-<env>.yml` before `cipi.yml`).",
-        "version": "1.39.2",
+        "version": "1.40.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -5018,6 +5018,203 @@
                     }
                 }
             }
+        },
+        "/apps/{name}/jit": {
+            "get": {
+                "tags": [
+                    "Apps"
+                ],
+                "summary": "Show app JIT",
+                "description": "PHP JIT of the app from `cipi app jit <app> --json` (Cipi CLI >= 5.10.0): runtime, the PHP that answers (for an Octane app the one inside its FrankenPHP build), whether JIT is on, mode and buffer, and whether it can be turned on here. Requires `apps-view` ability.",
+                "operationId": "appJitShow",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "JIT status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AppJitResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, or a core older than 5.10.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Apps"
+                ],
+                "summary": "Turn app JIT on or off",
+                "description": "`cipi app jit <app> on|off` as an async job (`app-jit`, Cipi CLI >= 5.10.0). Before anything is written the CLI checks that the app's PHP starts with JIT in that mode (an extension such as Xdebug or pcov turns it off); then it restarts the PHP-FPM of the app's PHP version \u2014 every app on it is interrupted for a moment \u2014 or the app's Octane, and puts the previous setting back if the app does not come up. On PHP-FPM the buffer is shared by every app on that PHP version with JIT: the largest asked for is used. Requires `apps-edit` ability.",
+                "operationId": "appJitUpdate",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AppJitUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "description": "Validation error, a Node app, mode/buffer with enabled false, or a core older than 5.10.0",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/frankenphp": {
+            "get": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "FrankenPHP builds of Octane apps",
+                "description": "`cipi frankenphp status --json` (Cipi CLI >= 5.10.0). An Octane app answers on the PHP built into its FrankenPHP binary, which apt never patches. Cipi pins a build per app and links it into every release. For each Octane app: the pinned build, the PHP inside it and its state \u2014 `ok`, `vulnerable` (below the PHP security release), `mismatch` (not the app's PHP minor), `unpinned` (a binary Octane downloaded), `missing` \u2014 and whether Octane still runs an older binary (`restart_pending`). Also the builds on the server and whether nightly patch upgrades are on. Requires `php-view` ability.",
+                "operationId": "frankenphpStatus",
+                "responses": {
+                    "200": {
+                        "description": "Status",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FrankenPhpStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, or a core older than 5.10.0",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/frankenphp/upgrade": {
+            "post": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Upgrade FrankenPHP builds",
+                "description": "`cipi frankenphp upgrade <app>|--all` as an async job (`frankenphp-upgrade`, Cipi CLI >= 5.10.0): each app moves to the newest build on its own PHP minor and FrankenPHP major, downloaded first when GitHub has a newer release (checked against GitHub's digest). Octane restarts, has to answer on its port, and goes back to the previous build when it does not. A release on another PHP minor or a new FrankenPHP major is reported and not applied. Without `app`, every Octane app. Requires `php-manage` ability.",
+                "operationId": "frankenphpUpgrade",
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "app": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "An Octane app; omit (or null) for all of them",
+                                        "example": "shop"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "description": "Not an Octane app, or a core older than 5.10.0",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "components": {
@@ -8940,6 +9137,172 @@
                                 "type": "array",
                                 "items": {
                                     "type": "string"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "AppJitResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": {
+                                "type": "string",
+                                "example": "shop"
+                            },
+                            "runtime": {
+                                "type": "string",
+                                "enum": [
+                                    "fpm",
+                                    "octane"
+                                ]
+                            },
+                            "php": {
+                                "type": "string",
+                                "description": "The PHP that answers requests (for Octane: inside the FrankenPHP build)",
+                                "example": "8.5.13"
+                            },
+                            "enabled": {
+                                "type": "boolean"
+                            },
+                            "mode": {
+                                "type": "string",
+                                "enum": [
+                                    "tracing",
+                                    "function"
+                                ],
+                                "nullable": true
+                            },
+                            "buffer": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "128M"
+                            },
+                            "supported": {
+                                "type": "boolean"
+                            },
+                            "note": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "Why JIT cannot be turned on, when it cannot"
+                            }
+                        }
+                    }
+                }
+            },
+            "AppJitUpdateRequest": {
+                "type": "object",
+                "required": [
+                    "enabled"
+                ],
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "mode": {
+                        "type": "string",
+                        "enum": [
+                            "tracing",
+                            "function"
+                        ],
+                        "description": "Default tracing; only with enabled true"
+                    },
+                    "buffer": {
+                        "type": "string",
+                        "pattern": "^[0-9]{1,4}[MmGg]$",
+                        "description": "16M to 1G, default 128M; only with enabled true",
+                        "example": "128M"
+                    }
+                }
+            },
+            "FrankenPhpStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "autoupdate": {
+                                "type": "boolean",
+                                "description": "Nightly patch upgrades (cipi autoupdate, component frankenphp)"
+                            },
+                            "apps": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "app": {
+                                            "type": "string"
+                                        },
+                                        "php": {
+                                            "type": "string",
+                                            "description": "The app's PHP (Composer, artisan, workers)",
+                                            "example": "8.5"
+                                        },
+                                        "state": {
+                                            "type": "string",
+                                            "enum": [
+                                                "ok",
+                                                "vulnerable",
+                                                "mismatch",
+                                                "unpinned",
+                                                "missing"
+                                            ]
+                                        },
+                                        "build": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "example": "1.13.2-php8.5.13"
+                                        },
+                                        "frankenphp": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "example": "1.13.2"
+                                        },
+                                        "build_php": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "example": "8.5.13"
+                                        },
+                                        "restart_pending": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            },
+                            "builds": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {
+                                            "type": "string"
+                                        },
+                                        "frankenphp": {
+                                            "type": "string"
+                                        },
+                                        "php": {
+                                            "type": "string"
+                                        },
+                                        "source": {
+                                            "type": "string",
+                                            "description": "github:<tag>, import:<file> or adopted:<app>",
+                                            "example": "github:v1.13.2"
+                                        },
+                                        "added": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "apps": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

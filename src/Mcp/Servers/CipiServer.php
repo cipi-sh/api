@@ -8,6 +8,8 @@ use CipiApi\Mcp\Tools\AliasRemoveTool;
 use CipiApi\Mcp\Tools\AppCreateTool;
 use CipiApi\Mcp\Tools\AppDeleteTool;
 use CipiApi\Mcp\Tools\AppFixPermissionsTool;
+use CipiApi\Mcp\Tools\AppJitShowTool;
+use CipiApi\Mcp\Tools\AppJitUpdateTool;
 use CipiApi\Mcp\Tools\AppLimitsShowTool;
 use CipiApi\Mcp\Tools\AppLimitsUpdateTool;
 use CipiApi\Mcp\Tools\AppYmlApplyTool;
@@ -68,6 +70,8 @@ use CipiApi\Mcp\Tools\DbPasswordTool;
 use CipiApi\Mcp\Tools\DbRestoreTool;
 use CipiApi\Mcp\Tools\IpWhitelistShowTool;
 use CipiApi\Mcp\Tools\JobShowTool;
+use CipiApi\Mcp\Tools\FrankenPhpStatusTool;
+use CipiApi\Mcp\Tools\FrankenPhpUpgradeTool;
 use CipiApi\Mcp\Tools\PhpListTool;
 use CipiApi\Mcp\Tools\ServerStatusTool;
 use CipiApi\Mcp\Tools\ServiceListTool;
@@ -123,6 +127,8 @@ class CipiServer extends Server
         AppFixPermissionsTool::class,
         AppLimitsShowTool::class,
         AppLimitsUpdateTool::class,
+        AppJitShowTool::class,
+        AppJitUpdateTool::class,
         AppBasicAuthStatusTool::class,
         AppBasicAuthEnableTool::class,
         AppBasicAuthDisableTool::class,
@@ -174,6 +180,8 @@ class CipiServer extends Server
         ServerStatusTool::class,
         ServiceListTool::class,
         PhpListTool::class,
+        FrankenPhpStatusTool::class,
+        FrankenPhpUpgradeTool::class,
         IpWhitelistShowTool::class,
     ];
 }
