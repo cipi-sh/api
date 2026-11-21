@@ -1,3 +1,12 @@
+<p align="center">
+  <a href="https://cipi.sh">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://cipi.sh/brand/cipi-logo-dark.svg">
+      <img src="https://cipi.sh/brand/cipi-logo.svg" alt="Cipi" height="56">
+    </picture>
+  </a>
+</p>
+
 # Cipi API
 
 Laravel package that exposes a REST API, an MCP server, and Swagger documentation for the [Cipi](https://cipi.sh) server control panel.
