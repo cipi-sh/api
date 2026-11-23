@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.42.0] - 2026-11-23
+
+Every notification channel and trigger, not only SMTP, for a core that has them (Cipi 5.12.0).
+
+### Added
+
+- **`GET /api/notifications`** — `cipi notification status --json`: every channel (SMTP first) with type, state and target, how many triggers are on, the channel types. Secrets never come back: `token_set`, `api_key_set`, `secret_key_set`, `secret_set`; a webhook URL with its secret part masked.
+- **`POST /api/notifications/channels`** — add a channel: `type` (`smtp`, `resend`, `ses`, `slack`, `discord`, `mattermost`, `googlechat`, `telegram`, `ntfy`, `pushover`, `webhook`), `id` (not for SMTP), the fields of that type, `enabled`, `test`. A field of another type, a missing required one, `http://` for a chat webhook, a recipient that is not an address: `422` before the CLI runs. `409` when the id exists. `201` with `{channel, test}`.
+- **`PUT /api/notifications/channels/{id}`** — `cipi notification update`: only the fields given change, a secret left out is kept (`clear_secret` drops a webhook's signing secret), the type cannot change; `enabled` and `test` too.
+- **`DELETE /api/notifications/channels/{id}`**, **`POST /api/notifications/channels/{id}/enable|disable`**.
+- **`POST /api/notifications/channels/{id}/test`** (`all` for every enabled channel) — `200 {ok: true, message}`, or `422` with the reason when the channel refused it (Cipi 5.12.0 reports it).
+- **`GET|PUT /api/notifications/triggers`**, **`POST /api/notifications/triggers/reset`** — every trigger with category, label and state; change many in one write: `triggers` (`{id: bool}`), `on`, `off`, `all`.
+- Abilities **`notifications-view`** and **`notifications-manage`**. Tokens with `smtp-view` / `smtp-manage` are accepted on the same routes: the panel's existing tokens keep working.
+- MCP tools: `NotificationsShow`, `NotificationChannelSave`, `NotificationChannelTest`, `NotificationChannelRemove`, `NotificationTriggersUpdate`.
+- OpenAPI 1.42.0.
+
+### Notes
+
+- Synchronous, like `/api/smtp`: secrets are passed to the CLI and stored in the server's vault; nothing is queued, so they never reach the jobs table.
+- On an older core every route answers `503` with `needs Cipi 5.12.0+`. The `/api/smtp` routes are unchanged.
+
 ## [1.41.0] - 2026-11-23
 
 Metrics and health history, and the cipi/agent routes behind basic auth, for a core that has them (Cipi 5.11.0).

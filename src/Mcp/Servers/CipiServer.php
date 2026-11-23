@@ -25,6 +25,11 @@ use CipiApi\Mcp\Tools\MetricsSeriesTool;
 use CipiApi\Mcp\Tools\MetricsSettingsShowTool;
 use CipiApi\Mcp\Tools\MetricsSettingsUpdateTool;
 use CipiApi\Mcp\Tools\MetricsUptimeTool;
+use CipiApi\Mcp\Tools\NotificationChannelRemoveTool;
+use CipiApi\Mcp\Tools\NotificationChannelSaveTool;
+use CipiApi\Mcp\Tools\NotificationChannelTestTool;
+use CipiApi\Mcp\Tools\NotificationsShowTool;
+use CipiApi\Mcp\Tools\NotificationTriggersUpdateTool;
 use CipiApi\Mcp\Tools\MonitorListTool;
 use CipiApi\Mcp\Tools\NodeRestartTool;
 use CipiApi\Mcp\Tools\NodeRuntimesTool;
@@ -174,6 +179,11 @@ class CipiServer extends Server
         MetricsEventsTool::class,
         MetricsSettingsShowTool::class,
         MetricsSettingsUpdateTool::class,
+        NotificationsShowTool::class,
+        NotificationChannelSaveTool::class,
+        NotificationChannelTestTool::class,
+        NotificationChannelRemoveTool::class,
+        NotificationTriggersUpdateTool::class,
         ZtStatusTool::class,
         DiskUsageTool::class,
         DiskDatabasesTool::class,
