@@ -134,6 +134,15 @@ class CipiCliService
         'metrics disable',
         'metrics heartbeat',
         'basicauth agent',
+        // Cipi CLI ≥ 5.12.0 (API sudoers ≥ 5.12.0): every channel and trigger.
+        'notification status --json',
+        'notification triggers',
+        'notification add ',
+        'notification update ',
+        'notification remove ',
+        'notification test ',
+        'notification enable ',
+        'notification disable ',
     ];
 
     /**

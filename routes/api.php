@@ -20,6 +20,7 @@ use CipiApi\Http\Controllers\JobController;
 use CipiApi\Http\Controllers\HealthController;
 use CipiApi\Http\Controllers\IpWhitelistController;
 use CipiApi\Http\Controllers\MetricsController;
+use CipiApi\Http\Controllers\NotificationController;
 use CipiApi\Http\Controllers\MonitorController;
 use CipiApi\Http\Controllers\NodeController;
 use CipiApi\Http\Controllers\PackageController;
@@ -216,6 +217,18 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
 
     // System monitor checks — read-only (Cipi CLI ≥ 5.3.0)
     Route::get('/monitor', [MonitorController::class, 'list'])->middleware('ability:monitor-view');
+
+    // Notifications: every channel and trigger (Cipi CLI ≥ 5.12.0). Tokens of the SMTP page (smtp-*) keep working.
+    Route::get('/notifications', [NotificationController::class, 'show'])->middleware('ability:notifications-view,smtp-view');
+    Route::post('/notifications/channels', [NotificationController::class, 'store'])->middleware('ability:notifications-manage,smtp-manage');
+    Route::put('/notifications/channels/{id}', [NotificationController::class, 'update'])->middleware('ability:notifications-manage,smtp-manage');
+    Route::delete('/notifications/channels/{id}', [NotificationController::class, 'destroy'])->middleware('ability:notifications-manage,smtp-manage');
+    Route::post('/notifications/channels/{id}/enable', [NotificationController::class, 'enable'])->middleware('ability:notifications-manage,smtp-manage');
+    Route::post('/notifications/channels/{id}/disable', [NotificationController::class, 'disable'])->middleware('ability:notifications-manage,smtp-manage');
+    Route::post('/notifications/channels/{id}/test', [NotificationController::class, 'test'])->middleware('ability:notifications-manage,smtp-manage');
+    Route::get('/notifications/triggers', [NotificationController::class, 'triggers'])->middleware('ability:notifications-view,smtp-view');
+    Route::put('/notifications/triggers', [NotificationController::class, 'updateTriggers'])->middleware('ability:notifications-manage,smtp-manage');
+    Route::post('/notifications/triggers/reset', [NotificationController::class, 'resetTriggers'])->middleware('ability:notifications-manage,smtp-manage');
 
     // Metrics & health history (Cipi CLI ≥ 5.11.0) — synchronous reads of the server's SQLite
     Route::get('/metrics', [MetricsController::class, 'overview'])->middleware('ability:metrics-view');

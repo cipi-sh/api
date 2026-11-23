@@ -33,7 +33,7 @@ namespace {
     function config(string $k, mixed $d = null): mixed { return $GLOBALS['CFG'][$k] ?? $d; }
     function env(string $k, mixed $d = null): mixed { return $d; }
     $src = ($argv[1] ?? dirname(__DIR__)) . '/src/Services/';
-    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService', 'CipiAppJitService', 'CipiFrankenPhpService', 'CipiOutputParser', 'CipiMetricsService'] as $c) {
+    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService', 'CipiAppJitService', 'CipiFrankenPhpService', 'CipiOutputParser', 'CipiMetricsService', 'CipiNotificationsService'] as $c) {
         require $src . $c . '.php';
     }
 
@@ -329,6 +329,64 @@ namespace {
     ok(isset($spec['paths']['/metrics']['get'], $spec['paths']['/metrics/series']['get'], $spec['paths']['/metrics/uptime']['get'], $spec['paths']['/metrics/events']['get'], $spec['paths']['/metrics/settings']['put'], $spec['paths']['/metrics/heartbeat']['put'], $spec['paths']['/apps/{name}/metrics']['get'], $spec['paths']['/apps/{name}/basicauth/agent']['put']), 'OpenAPI documents the metrics and basicauth agent routes');
     $mcp = file_get_contents(dirname($src, 2) . '/src/Mcp/Servers/CipiServer.php');
     ok(substr_count($mcp, 'Metrics') >= 12, 'six MCP tools registered');
+
+    echo "--- Notifications (1.42.0, Cipi 5.12.0)\n";
+    class ScriptCli extends FakeCli {
+        public array $by = [];
+        public function run(string $command): array {
+            if (! $this->commandIsPermitted($command)) { return ['output' => "Command not allowed: {$command}", 'exit_code' => 1, 'success' => false]; }
+            $this->ran[] = $command;
+            foreach ($this->by as $prefix => $r) { if (str_starts_with($command, $prefix)) { return $r; } }
+            return ['output' => '✓ done', 'exit_code' => 0, 'success' => true];
+        }
+    }
+    $st = ['output' => "sudo: x\n" . json_encode(['channels' => [['id' => 'smtp', 'type' => 'smtp', 'enabled' => true, 'host' => 'smtp.test'], ['id' => 'ops', 'type' => 'slack', 'enabled' => true, 'url' => 'https://hooks.slack.com/services/***'], ['id' => 'oncall', 'type' => 'telegram', 'enabled' => false, 'token_set' => true, 'chat_id' => '-1']], 'triggers' => ['enabled' => 107, 'total' => 109], 'types' => CipiApi\Services\CipiNotificationsService::TYPES]), 'exit_code' => 0, 'success' => true];
+    $cli = new ScriptCli; $cli->by = ['notification status --json' => $st];
+    $nt = new CipiApi\Services\CipiNotificationsService($cli, new FakeVersion('5.12.0'));
+    ok(count($nt->status()['channels']) === 3 && $nt->channel('oncall')['type'] === 'telegram' && $nt->channel('ghost') === null, 'status decoded past a sudo line; channel() finds one by id');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiNotificationsService(new ScriptCli, new FakeVersion('5.11.2')))->status()), 'needs Cipi 5.12.0+'), 'an older core is refused');
+    $E = fn (array $i, ?array $c = null) => $nt->channelError($i, $c);
+    ok($E(['type' => 'slack', 'id' => 'ops', 'url' => 'https://hooks.slack.com/services/x']) === null, 'add slack: valid');
+    ok(str_starts_with((string) $E(['type' => 'slack', 'url' => 'https://x']), 'id is required'), 'add: id required (not for smtp)');
+    ok($E(['type' => 'smtp', 'host' => 'h', 'user' => 'u', 'password' => 'p', 'from' => 'a@x.it', 'to' => 'b@x.it']) === null, 'add smtp: no id needed');
+    ok(str_starts_with((string) $E(['type' => 'telegram', 'id' => 't', 'token' => '1:a']), 'Required for telegram: chat_id'), 'add: the missing fields are named');
+    ok(str_starts_with((string) $E(['type' => 'slack', 'id' => 'a', 'url' => 'https://x', 'token' => 'x']), 'Not a field of a slack channel: token'), 'a field of another type is refused');
+    ok(str_contains((string) $E(['type' => 'slack', 'id' => 'a', 'url' => 'http://x']), 'https://'), 'slack: http:// refused');
+    ok($E(['type' => 'webhook', 'id' => 'a', 'url' => 'http://intra.test/in']) === null, 'webhook: http:// allowed');
+    ok(str_contains((string) $E(['type' => 'resend', 'id' => 'm', 'api_key' => 're_x', 'from' => 'a@x.it', 'to' => 'nope']), 'email'), 'resend: a recipient that is not an address');
+    ok($E(['chat_id' => '-2'], ['id' => 'oncall', 'type' => 'telegram']) === null, 'update: only the fields that change, no secret needed');
+    ok(str_contains((string) $E(['type' => 'slack'], ['id' => 'oncall', 'type' => 'telegram']), 'remove it and add'), 'update: the type cannot change');
+    ok(str_contains((string) $E(['type' => 'slack', 'id' => 'smtp', 'url' => 'https://x']), "'smtp' is the id"), "the id smtp is the SMTP channel's");
+    ok($nt->addCommand(['type' => 'telegram', 'id' => 'oncall', 'token' => "1:AB'C", 'chat_id' => '-100']) === "notification add telegram oncall --token='1:AB'\\''C' --chat-id='-100'", 'add: flags with dashes, values quoted');
+    ok($nt->addCommand(['type' => 'smtp', 'host' => 'smtp.test', 'port' => 587, 'user' => 'u', 'password' => 'p w', 'from' => 'a@x.it', 'to' => 'b@x.it', 'tls' => false, 'enabled' => true]) === "notification add smtp --host='smtp.test' --port=587 --user='u' --password='p w' --from='a@x.it' --to='b@x.it' --tls=off --enabled=on --no-test", 'add smtp: no id, tls on/off, never the CLI\'s own test');
+    ok($nt->updateCommand('mail', 'resend', ['to' => 'a@x.it,b@x.it', 'api_key' => '']) === "notification update mail --to='a@x.it,b@x.it'", 'update: an empty secret is left out (kept)');
+    ok($nt->updateCommand('siem', 'webhook', ['clear_secret' => true]) === 'notification update siem --clear-secret', 'update webhook: --clear-secret');
+    $cli->ran = [];
+    $r = $nt->add(['type' => 'slack', 'id' => 'ops2', 'url' => 'https://hooks.slack.com/services/x', 'enabled' => false]);
+    ok($cli->ran[0] === "notification add slack ops2 --url='https://hooks.slack.com/services/x'" && $cli->ran[1] === 'notification disable ops2' && $r['test'] === null, 'add disabled: add, then disable');
+    $cli->ran = [];
+    $cli->by = ['notification test' => ['output' => "→ Sending test alert to 'ops'...\n\033[0;31m[ERROR]\033[0m Test to 'ops' failed — the service refused the request or did not answer in time", 'exit_code' => 1, 'success' => false], 'notification status --json' => $st];
+    $r = $nt->update('ops', 'slack', ['url' => 'https://hooks.slack.com/services/y', 'enabled' => true, 'test' => true]);
+    ok($cli->ran[0] === "notification update ops --url='https://hooks.slack.com/services/y'" && $cli->ran[1] === 'notification enable ops' && in_array('notification test ops', $cli->ran, true), 'update: change, enable, test');
+    ok($r['test']['ok'] === false && str_starts_with($r['test']['message'], "Test to 'ops' failed"), 'a refused test: ok false, the CLI\'s reason');
+    $cli->by['notification test'] = ['output' => "→ Sending...\n✓ Test sent to 'ops' — check the channel", 'exit_code' => 0, 'success' => true];
+    ok($nt->test('ops') === ['ok' => true, 'message' => "Test sent to 'ops' — check the channel"], 'a test sent: ok true');
+    $cli->ran = []; $nt->remove('smtp');
+    ok($cli->ran === ['notification remove smtp --force'], 'remove smtp: --force (no prompt)');
+    ok($nt->triggersCommands(['triggers' => ['deploy_success' => false, 'ssh_login' => false, 'deploy_fail' => true], 'off' => ['sudo']]) === ['notification triggers set --on=deploy_fail --off=sudo,deploy_success,ssh_login'], 'triggers: one set, on and off');
+    ok($nt->triggersCommands(['all' => false, 'on' => ['deploy_fail']]) === ['notification triggers disable-all', 'notification triggers set --on=deploy_fail'], 'triggers: all off, then the exceptions');
+    ok($nt->triggersError([]) !== null && str_contains((string) $nt->triggersError(['triggers' => ['x; rm' => true]]), 'Not a trigger'), 'triggers: nothing to change, a bad name');
+    foreach (['notification status --json', 'notification triggers --json', 'notification triggers set --on=a', 'notification triggers reset', 'notification add slack x --url=y', 'notification update x --url=y', 'notification remove x', 'notification test all', 'notification enable x', 'notification disable x'] as $c) {
+        ok((new FakeCli)->commandIsPermitted($c), "allow-list: {$c}");
+    }
+    $cfg = file_get_contents(dirname($src, 2) . '/config/cipi.php');
+    ok(str_contains($cfg, "'notifications-view'") && str_contains($cfg, "'notifications-manage'"), 'abilities notifications-view and notifications-manage');
+    $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
+    ok(str_contains($routes, "Route::get('/notifications', [NotificationController::class, 'show'])->middleware('ability:notifications-view,smtp-view')") && str_contains($routes, "Route::put('/notifications/channels/{id}', [NotificationController::class, 'update'])->middleware('ability:notifications-manage,smtp-manage')") && str_contains($routes, "Route::put('/notifications/triggers', [NotificationController::class, 'updateTriggers'])->middleware('ability:notifications-manage,smtp-manage')"), 'notification routes: new abilities, or the smtp ones');
+    $spec = json_decode(file_get_contents(dirname($src, 2) . '/public/api-docs/openapi.json'), true);
+    ok($spec['info']['version'] === '1.42.0' && isset($spec['paths']['/notifications']['get'], $spec['paths']['/notifications/channels']['post'], $spec['paths']['/notifications/channels/{id}']['put'], $spec['paths']['/notifications/channels/{id}/test']['post'], $spec['paths']['/notifications/triggers']['put']), 'OpenAPI 1.42.0: the notification routes');
+    $mcp = file_get_contents(dirname($src, 2) . '/src/Mcp/Servers/CipiServer.php');
+    ok(substr_count($mcp, 'Notification') >= 10, 'five notification MCP tools registered');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);

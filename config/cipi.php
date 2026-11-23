@@ -62,6 +62,8 @@ return [
         'monitor-view' => 'View system monitor checks',
         'metrics-view' => 'Read metrics and health history: series, uptime, events, collector settings',
         'metrics-manage' => 'Metrics retention, healthcheck probe, collector on/off, heartbeat URL',
+        'notifications-view' => 'View notification channels (no secrets) and triggers',
+        'notifications-manage' => 'Add, change, test, enable/disable and remove notification channels; turn triggers on and off',
         'zt-view' => 'View Cloudflare Zero Trust status',
         'disk-view' => 'View disk usage: server, apps, databases',
         'yml-view' => 'Read cipi.yml status and plan',
