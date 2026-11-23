@@ -19,6 +19,12 @@ use CipiApi\Mcp\Tools\DeployAuditTool;
 use CipiApi\Mcp\Tools\DeployStatusTool;
 use CipiApi\Mcp\Tools\DiskDatabasesTool;
 use CipiApi\Mcp\Tools\DiskUsageTool;
+use CipiApi\Mcp\Tools\MetricsEventsTool;
+use CipiApi\Mcp\Tools\MetricsOverviewTool;
+use CipiApi\Mcp\Tools\MetricsSeriesTool;
+use CipiApi\Mcp\Tools\MetricsSettingsShowTool;
+use CipiApi\Mcp\Tools\MetricsSettingsUpdateTool;
+use CipiApi\Mcp\Tools\MetricsUptimeTool;
 use CipiApi\Mcp\Tools\MonitorListTool;
 use CipiApi\Mcp\Tools\NodeRestartTool;
 use CipiApi\Mcp\Tools\NodeRuntimesTool;
@@ -162,6 +168,12 @@ class CipiServer extends Server
         SearchDisableTool::class,
         PackageListTool::class,
         MonitorListTool::class,
+        MetricsOverviewTool::class,
+        MetricsSeriesTool::class,
+        MetricsUptimeTool::class,
+        MetricsEventsTool::class,
+        MetricsSettingsShowTool::class,
+        MetricsSettingsUpdateTool::class,
         ZtStatusTool::class,
         DiskUsageTool::class,
         DiskDatabasesTool::class,

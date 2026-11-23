@@ -2,8 +2,8 @@
     "openapi": "3.0.3",
     "info": {
         "title": "Cipi API",
-        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`. Each endpoint names the ability it requires; a token created with `--full-access` (ability `*`) passes all of them, including the ones later versions add.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status: the token needs the ability the job was created under (`apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, \u2026 \u2014 since 1.36.1), otherwise `404`. **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Deploy status (Cipi >= 5.8.4):** `GET /apps/{name}/deploy/status` says whether a deploy is running right now \u2014 whoever started it: Git webhook, CLI, panel, rollback \u2014 with its trigger, branch, start time and elapsed seconds, and how the last one ended; `tail` adds the last lines of the deploy log (ability `deploy-manage`). `503` on an older core: the flag is never sent to a Cipi that does not know it.\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0), `GET /disk` and `GET /disk/dbs` (`disk-view`, Cipi >= 5.5.2 for the API sudoers) \u2014 the figures of `cipi disk --json` / `cipi disk db --json` (server filesystem, every app with files, database, total, share of the disk and soft limit; every database per engine), measured on request.\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).\n\n**App create & repository access (Cipi >= 5.6.0):** `POST /apps` accepts `node_build` (Laravel asset build run inside every deploy). The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access` (`ok` | `nobranch` | `denied`, with git's error and the CLI fix as `hint`): Cipi tests the deploy key against the repository on the spot.\n\n**cipi.yml (Cipi >= 5.6.4):** `GET /apps/{name}/yml` (ability `yml-view`) returns the app's cipi.yml plan: file, auto-apply, validity, changes, blockers. `POST /apps/{name}/yml/apply` applies it as an async job (`app-yml-apply`); `POST /apps/{name}/yml/auto/enable|disable` turn on or off the apply after every successful deploy (ability `yml-manage`). With auto-apply on, whoever can commit to the repository controls the app's server configuration.\n\n**Environments (Cipi >= 5.8.0):** every app carries an `env` label (`production` unless set). `POST /apps` and `PUT /apps/{name}` accept `env` (lowercase letters, digits, `-`, `_`, max 32 chars; 422 otherwise), app list/show return it, and the cipi.yml plan/auto responses report the `env` Cipi read the file for (`cipi-<env>.yml` before `cipi.yml`).",
-        "version": "1.40.0",
+        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`. Each endpoint names the ability it requires; a token created with `--full-access` (ability `*`) passes all of them, including the ones later versions add.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status: the token needs the ability the job was created under (`apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, \u2026 \u2014 since 1.36.1), otherwise `404`. **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Deploy status (Cipi >= 5.8.4):** `GET /apps/{name}/deploy/status` says whether a deploy is running right now \u2014 whoever started it: Git webhook, CLI, panel, rollback \u2014 with its trigger, branch, start time and elapsed seconds, and how the last one ended; `tail` adds the last lines of the deploy log (ability `deploy-manage`). `503` on an older core: the flag is never sent to a Cipi that does not know it.\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0), `GET /disk` and `GET /disk/dbs` (`disk-view`, Cipi >= 5.5.2 for the API sudoers) \u2014 the figures of `cipi disk --json` / `cipi disk db --json` (server filesystem, every app with files, database, total, share of the disk and soft limit; every database per engine), measured on request.\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).\n\n**App create & repository access (Cipi >= 5.6.0):** `POST /apps` accepts `node_build` (Laravel asset build run inside every deploy). The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access` (`ok` | `nobranch` | `denied`, with git's error and the CLI fix as `hint`): Cipi tests the deploy key against the repository on the spot.\n\n**cipi.yml (Cipi >= 5.6.4):** `GET /apps/{name}/yml` (ability `yml-view`) returns the app's cipi.yml plan: file, auto-apply, validity, changes, blockers. `POST /apps/{name}/yml/apply` applies it as an async job (`app-yml-apply`); `POST /apps/{name}/yml/auto/enable|disable` turn on or off the apply after every successful deploy (ability `yml-manage`). With auto-apply on, whoever can commit to the repository controls the app's server configuration.\n\n**Environments (Cipi >= 5.8.0):** every app carries an `env` label (`production` unless set). `POST /apps` and `PUT /apps/{name}` accept `env` (lowercase letters, digits, `-`, `_`, max 32 chars; 422 otherwise), app list/show return it, and the cipi.yml plan/auto responses report the `env` Cipi read the file for (`cipi-<env>.yml` before `cipi.yml`).\n\n**Metrics & health history (Cipi >= 5.11.0):** `GET /metrics` (latest values, last-hour trend per app, uptime 24h/7d/30d, recent events), `GET /metrics/series`, `GET /apps/{name}/metrics`, `GET /metrics/uptime`, `GET /metrics/events`, `GET /metrics/settings` (ability `metrics-view`); `PUT /metrics/settings` (retention, probe, collector on/off), `PUT|DELETE /metrics/heartbeat`, `POST /metrics/heartbeat/test` (ability `metrics-manage`). Synchronous: the CLI reads the server's SQLite. The OpenMetrics endpoint, prune and reset stay on the host. `GET|PUT /apps/{name}/basicauth/agent` (ability `apps-basicauth`): whether the cipi/agent routes are left out of basic auth.",
+        "version": "1.41.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -5215,6 +5215,1437 @@
                     }
                 }
             }
+        },
+        "/metrics": {
+            "get": {
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Metrics overview",
+                "operationId": "metricsOverview",
+                "description": "`cipi metrics overview --json`: host values now, per app latest values (cpu, mem_mb, req, http_5xx, http_ms, http_code, fpm_*, workers_*), a 5-minute `spark` trend of the last hour, `uptime` 24h/7d/30d for apps with a healthcheck, the last 15 events, collector state. Requires `metrics-view` and Cipi 5.11.0+.",
+                "responses": {
+                    "200": {
+                        "description": "Overview",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/series": {
+            "get": {
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Metric series (host or app)",
+                "operationId": "metricsSeries",
+                "description": "`cipi metrics show --json`: about 240 points of [timestamp, average, maximum] per metric. Within the raw retention from the per-minute samples (`source: raw`), beyond it from the rollups plus the minutes not rolled up yet (`source: rollup`). Host metrics: cpu, load1, mem, mem_used_mb, swap, disk, net_rx, net_tx. App metrics: cpu, mem_mb, procs, fpm_procs, fpm_max, fpm_saturated, req, http_5xx, http_ms, http_ok, http_code, workers_up, workers_total.",
+                "parameters": [
+                    {
+                        "name": "app",
+                        "in": "query",
+                        "required": false,
+                        "description": "App name; omit for the host",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "metrics",
+                        "in": "query",
+                        "required": false,
+                        "description": "Comma-separated metric names (default all of the scope)",
+                        "schema": {
+                            "type": "string",
+                            "example": "cpu,mem_mb"
+                        }
+                    },
+                    {
+                        "name": "range",
+                        "in": "query",
+                        "required": false,
+                        "description": "How far back (capped at the rollup retention)",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[1-9][0-9]{0,3}[mhd]$",
+                            "example": "24h"
+                        }
+                    },
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "required": false,
+                        "description": "Start (Unix timestamp), instead of range",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "required": false,
+                        "description": "End (Unix timestamp), with from",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Series",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "scope": {
+                                                    "type": "string",
+                                                    "example": "app:shop"
+                                                },
+                                                "metrics": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "from": {
+                                                    "type": "integer"
+                                                },
+                                                "to": {
+                                                    "type": "integer"
+                                                },
+                                                "step": {
+                                                    "type": "integer",
+                                                    "description": "Seconds per point"
+                                                },
+                                                "source": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "raw",
+                                                        "rollup"
+                                                    ]
+                                                },
+                                                "series": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "description": "[timestamp, average, maximum]"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "description": "App not found"
+                    },
+                    "422": {
+                        "description": "Unknown metric, bad range or from/to"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/metrics": {
+            "get": {
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Metric series of an app",
+                "operationId": "appMetricsSeries",
+                "description": "Same as `GET /metrics/series?app={name}`.",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "metrics",
+                        "in": "query",
+                        "required": false,
+                        "description": "Comma-separated: cpu, mem_mb, procs, fpm_procs, fpm_max, fpm_saturated, req, http_5xx, http_ms, http_ok, http_code, workers_up, workers_total",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "range",
+                        "in": "query",
+                        "required": false,
+                        "description": "How far back",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[1-9][0-9]{0,3}[mhd]$",
+                            "example": "24h"
+                        }
+                    },
+                    {
+                        "name": "from",
+                        "in": "query",
+                        "required": false,
+                        "description": "Start (Unix timestamp)",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    },
+                    {
+                        "name": "to",
+                        "in": "query",
+                        "required": false,
+                        "description": "End (Unix timestamp)",
+                        "schema": {
+                            "type": "integer"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Series",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "scope": {
+                                                    "type": "string",
+                                                    "example": "app:shop"
+                                                },
+                                                "metrics": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "from": {
+                                                    "type": "integer"
+                                                },
+                                                "to": {
+                                                    "type": "integer"
+                                                },
+                                                "step": {
+                                                    "type": "integer",
+                                                    "description": "Seconds per point"
+                                                },
+                                                "source": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "raw",
+                                                        "rollup"
+                                                    ]
+                                                },
+                                                "series": {
+                                                    "type": "object",
+                                                    "additionalProperties": {
+                                                        "type": "array",
+                                                        "items": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "number",
+                                                                "nullable": true
+                                                            },
+                                                            "description": "[timestamp, average, maximum]"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "description": "App not found"
+                    },
+                    "422": {
+                        "description": "Unknown metric or bad range"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/uptime": {
+            "get": {
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Healthcheck uptime",
+                "operationId": "metricsUptime",
+                "description": "`cipi metrics uptime --json`: the share of per-minute probes of the app's healthcheck URL that answered the expected status, minutes down, average response time, incidents (opened at the third failure in a row, closed at the first success), uptime per UTC day. With `app` one object, without it `{range, apps: [...]}` for every app with a healthcheck.",
+                "parameters": [
+                    {
+                        "name": "app",
+                        "in": "query",
+                        "required": false,
+                        "description": "App name",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "range",
+                        "in": "query",
+                        "required": false,
+                        "description": "Window (default 30d)",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[1-9][0-9]{0,3}[mhd]$",
+                            "example": "24h"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Uptime",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "oneOf": [
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "app": {
+                                                            "type": "string"
+                                                        },
+                                                        "range": {
+                                                            "type": "integer"
+                                                        },
+                                                        "uptime": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "checks": {
+                                                            "type": "integer"
+                                                        },
+                                                        "down_minutes": {
+                                                            "type": "number"
+                                                        },
+                                                        "avg_ms": {
+                                                            "type": "number",
+                                                            "nullable": true
+                                                        },
+                                                        "incidents": {
+                                                            "type": "integer"
+                                                        },
+                                                        "days": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "array",
+                                                                "items": {
+                                                                    "type": "number",
+                                                                    "nullable": true
+                                                                }
+                                                            },
+                                                            "description": "[day timestamp (UTC), uptime %]"
+                                                        },
+                                                        "events": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "ts": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "source": {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                            "monitor",
+                                                                            "health",
+                                                                            "deploy",
+                                                                            "heartbeat"
+                                                                        ]
+                                                                    },
+                                                                    "subject": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "status": {
+                                                                        "type": "string",
+                                                                        "enum": [
+                                                                            "ok",
+                                                                            "warn",
+                                                                            "crit"
+                                                                        ]
+                                                                    },
+                                                                    "summary": {
+                                                                        "type": "string"
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "range": {
+                                                            "type": "integer"
+                                                        },
+                                                        "apps": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "app": {
+                                                                        "type": "string"
+                                                                    },
+                                                                    "range": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "uptime": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "checks": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "down_minutes": {
+                                                                        "type": "number"
+                                                                    },
+                                                                    "avg_ms": {
+                                                                        "type": "number",
+                                                                        "nullable": true
+                                                                    },
+                                                                    "incidents": {
+                                                                        "type": "integer"
+                                                                    },
+                                                                    "days": {
+                                                                        "type": "array",
+                                                                        "items": {
+                                                                            "type": "array",
+                                                                            "items": {
+                                                                                "type": "number",
+                                                                                "nullable": true
+                                                                            }
+                                                                        },
+                                                                        "description": "[day timestamp (UTC), uptime %]"
+                                                                    },
+                                                                    "events": {
+                                                                        "type": "array",
+                                                                        "items": {
+                                                                            "type": "object",
+                                                                            "properties": {
+                                                                                "ts": {
+                                                                                    "type": "integer"
+                                                                                },
+                                                                                "source": {
+                                                                                    "type": "string",
+                                                                                    "enum": [
+                                                                                        "monitor",
+                                                                                        "health",
+                                                                                        "deploy",
+                                                                                        "heartbeat"
+                                                                                    ]
+                                                                                },
+                                                                                "subject": {
+                                                                                    "type": "string"
+                                                                                },
+                                                                                "status": {
+                                                                                    "type": "string",
+                                                                                    "enum": [
+                                                                                        "ok",
+                                                                                        "warn",
+                                                                                        "crit"
+                                                                                    ]
+                                                                                },
+                                                                                "summary": {
+                                                                                    "type": "string"
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "description": "App not found"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/events": {
+            "get": {
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Events timeline",
+                "operationId": "metricsEvents",
+                "description": "`cipi metrics events --json`, newest first: monitor checks changing state, healthcheck incidents, releases put live (with the post-deploy verdict), heartbeat failures and recoveries.",
+                "parameters": [
+                    {
+                        "name": "app",
+                        "in": "query",
+                        "required": false,
+                        "description": "Subject (app name)",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "source",
+                        "in": "query",
+                        "required": false,
+                        "description": "Source",
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "monitor",
+                                "health",
+                                "deploy",
+                                "heartbeat"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "range",
+                        "in": "query",
+                        "required": false,
+                        "description": "How far back (default 7d)",
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[1-9][0-9]{0,3}[mhd]$",
+                            "example": "24h"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "description": "1\u20131000 (default 100)",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 1000
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Events",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "from": {
+                                                    "type": "integer"
+                                                },
+                                                "to": {
+                                                    "type": "integer"
+                                                },
+                                                "events": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "object",
+                                                        "properties": {
+                                                            "ts": {
+                                                                "type": "integer"
+                                                            },
+                                                            "source": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "monitor",
+                                                                    "health",
+                                                                    "deploy",
+                                                                    "heartbeat"
+                                                                ]
+                                                            },
+                                                            "subject": {
+                                                                "type": "string"
+                                                            },
+                                                            "status": {
+                                                                "type": "string",
+                                                                "enum": [
+                                                                    "ok",
+                                                                    "warn",
+                                                                    "crit"
+                                                                ]
+                                                            },
+                                                            "summary": {
+                                                                "type": "string"
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "description": "App not found"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/settings": {
+            "get": {
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Collector settings",
+                "operationId": "metricsSettings",
+                "description": "`cipi metrics status --json`. Never carries a secret: the heartbeat URL is reported by host, the OpenMetrics token as `token_set`. Requires `metrics-view`.",
+                "responses": {
+                    "200": {
+                        "description": "Settings",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                },
+                                                "sqlite": {
+                                                    "type": "boolean"
+                                                },
+                                                "cron": {
+                                                    "type": "boolean"
+                                                },
+                                                "probe": {
+                                                    "type": "boolean"
+                                                },
+                                                "database": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "path": {
+                                                            "type": "string"
+                                                        },
+                                                        "bytes": {
+                                                            "type": "integer"
+                                                        },
+                                                        "samples": {
+                                                            "type": "integer"
+                                                        },
+                                                        "rollups": {
+                                                            "type": "integer"
+                                                        },
+                                                        "events": {
+                                                            "type": "integer"
+                                                        },
+                                                        "oldest": {
+                                                            "type": "integer",
+                                                            "nullable": true
+                                                        }
+                                                    }
+                                                },
+                                                "last_run": {
+                                                    "type": "integer",
+                                                    "nullable": true
+                                                },
+                                                "last_duration_ms": {
+                                                    "type": "integer",
+                                                    "nullable": true
+                                                },
+                                                "retention": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "raw_days": {
+                                                            "type": "integer"
+                                                        },
+                                                        "rollup_days": {
+                                                            "type": "integer"
+                                                        },
+                                                        "resolution_minutes": {
+                                                            "type": "integer"
+                                                        },
+                                                        "events_days": {
+                                                            "type": "integer"
+                                                        }
+                                                    }
+                                                },
+                                                "heartbeat": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "enabled": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "url_set": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "url_host": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "every": {
+                                                            "type": "integer"
+                                                        },
+                                                        "last_ts": {
+                                                            "type": "integer",
+                                                            "nullable": true
+                                                        },
+                                                        "last_ok": {
+                                                            "type": "boolean",
+                                                            "nullable": true
+                                                        },
+                                                        "last_code": {
+                                                            "type": "integer",
+                                                            "nullable": true
+                                                        }
+                                                    }
+                                                },
+                                                "openmetrics": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "enabled": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "port": {
+                                                            "type": "integer"
+                                                        },
+                                                        "allow": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "token_set": {
+                                                            "type": "boolean"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Change retention, probe, collector on/off",
+                "operationId": "metricsSettingsUpdate",
+                "description": "Synchronous: `cipi metrics enable|disable`, `cipi metrics probe on|off`, `cipi metrics retention --raw= --rollup= --resolution= --events=`. A shorter retention deletes older data at the next hourly prune. Returns the new settings. Requires `metrics-manage`.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "enabled": {
+                                        "type": "boolean"
+                                    },
+                                    "probe": {
+                                        "type": "boolean"
+                                    },
+                                    "raw_days": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 90
+                                    },
+                                    "rollup_days": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 400
+                                    },
+                                    "resolution_minutes": {
+                                        "type": "integer",
+                                        "enum": [
+                                            5,
+                                            10,
+                                            15,
+                                            30,
+                                            60
+                                        ]
+                                    },
+                                    "events_days": {
+                                        "type": "integer",
+                                        "minimum": 7,
+                                        "maximum": 730
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "New settings",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                },
+                                                "sqlite": {
+                                                    "type": "boolean"
+                                                },
+                                                "cron": {
+                                                    "type": "boolean"
+                                                },
+                                                "probe": {
+                                                    "type": "boolean"
+                                                },
+                                                "database": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "path": {
+                                                            "type": "string"
+                                                        },
+                                                        "bytes": {
+                                                            "type": "integer"
+                                                        },
+                                                        "samples": {
+                                                            "type": "integer"
+                                                        },
+                                                        "rollups": {
+                                                            "type": "integer"
+                                                        },
+                                                        "events": {
+                                                            "type": "integer"
+                                                        },
+                                                        "oldest": {
+                                                            "type": "integer",
+                                                            "nullable": true
+                                                        }
+                                                    }
+                                                },
+                                                "last_run": {
+                                                    "type": "integer",
+                                                    "nullable": true
+                                                },
+                                                "last_duration_ms": {
+                                                    "type": "integer",
+                                                    "nullable": true
+                                                },
+                                                "retention": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "raw_days": {
+                                                            "type": "integer"
+                                                        },
+                                                        "rollup_days": {
+                                                            "type": "integer"
+                                                        },
+                                                        "resolution_minutes": {
+                                                            "type": "integer"
+                                                        },
+                                                        "events_days": {
+                                                            "type": "integer"
+                                                        }
+                                                    }
+                                                },
+                                                "heartbeat": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "enabled": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "url_set": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "url_host": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "every": {
+                                                            "type": "integer"
+                                                        },
+                                                        "last_ts": {
+                                                            "type": "integer",
+                                                            "nullable": true
+                                                        },
+                                                        "last_ok": {
+                                                            "type": "boolean",
+                                                            "nullable": true
+                                                        },
+                                                        "last_code": {
+                                                            "type": "integer",
+                                                            "nullable": true
+                                                        }
+                                                    }
+                                                },
+                                                "openmetrics": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "enabled": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "port": {
+                                                            "type": "integer"
+                                                        },
+                                                        "allow": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "string"
+                                                            }
+                                                        },
+                                                        "token_set": {
+                                                            "type": "boolean"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Out of range, rollup_days shorter than raw_days, or nothing to change"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/heartbeat": {
+            "put": {
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Set the heartbeat",
+                "operationId": "metricsHeartbeatSet",
+                "description": "`cipi metrics heartbeat set <url> --every=N`: the collector calls the URL every N minutes; when the server stops, the calls stop and the receiver (healthchecks.io, Uptime Kuma push, \u2026) alerts. Requires `metrics-manage`.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "url"
+                                ],
+                                "properties": {
+                                    "url": {
+                                        "type": "string",
+                                        "format": "uri"
+                                    },
+                                    "every": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 60
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Heartbeat",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                },
+                                                "url_set": {
+                                                    "type": "boolean"
+                                                },
+                                                "url_host": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "every": {
+                                                    "type": "integer"
+                                                },
+                                                "last_ts": {
+                                                    "type": "integer",
+                                                    "nullable": true
+                                                },
+                                                "last_ok": {
+                                                    "type": "boolean",
+                                                    "nullable": true
+                                                },
+                                                "last_code": {
+                                                    "type": "integer",
+                                                    "nullable": true
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Invalid URL or interval"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Stop the heartbeat",
+                "operationId": "metricsHeartbeatOff",
+                "responses": {
+                    "200": {
+                        "description": "Heartbeat",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                },
+                                                "url_set": {
+                                                    "type": "boolean"
+                                                },
+                                                "url_host": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "every": {
+                                                    "type": "integer"
+                                                },
+                                                "last_ts": {
+                                                    "type": "integer",
+                                                    "nullable": true
+                                                },
+                                                "last_ok": {
+                                                    "type": "boolean",
+                                                    "nullable": true
+                                                },
+                                                "last_code": {
+                                                    "type": "integer",
+                                                    "nullable": true
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/heartbeat/test": {
+            "post": {
+                "tags": [
+                    "Metrics"
+                ],
+                "summary": "Call the heartbeat once now",
+                "operationId": "metricsHeartbeatTest",
+                "responses": {
+                    "200": {
+                        "description": "Result",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "host": {
+                                                    "type": "string"
+                                                },
+                                                "code": {
+                                                    "type": "integer"
+                                                },
+                                                "ok": {
+                                                    "type": "boolean"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/basicauth/agent": {
+            "get": {
+                "tags": [
+                    "Apps"
+                ],
+                "summary": "cipi/agent routes and basic auth",
+                "operationId": "appBasicAuthAgent",
+                "description": "Whether the cipi/agent routes (`/cipi/` or `CIPI_ROUTE_PREFIX`) are left out of basic auth (Cipi 5.11.0+). They authenticate with their own tokens; a Git provider or MCP client cannot send the site's password.",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Agent",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "mode": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "public",
+                                                        "protected"
+                                                    ]
+                                                },
+                                                "public": {
+                                                    "type": "boolean",
+                                                    "description": "True while basic auth is on and the live release has cipi/agent"
+                                                },
+                                                "prefix": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "example": "/cipi/"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "description": "App not found"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Apps"
+                ],
+                "summary": "Leave cipi/agent out of basic auth, or not",
+                "operationId": "appBasicAuthAgentSet",
+                "description": "`cipi basicauth agent <app> public|protected`. Synchronous; rewrites the vhost when basic auth is on.",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "mode"
+                                ],
+                                "properties": {
+                                    "mode": {
+                                        "type": "string",
+                                        "enum": [
+                                            "public",
+                                            "protected"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Agent",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "mode": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "public",
+                                                        "protected"
+                                                    ]
+                                                },
+                                                "public": {
+                                                    "type": "boolean",
+                                                    "description": "True while basic auth is on and the live release has cipi/agent"
+                                                },
+                                                "prefix": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "example": "/cipi/"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "description": "App not found"
+                    },
+                    "422": {
+                        "description": "Refused by the CLI"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error, sqlite3 missing, or a core older than 5.11.0 (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "components": {
@@ -9455,6 +10886,10 @@
         {
             "name": "Backups",
             "description": "Backup profiles, runs and destinations (Cipi 5.9.0+). Destinations are created on the server: they take an S3 secret key."
+        },
+        {
+            "name": "Metrics",
+            "description": "Metrics & health history (cipi metrics, Cipi CLI >= 5.11.0): per-minute samples kept 7 days, rollups 30 days, events 90 days by default."
         }
     ]
 }

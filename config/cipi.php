@@ -60,6 +60,8 @@ return [
         'search-manage' => 'Enable / disable search per app',
         'packages-view' => 'View optional host packages catalog',
         'monitor-view' => 'View system monitor checks',
+        'metrics-view' => 'Read metrics and health history: series, uptime, events, collector settings',
+        'metrics-manage' => 'Metrics retention, healthcheck probe, collector on/off, heartbeat URL',
         'zt-view' => 'View Cloudflare Zero Trust status',
         'disk-view' => 'View disk usage: server, apps, databases',
         'yml-view' => 'Read cipi.yml status and plan',
