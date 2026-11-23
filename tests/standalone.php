@@ -33,7 +33,7 @@ namespace {
     function config(string $k, mixed $d = null): mixed { return $GLOBALS['CFG'][$k] ?? $d; }
     function env(string $k, mixed $d = null): mixed { return $d; }
     $src = ($argv[1] ?? dirname(__DIR__)) . '/src/Services/';
-    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService'] as $c) {
+    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService', 'CipiAppJitService', 'CipiFrankenPhpService', 'CipiOutputParser', 'CipiMetricsService'] as $c) {
         require $src . $c . '.php';
     }
 
@@ -243,6 +243,92 @@ namespace {
     $enums = [$spec['components']['schemas']['AppEditRequest']['properties']['php']['enum'] ?? null];
     array_walk_recursive($spec, function ($v, $k) use (&$seen) { if ($v === '7.4' || $v === '8.2') { $seen = true; } });
     ok($enums === [['8.3', '8.4', '8.5', '8.6']] && empty($seen), 'OpenAPI offers what the API accepts: no legacy version in any enum');
+
+    echo "--- JIT per app, FrankenPHP builds (1.40.0, Cipi 5.10.0)\n";
+    $apps = $GLOBALS['T'] . '/apps.json';
+    file_put_contents($apps, json_encode(['shop' => ['php' => '8.5', 'octane' => 'frankenphp'], 'blog' => ['php' => '8.5'], 'spa' => ['php' => '8.5', 'runtime' => 'node']]));
+    $GLOBALS['CFG']['cipi.apps_json'] = $apps;
+    $cli = new FakeCli;
+    $jit = new CipiApi\Services\CipiAppJitService($cli, new CipiApi\Services\CipiValidationService(new FakeVersion('5.10.0')), new FakeVersion('5.10.0'));
+    ok($jit->command('blog', ['enabled' => true]) === "app jit 'blog' on", 'on, CLI defaults');
+    ok($jit->command('blog', ['enabled' => true, 'mode' => 'function', 'buffer' => '256m']) === "app jit 'blog' on --mode='function' --buffer='256M'", 'on with mode and buffer, quoted, the size upper-cased');
+    ok($jit->command('blog', ['enabled' => false]) === "app jit 'blog' off", 'off');
+    ok($jit->inputError('blog', ['enabled' => true, 'buffer' => '8M']) === 'buffer must be between 16M and 1G' && $jit->inputError('blog', ['enabled' => true, 'buffer' => '2G']) !== null && $jit->inputError('blog', ['enabled' => true, 'buffer' => '1G']) === null, 'buffer: 16M to 1G, the CLI\'s bounds');
+    ok($jit->inputError('blog', ['enabled' => false, 'mode' => 'tracing']) !== null, 'mode or buffer with enabled false is refused');
+    ok(str_contains((string) $jit->inputError('spa', ['enabled' => true]), 'Node app'), 'a Node app is refused');
+    $oldJit = new CipiApi\Services\CipiAppJitService(new FakeCli, new CipiApi\Services\CipiValidationService(new FakeVersion('5.9.1')), new FakeVersion('5.9.1'));
+    ok(str_contains((string) $oldJit->inputError('blog', ['enabled' => true]), 'needs Cipi 5.10.0+'), 'an older core is refused before a job is queued');
+    $cli->next = ['output' => "sudo: unable to resolve host x\n" . '{"app":"shop","runtime":"octane","php":"8.5.13","enabled":true,"mode":"tracing","buffer":"128M","supported":true,"note":null}', 'exit_code' => 0, 'success' => true];
+    $st = $jit->show('shop');
+    ok(end($cli->ran) === "app jit 'shop' --json" && $st['runtime'] === 'octane' && $st['php'] === '8.5.13', 'show: cipi app jit <app> --json, a sudo line around the JSON ignored');
+    foreach (["app jit 'blog' on --mode='tracing' --buffer='128M'", "app jit 'blog' off", 'frankenphp status --json', "frankenphp upgrade 'shop' --yes", 'frankenphp upgrade --all --yes'] as $c) {
+        ok((new FakeCli)->commandIsPermitted($c), "allow-list: {$c}");
+    }
+    ok(! (new FakeCli)->commandIsPermitted("frankenphp use 'shop' x --force") && ! (new FakeCli)->commandIsPermitted('frankenphp import /tmp/x'), 'not on the allow-list: frankenphp use, import');
+    $fp = new CipiApi\Services\CipiFrankenPhpService($cli, new FakeVersion('5.10.0'));
+    ok($fp->upgradeCommand('shop') === "frankenphp upgrade 'shop' --yes" && $fp->upgradeCommand(null) === 'frankenphp upgrade --all --yes', 'upgrade: one app, or --all');
+    $cli->next = ['output' => '{"builds":[{"id":"1.13.2-php8.5.13"}],"apps":[{"app":"shop","state":"ok"}],"autoupdate":true}', 'exit_code' => 0, 'success' => true];
+    $st = $fp->status();
+    ok(end($cli->ran) === 'frankenphp status --json' && $st['apps'][0]['state'] === 'ok' && $st['autoupdate'] === true, 'status: decoded');
+    $cli->next = ['output' => 'FrankenPHP — the binary each Octane app runs', 'exit_code' => 0, 'success' => true];
+    ok(str_contains((string) thrown(fn () => $fp->status()), 'returned no status'), 'a table instead of JSON is an error');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiFrankenPhpService(new FakeCli, new FakeVersion('5.9.1')))->upgradeCommand(null)), 'needs Cipi 5.10.0+'), 'FrankenPHP on an older core: refused');
+    $abil = file_get_contents(dirname($src) . '/Services/CipiJobAbilities.php');
+    ok(str_contains($abil, "'app-jit' => 'apps-edit'") && str_contains($abil, "'frankenphp-upgrade' => 'php-manage'"), 'job types have their ability');
+    $parser = (new ReflectionClass(CipiApi\Services\CipiOutputParser::class))->newInstanceWithoutConstructor();
+    $pj = new ReflectionMethod($parser, 'parseAppJit');
+    ok($pj->invoke($parser, "✓ JIT on for 'blog' (mode=tracing, buffer=128M)") === ['app' => 'blog', 'enabled' => true, 'mode' => 'tracing', 'buffer' => '128M'] && $pj->invoke($parser, "✓ JIT off for 'blog'") === ['app' => 'blog', 'enabled' => false], 'job result: JIT on / off parsed');
+    $pu = new ReflectionMethod($parser, 'parseFrankenPhpUpgrade');
+    $r = $pu->invoke($parser, "✓ 'shop' runs FrankenPHP 1.13.2 on PHP 8.5.13\n[INFO] 'api' is up to date (1.14.0-php8.6.0)\n[INFO] FrankenPHP 1.14.0 is out and carries PHP 8.6.0; 'shop' is on PHP 8.5, so Cipi keeps it");
+    ok($r['apps']['shop']['result'] === 'upgraded' && $r['apps']['api']['result'] === 'up-to-date' && $r['apps']['shop']['available_on_other_php']['php'] === '8.6.0' && $r['rolled_back'] === [], 'job result: per app, upgraded / up to date / a release on another PHP');
+    $spec = json_decode(file_get_contents(dirname($src, 2) . '/public/api-docs/openapi.json'), true);
+    ok(isset($spec['paths']['/apps/{name}/jit']['get'], $spec['paths']['/apps/{name}/jit']['put'], $spec['paths']['/frankenphp']['get'], $spec['paths']['/frankenphp/upgrade']['post']), 'OpenAPI documents the four routes');
+    $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
+    ok(str_contains($routes, "Route::put('/apps/{name}/jit', [AppJitController::class, 'update'])->middleware('ability:apps-edit')") && str_contains($routes, "Route::post('/frankenphp/upgrade', [FrankenPhpController::class, 'upgrade'])->middleware('ability:php-manage')"), 'routes and their abilities');
+
+    echo "--- Metrics & health history (1.41.0, Cipi 5.11.0)\n";
+    $cli = new FakeCli;
+    $met = new CipiApi\Services\CipiMetricsService($cli, new FakeVersion('5.11.0'));
+    ok($met->seriesCommand([]) === 'metrics show --json', 'series: host, CLI defaults');
+    ok($met->seriesCommand(['app' => 'shop', 'metrics' => 'cpu,http_5xx', 'range' => '7d']) === "metrics show --app='shop' --metrics='cpu,http_5xx' --range='7d' --json", 'series: app, metrics, range — quoted');
+    ok($met->seriesCommand(['metrics' => 'cpu,mem_mb', 'from' => 1795000000, 'to' => 1795086400]) === "metrics show --metrics='cpu' --from=1795000000 --to=1795086400 --json", 'series: an app metric is dropped for the host; from/to as integers');
+    ok(str_starts_with((string) $met->seriesError(['metrics' => 'cpu,nope']), 'Unknown metric(s): nope'), 'series: an unknown metric is named');
+    ok($met->seriesError(['to' => 1795000000]) === 'to needs from' && $met->seriesError(['from' => 1795000010, 'to' => 1795000000]) === 'to must be after from', 'series: from/to checked');
+    ok(preg_match(CipiApi\Services\CipiMetricsService::RANGE_PATTERN, '30d') === 1 && preg_match(CipiApi\Services\CipiMetricsService::RANGE_PATTERN, "7d'; rm") === 0 && preg_match(CipiApi\Services\CipiMetricsService::RANGE_PATTERN, '0d') === 0, 'range pattern: 30d yes, 0d and anything else no');
+    ok($met->settingsCommands(['enabled' => true, 'probe' => false, 'raw_days' => 3, 'rollup_days' => 60, 'resolution_minutes' => 30, 'events_days' => 120]) === ['metrics enable', 'metrics probe off', 'metrics retention --raw=3d --rollup=60d --events=120d --resolution=30m'], 'settings: one command per concern, retention in one');
+    ok($met->settingsError([]) !== null && $met->settingsError(['raw_days' => 10, 'rollup_days' => 5]) === 'rollup_days cannot be shorter than raw_days', 'settings: nothing to change, rollup shorter than raw');
+    ok($met->heartbeatCommand('https://hc-ping.com/abc', 5) === "metrics heartbeat set 'https://hc-ping.com/abc' --every=5", 'heartbeat: URL quoted');
+    $hbRe = substr(CipiApi\Services\CipiMetricsService::HEARTBEAT_RULES['url'][3], 6);
+    ok(preg_match($hbRe, 'https://hc-ping.com/abc-123') === 1 && preg_match($hbRe, 'https://x.test/a b') === 0 && preg_match($hbRe, 'ftp://x.test/') === 0, 'heartbeat: https URL yes, a space or another scheme no');
+    $cli->next = ['output' => "sudo: x\n" . '{"ts":1,"host":{"values":{"cpu":3}},"apps":[],"events":[]}', 'exit_code' => 0, 'success' => true];
+    $o = $met->overview();
+    ok(end($cli->ran) === 'metrics overview --json' && $o['host']['values']['cpu'] === 3, 'overview: decoded past a sudo line');
+    $cli->next = ['output' => "\033[0;31m[ERROR]\033[0m sqlite3 is not installed — apt-get install -y sqlite3", 'exit_code' => 1, 'success' => false];
+    ok(str_contains((string) thrown(fn () => $met->status()), 'sqlite3 is not installed'), 'the CLI\'s [ERROR] line is the message');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiMetricsService(new FakeCli, new FakeVersion('5.10.0')))->overview()), 'needs Cipi 5.11.0+'), 'an older core is refused');
+    $cli->next = ['output' => '{"range":2592000,"apps":[{"app":"shop","uptime":99.9}]}', 'exit_code' => 0, 'success' => true];
+    $met->uptime(null, '30d');
+    ok(end($cli->ran) === "metrics uptime --range='30d' --json", 'uptime: all apps');
+    $met->uptime('shop', null);
+    ok(end($cli->ran) === "metrics uptime 'shop' --json", 'uptime: one app');
+    $cli->next = ['output' => '{"from":1,"to":2,"events":[]}', 'exit_code' => 0, 'success' => true];
+    $met->events(['app' => 'shop', 'source' => 'deploy', 'range' => '7d', 'limit' => 20]);
+    ok(end($cli->ran) === "metrics events --app='shop' --source='deploy' --range='7d' --limit=20 --json", 'events: filters');
+    foreach (['metrics overview --json', "metrics show --app='shop' --json", 'metrics uptime --json', 'metrics events --json', 'metrics status --json', 'metrics retention --raw=7d', 'metrics probe on', 'metrics enable', 'metrics disable', "metrics heartbeat set 'https://x' --every=1", 'metrics heartbeat off', "basicauth agent 'shop' status"] as $c) {
+        ok((new FakeCli)->commandIsPermitted($c), "allow-list: {$c}");
+    }
+    ok(! (new FakeCli)->commandIsPermitted('metrics openmetrics on --allow=1.2.3.4') && ! (new FakeCli)->commandIsPermitted('metrics reset --yes') && ! (new FakeCli)->commandIsPermitted('metrics prune'), 'not on the allow-list: openmetrics, reset, prune');
+    ok(CipiApi\Services\CipiMetricsService::parseAgentStatus('cipi/agent routes (/cipi/): public — the agent checks its own tokens') === ['mode' => 'public', 'public' => true, 'prefix' => '/cipi/'], 'basicauth agent: public, with its prefix');
+    ok(CipiApi\Services\CipiMetricsService::parseAgentStatus('cipi/agent routes: behind basic auth (cipi basicauth agent shop public to change)')['mode'] === 'protected', 'basicauth agent: protected');
+    ok(CipiApi\Services\CipiMetricsService::parseAgentStatus('cipi/agent routes: nothing left out (basic auth off, or no cipi/agent in the live release)') === ['mode' => 'public', 'public' => false, 'prefix' => null], 'basicauth agent: nothing left out');
+    $cfg = file_get_contents(dirname($src, 2) . '/config/cipi.php');
+    ok(str_contains($cfg, "'metrics-view'") && str_contains($cfg, "'metrics-manage'"), 'abilities metrics-view and metrics-manage');
+    $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
+    ok(str_contains($routes, "Route::get('/metrics', [MetricsController::class, 'overview'])->middleware('ability:metrics-view')") && str_contains($routes, "Route::put('/metrics/settings', [MetricsController::class, 'updateSettings'])->middleware('ability:metrics-manage')") && str_contains($routes, "Route::get('/apps/{name}/metrics', [MetricsController::class, 'appSeries'])->middleware('ability:metrics-view')"), 'metrics routes and their abilities');
+    $spec = json_decode(file_get_contents(dirname($src, 2) . '/public/api-docs/openapi.json'), true);
+    ok(isset($spec['paths']['/metrics']['get'], $spec['paths']['/metrics/series']['get'], $spec['paths']['/metrics/uptime']['get'], $spec['paths']['/metrics/events']['get'], $spec['paths']['/metrics/settings']['put'], $spec['paths']['/metrics/heartbeat']['put'], $spec['paths']['/apps/{name}/metrics']['get'], $spec['paths']['/apps/{name}/basicauth/agent']['put']), 'OpenAPI documents the metrics and basicauth agent routes');
+    $mcp = file_get_contents(dirname($src, 2) . '/src/Mcp/Servers/CipiServer.php');
+    ok(substr_count($mcp, 'Metrics') >= 12, 'six MCP tools registered');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);

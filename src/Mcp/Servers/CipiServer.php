@@ -8,6 +8,8 @@ use CipiApi\Mcp\Tools\AliasRemoveTool;
 use CipiApi\Mcp\Tools\AppCreateTool;
 use CipiApi\Mcp\Tools\AppDeleteTool;
 use CipiApi\Mcp\Tools\AppFixPermissionsTool;
+use CipiApi\Mcp\Tools\AppJitShowTool;
+use CipiApi\Mcp\Tools\AppJitUpdateTool;
 use CipiApi\Mcp\Tools\AppLimitsShowTool;
 use CipiApi\Mcp\Tools\AppLimitsUpdateTool;
 use CipiApi\Mcp\Tools\AppYmlApplyTool;
@@ -17,6 +19,12 @@ use CipiApi\Mcp\Tools\DeployAuditTool;
 use CipiApi\Mcp\Tools\DeployStatusTool;
 use CipiApi\Mcp\Tools\DiskDatabasesTool;
 use CipiApi\Mcp\Tools\DiskUsageTool;
+use CipiApi\Mcp\Tools\MetricsEventsTool;
+use CipiApi\Mcp\Tools\MetricsOverviewTool;
+use CipiApi\Mcp\Tools\MetricsSeriesTool;
+use CipiApi\Mcp\Tools\MetricsSettingsShowTool;
+use CipiApi\Mcp\Tools\MetricsSettingsUpdateTool;
+use CipiApi\Mcp\Tools\MetricsUptimeTool;
 use CipiApi\Mcp\Tools\MonitorListTool;
 use CipiApi\Mcp\Tools\NodeRestartTool;
 use CipiApi\Mcp\Tools\NodeRuntimesTool;
@@ -68,6 +76,8 @@ use CipiApi\Mcp\Tools\DbPasswordTool;
 use CipiApi\Mcp\Tools\DbRestoreTool;
 use CipiApi\Mcp\Tools\IpWhitelistShowTool;
 use CipiApi\Mcp\Tools\JobShowTool;
+use CipiApi\Mcp\Tools\FrankenPhpStatusTool;
+use CipiApi\Mcp\Tools\FrankenPhpUpgradeTool;
 use CipiApi\Mcp\Tools\PhpListTool;
 use CipiApi\Mcp\Tools\ServerStatusTool;
 use CipiApi\Mcp\Tools\ServiceListTool;
@@ -123,6 +133,8 @@ class CipiServer extends Server
         AppFixPermissionsTool::class,
         AppLimitsShowTool::class,
         AppLimitsUpdateTool::class,
+        AppJitShowTool::class,
+        AppJitUpdateTool::class,
         AppBasicAuthStatusTool::class,
         AppBasicAuthEnableTool::class,
         AppBasicAuthDisableTool::class,
@@ -156,6 +168,12 @@ class CipiServer extends Server
         SearchDisableTool::class,
         PackageListTool::class,
         MonitorListTool::class,
+        MetricsOverviewTool::class,
+        MetricsSeriesTool::class,
+        MetricsUptimeTool::class,
+        MetricsEventsTool::class,
+        MetricsSettingsShowTool::class,
+        MetricsSettingsUpdateTool::class,
         ZtStatusTool::class,
         DiskUsageTool::class,
         DiskDatabasesTool::class,
@@ -174,6 +192,8 @@ class CipiServer extends Server
         ServerStatusTool::class,
         ServiceListTool::class,
         PhpListTool::class,
+        FrankenPhpStatusTool::class,
+        FrankenPhpUpgradeTool::class,
         IpWhitelistShowTool::class,
     ];
 }

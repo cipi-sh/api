@@ -45,6 +45,8 @@ class CipiOutputParser
             'node-restart' => $this->parseNodeRestart($plain),
             'app-fix-permissions' => $this->parseAppFixPermissions($plain),
             'app-limits' => $this->parseAppLimits($plain),
+            'app-jit' => $this->parseAppJit($plain),
+            'frankenphp-upgrade' => $this->parseFrankenPhpUpgrade($plain),
             'app-yml-apply' => $this->parseAppYmlApply($plain),
             'status' => $this->parseStatus($plain),
             default => null,
@@ -408,6 +410,57 @@ class CipiOutputParser
         }
 
         return null;
+    }
+
+    protected function parseAppJit(string $text): ?array
+    {
+        if (preg_match("/JIT on for '([^']+)' \\(mode=([a-z]+), buffer=([0-9]+[MG])\\)/", $text, $m)) {
+            return ['app' => $m[1], 'enabled' => true, 'mode' => $m[2], 'buffer' => $m[3]];
+        }
+        if (preg_match("/JIT (?:is already )?off for '([^']+)'/", $text, $m)) {
+            return ['app' => $m[1], 'enabled' => false];
+        }
+        if (preg_match("/JIT is already on for '([^']+)' \\(mode=([a-z]+), buffer=([0-9]+[MG])\\)/", $text, $m)) {
+            return ['app' => $m[1], 'enabled' => true, 'mode' => $m[2], 'buffer' => $m[3]];
+        }
+
+        return null;
+    }
+
+    /**
+     * One entry per app the upgrade looked at: moved (with the build), up to
+     * date, rolled back, or left on its PHP minor because the release is on
+     * another one.
+     */
+    protected function parseFrankenPhpUpgrade(string $text): ?array
+    {
+        $apps = [];
+        if (preg_match_all("/'([a-z][a-z0-9]{2,31})' runs FrankenPHP ([0-9.]+) on PHP ([0-9.]+)/", $text, $all, PREG_SET_ORDER)) {
+            foreach ($all as $m) {
+                $apps[$m[1]] = ['result' => 'upgraded', 'frankenphp' => $m[2], 'php' => $m[3]];
+            }
+        }
+        if (preg_match_all("/'([a-z][a-z0-9]{2,31})' is up to date \\(([^)]+)\\)/", $text, $all, PREG_SET_ORDER)) {
+            foreach ($all as $m) {
+                $apps[$m[1]] ??= ['result' => 'up-to-date', 'build' => $m[2]];
+            }
+        }
+        if (preg_match_all("/FrankenPHP ([0-9.]+) is out and carries PHP ([0-9.]+); '([a-z][a-z0-9]{2,31})' is on PHP ([0-9.]+)/", $text, $all, PREG_SET_ORDER)) {
+            foreach ($all as $m) {
+                $apps[$m[3]]['available_on_other_php'] = ['frankenphp' => $m[1], 'php' => $m[2]];
+            }
+        }
+        $rolledBack = [];
+        if (preg_match_all("/Octane did not come up on (\\S+) — back to (\\S+)/", $text, $all, PREG_SET_ORDER)) {
+            foreach ($all as $m) {
+                $rolledBack[] = ['tried' => $m[1], 'back_to' => $m[2]];
+            }
+        }
+        if ($apps === [] && $rolledBack === []) {
+            return null;
+        }
+
+        return ['apps' => $apps, 'rolled_back' => $rolledBack];
     }
 
     protected function parseAppLimits(string $text): ?array

@@ -1,6 +1,7 @@
 <?php
 
 use CipiApi\Http\Controllers\AliasController;
+use CipiApi\Http\Controllers\AppJitController;
 use CipiApi\Http\Controllers\AppLimitsController;
 use CipiApi\Http\Controllers\AppLogsController;
 use CipiApi\Http\Controllers\AppController;
@@ -14,9 +15,11 @@ use CipiApi\Http\Controllers\DeployConfigController;
 use CipiApi\Http\Controllers\DeployController;
 use CipiApi\Http\Controllers\DiskController;
 use CipiApi\Http\Controllers\EnvController;
+use CipiApi\Http\Controllers\FrankenPhpController;
 use CipiApi\Http\Controllers\JobController;
 use CipiApi\Http\Controllers\HealthController;
 use CipiApi\Http\Controllers\IpWhitelistController;
+use CipiApi\Http\Controllers\MetricsController;
 use CipiApi\Http\Controllers\MonitorController;
 use CipiApi\Http\Controllers\NodeController;
 use CipiApi\Http\Controllers\PackageController;
@@ -48,9 +51,15 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/apps/{name}/fix-permissions', [AppController::class, 'fixPermissions'])->middleware('ability:apps-edit');
     Route::get('/apps/{name}/limits', [AppLimitsController::class, 'show'])->middleware('ability:apps-view');
     Route::put('/apps/{name}/limits', [AppLimitsController::class, 'update'])->middleware('ability:apps-edit');
+    // PHP JIT per app (Cipi CLI ≥ 5.10.0): GET sync, PUT async job
+    Route::get('/apps/{name}/jit', [AppJitController::class, 'show'])->middleware('ability:apps-view');
+    Route::put('/apps/{name}/jit', [AppJitController::class, 'update'])->middleware('ability:apps-edit');
     Route::get('/apps/{name}/basicauth', [BasicAuthController::class, 'status'])->middleware('ability:apps-basicauth');
     Route::post('/apps/{name}/basicauth/enable', [BasicAuthController::class, 'enable'])->middleware('ability:apps-basicauth');
     Route::post('/apps/{name}/basicauth/disable', [BasicAuthController::class, 'disable'])->middleware('ability:apps-basicauth');
+    // cipi/agent routes behind basic auth or not (Cipi CLI ≥ 5.11.0)
+    Route::get('/apps/{name}/basicauth/agent', [BasicAuthController::class, 'agent'])->middleware('ability:apps-basicauth');
+    Route::put('/apps/{name}/basicauth/agent', [BasicAuthController::class, 'setAgent'])->middleware('ability:apps-basicauth');
 
     // App .env (key/value — requires Cipi CLI ≥ 5.0.3)
     Route::get('/apps/{name}/env', [EnvController::class, 'show'])->middleware('ability:apps-env');
@@ -166,6 +175,9 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     // PHP versions (Cipi CLI ≥ 5.0.6)
     Route::get('/php', [PhpController::class, 'list'])->middleware('ability:php-view');
     Route::post('/php/install', [PhpController::class, 'install'])->middleware('ability:php-manage');
+    // FrankenPHP builds of Octane apps (Cipi CLI ≥ 5.10.0): GET sync, upgrade async job
+    Route::get('/frankenphp', [FrankenPhpController::class, 'status'])->middleware('ability:php-view');
+    Route::post('/frankenphp/upgrade', [FrankenPhpController::class, 'upgrade'])->middleware('ability:php-manage');
 
     // SSH keys — cipi user (Cipi CLI ≥ 5.0.6)
     Route::get('/ssh/keys', [SshController::class, 'list'])->middleware('ability:ssh-view');
@@ -204,6 +216,18 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
 
     // System monitor checks — read-only (Cipi CLI ≥ 5.3.0)
     Route::get('/monitor', [MonitorController::class, 'list'])->middleware('ability:monitor-view');
+
+    // Metrics & health history (Cipi CLI ≥ 5.11.0) — synchronous reads of the server's SQLite
+    Route::get('/metrics', [MetricsController::class, 'overview'])->middleware('ability:metrics-view');
+    Route::get('/metrics/series', [MetricsController::class, 'series'])->middleware('ability:metrics-view');
+    Route::get('/metrics/uptime', [MetricsController::class, 'uptime'])->middleware('ability:metrics-view');
+    Route::get('/metrics/events', [MetricsController::class, 'events'])->middleware('ability:metrics-view');
+    Route::get('/metrics/settings', [MetricsController::class, 'settings'])->middleware('ability:metrics-view');
+    Route::put('/metrics/settings', [MetricsController::class, 'updateSettings'])->middleware('ability:metrics-manage');
+    Route::put('/metrics/heartbeat', [MetricsController::class, 'setHeartbeat'])->middleware('ability:metrics-manage');
+    Route::delete('/metrics/heartbeat', [MetricsController::class, 'deleteHeartbeat'])->middleware('ability:metrics-manage');
+    Route::post('/metrics/heartbeat/test', [MetricsController::class, 'testHeartbeat'])->middleware('ability:metrics-manage');
+    Route::get('/apps/{name}/metrics', [MetricsController::class, 'appSeries'])->middleware('ability:metrics-view');
 
     // Cloudflare Zero Trust — read-only status (Cipi CLI ≥ 5.3.0)
     Route::get('/zt', [ZtController::class, 'status'])->middleware('ability:zt-view');

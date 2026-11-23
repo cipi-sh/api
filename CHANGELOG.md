@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.41.0] - 2026-11-23
+
+Metrics and health history, and the cipi/agent routes behind basic auth, for a core that has them (Cipi 5.11.0).
+
+### Added
+
+- **`GET /api/metrics`** (`metrics-view`) — `cipi metrics overview --json`: the host now; per app the latest values (`cpu`, `mem_mb`, `req`, `http_5xx`, `http_ms`, `http_code`, `fpm_procs`, `fpm_max`, `fpm_saturated`, `workers_up`, `workers_total`), a 5-minute `spark` of the last hour, `uptime` over 24h, 7d and 30d for the apps with a healthcheck; the last 15 events; the collector's state. The one call a dashboard needs.
+- **`GET /api/metrics/series`** and **`GET /api/apps/{name}/metrics`** (`metrics-view`) — `cipi metrics show --json`: `metrics` (comma-separated, checked against the host or app list — an unknown name is a `422` that lists the known ones), `range` (`90m`, `24h`, `7d`, `30d`; capped at the rollup retention) or `from`/`to`. About 240 points of `[ts, avg, max]` whatever the range; `source` says whether they come from the per-minute samples or the rollups.
+- **`GET /api/metrics/uptime`** (`metrics-view`, optional `app` and `range`, default 30d) — healthcheck uptime %, minutes down, average response time, incidents and uptime per UTC day.
+- **`GET /api/metrics/events`** (`metrics-view`; `app`, `source` `monitor|health|deploy|heartbeat`, `range` default 7d, `limit` 1–1000).
+- **`GET|PUT /api/metrics/settings`** — read with `metrics-view`; change with `metrics-manage`: `enabled`, `probe`, `raw_days` (1–90), `rollup_days` (up to 400, not shorter than `raw_days`), `resolution_minutes` (5, 10, 15, 30, 60), `events_days` (7–730). Synchronous (`cipi metrics enable|disable`, `probe on|off`, `retention …`); returns the new settings. The status never carries a secret: the heartbeat URL by host, the OpenMetrics token as `token_set`.
+- **`PUT|DELETE /api/metrics/heartbeat`**, **`POST /api/metrics/heartbeat/test`** (`metrics-manage`) — `url` (http/https, no spaces) and `every` (1–60 minutes).
+- **`GET|PUT /api/apps/{name}/basicauth/agent`** (`apps-basicauth`) — whether the cipi/agent routes are left out of basic auth: `{mode: public|protected, public, prefix}`; `PUT` with `mode`.
+- **Abilities** `metrics-view` and `metrics-manage`.
+- **MCP tools** `MetricsOverview`, `MetricsSeries`, `MetricsUptime`, `MetricsEvents`, `MetricsSettingsShow`, `MetricsSettingsUpdate` (retention, probe, collector, `heartbeat_url` / `heartbeat_every` / `heartbeat_off`).
+- Allow-list: `metrics overview|status|show|uptime|events|retention|probe|enable|disable|heartbeat`, `basicauth agent` — what the Cipi 5.11.0 panel sudoers allow. Not `metrics openmetrics` (it opens a port and firewall rules), `prune` or `reset`: host CLI only.
+- OpenAPI: the eleven routes, a `Metrics` tag, version 1.41.0.
+- `tests/standalone.php`: 36 more checks.
+
+### Notes
+
+- Every metrics route is synchronous: the CLI reads a local SQLite database and answers in well under a second, so nothing is queued.
+- On a core older than 5.11.0 every one of them answers `503` with `Metrics needs Cipi 5.11.0+ — this server runs Cipi … Run: cipi self-update`, before anything runs. A core where `sqlite3` is missing answers `503` with the CLI's own message (`apt-get install -y sqlite3`).
+
+## [1.40.0] - 2026-11-21
+
+JIT per app and the FrankenPHP builds of Octane apps, for a core that has them (Cipi 5.10.0).
+
+### Added
+
+- **`GET /api/apps/{name}/jit`** (`apps-view`) — `cipi app jit <app> --json`: `runtime`, `php` (for an Octane app the PHP inside its FrankenPHP build), `enabled`, `mode`, `buffer`, `supported`, `note`.
+- **`PUT /api/apps/{name}/jit`** (`apps-edit`) — `enabled`, and with it `mode` (`tracing`|`function`) and `buffer` (16M–1G): `cipi app jit <app> on|off` as an async job `app-jit`. The CLI checks the PHP starts with JIT before writing anything, restarts PHP-FPM of that PHP version (every app on it) or the app's Octane, and goes back to the previous setting when the app does not come up. The job result is `{app, enabled, mode, buffer}`. A Node app, `mode`/`buffer` with `enabled: false`, a buffer out of range and a core older than 5.10.0 are refused with `422` before a job is queued.
+- **`GET /api/frankenphp`** (`php-view`) — `cipi frankenphp status --json`: each Octane app's build, the PHP inside it, `state` (`ok`, `vulnerable`, `mismatch`, `unpinned`, `missing`) and `restart_pending`; the builds on the server; `autoupdate`.
+- **`POST /api/frankenphp/upgrade`** (`php-manage`) — optional `app` (an Octane app; without it, all of them): `cipi frankenphp upgrade` as an async job `frankenphp-upgrade`. Never another PHP minor or FrankenPHP major. The job result lists per app `upgraded` (with FrankenPHP and PHP), `up-to-date`, `available_on_other_php`, and `rolled_back`.
+- MCP tools `AppJitShow`, `AppJitUpdate`, `FrankenPhpStatus`, `FrankenPhpUpgrade`.
+- `CipiCliService::ALLOWED_COMMANDS`: `app jit`, `frankenphp status`, `frankenphp upgrade` (the core's sudoers lists them from 5.10.0). Not `frankenphp use` nor `import`.
+- OpenAPI: the four routes, `AppJitResponse`, `AppJitUpdateRequest`, `FrankenPhpStatusResponse`; `info.version` 1.40.0.
+- `tests/standalone.php`: 23 more checks (106).
+
+### Changed
+
+- Token ability descriptions: `apps-edit` includes JIT, `php-view` / `php-manage` the FrankenPHP builds.
+
 ## [1.39.2] - 2026-11-19
 
 PHP 8.6 can be installed and assigned to an app through the API, on a server whose core knows it (Cipi 5.9.1). The legacy versions a server may still have (7.4–8.2) are reported where they run and refused by name where they cannot be used. No route, ability or response changes.

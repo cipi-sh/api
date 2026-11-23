@@ -3,6 +3,7 @@
 namespace CipiApi\Http\Controllers;
 
 use CipiApi\Services\CipiBasicAuthCliService;
+use CipiApi\Services\CipiMetricsService;
 use CipiApi\Services\CipiValidationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -82,6 +83,38 @@ class BasicAuthController extends Controller
             return response()->json(['data' => ['app' => $name, 'enabled' => false]], 200);
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 503);
+        }
+    }
+
+    /**
+     * Whether the cipi/agent routes (/cipi/ or CIPI_ROUTE_PREFIX) are left out of
+     * basic auth (Cipi CLI ≥ 5.11.0): {mode: public|protected, public, prefix}.
+     * `public` is true only while basic auth is on and the live release has the agent.
+     */
+    public function agent(string $name): JsonResponse
+    {
+        if (! $this->validator->appExists($name)) {
+            return response()->json(['error' => "App '{$name}' not found"], 404);
+        }
+
+        try {
+            return response()->json(['data' => app(CipiMetricsService::class)->basicAuthAgent($name)], 200);
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 503);
+        }
+    }
+
+    public function setAgent(Request $request, string $name): JsonResponse
+    {
+        if (! $this->validator->appExists($name)) {
+            return response()->json(['error' => "App '{$name}' not found"], 404);
+        }
+        $validated = $request->validate(['mode' => 'required|string|in:public,protected']);
+
+        try {
+            return response()->json(['data' => app(CipiMetricsService::class)->basicAuthAgentSet($name, $validated['mode'])], 200);
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], str_contains($e->getMessage(), 'needs Cipi') ? 503 : 422);
         }
     }
 }

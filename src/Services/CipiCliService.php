@@ -118,6 +118,22 @@ class CipiCliService
         'backup profile enable',
         'backup profile disable',
         'backup destination test',
+        // Cipi CLI ≥ 5.10.0 (API sudoers ≥ 5.10.0)
+        'app jit',
+        'frankenphp status',
+        'frankenphp upgrade',
+        // Cipi CLI ≥ 5.11.0 (API sudoers ≥ 5.11.0). Not openmetrics, prune, reset.
+        'metrics overview',
+        'metrics status',
+        'metrics show',
+        'metrics uptime',
+        'metrics events',
+        'metrics retention',
+        'metrics probe',
+        'metrics enable',
+        'metrics disable',
+        'metrics heartbeat',
+        'basicauth agent',
     ];
 
     /**
