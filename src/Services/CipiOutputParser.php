@@ -376,7 +376,14 @@ class CipiOutputParser
 
     protected function parseAppDeployUnlock(string $text): ?array
     {
-        if (preg_match('/deploy\s+unlocked/i', $text) || preg_match('/unlock\s+completed/i', $text)) {
+        // Cipi 5.13.0: --unlock also resumes the automatic deploys of a
+        // commit that failed ("Automatic deploys resumed — commit <sha> …").
+        $resumed = null;
+        if (preg_match('/automatic\s+deploys\s+resumed(?:\s+—\s+commit\s+([0-9a-f]{7,64}))?/iu', $text, $r)) {
+            $resumed = ($r[1] ?? '') !== '' ? $r[1] : true;
+        }
+        $unlocked = preg_match('/deploy\s+unlocked/i', $text) || preg_match('/unlock\s+completed/i', $text);
+        if ($unlocked || $resumed !== null) {
             $app = null;
             if (preg_match("/'([^']+)'\s+(?:deploy\s+)?unlocked/i", $text, $m)) {
                 $app = $m[1];
@@ -384,7 +391,9 @@ class CipiOutputParser
 
             return array_filter([
                 'app' => $app,
-                'unlocked' => true,
+                'unlocked' => (bool) $unlocked,
+                'resumed' => $resumed !== null ? true : null,
+                'resumed_commit' => is_string($resumed) ? $resumed : null,
             ], fn ($v) => $v !== null);
         }
 
@@ -691,10 +700,22 @@ class CipiOutputParser
         return ['databases' => $databases];
     }
 
+    /** The name of what runs on an engine: mariadb, mysql (cipi db switch) or pgsql. */
+    public function engineLabel(string $server): string
+    {
+        return match (strtolower($server)) {
+            'mysql' => 'MySQL',
+            'pgsql' => 'PostgreSQL',
+            default => 'MariaDB',
+        };
+    }
+
     protected function parseDbEngines(string $text): ?array
     {
         $engines = [];
         $default = null;
+        // Cipi 5.13.0 says under the table when port 3306 runs MySQL.
+        $mysql = (bool) preg_match('/^\s*Port 3306 runs MySQL\b/mi', $text);
         $lines = explode("\n", $text);
         foreach ($lines as $line) {
             $line = trim($line);
@@ -710,11 +731,15 @@ class CipiOutputParser
                 $missing = in_array($rawStatus, ['not_installed', 'missing', 'absent', '-', '—', '–'], true)
                     || in_array($m[2], ['—', '–'], true);
                 $status = $missing ? 'not_installed' : $rawStatus;
+                $engine = strtolower($m[1]);
+                $server = $engine === 'mariadb' ? ($mysql ? 'mysql' : 'mariadb') : $engine;
                 $engines[] = [
-                    'engine' => strtolower($m[1]),
+                    'engine' => $engine,
                     'status' => $status,
                     'port' => $port,
                     'default' => $isDefault,
+                    'server' => $server,
+                    'label' => $this->engineLabel($server),
                 ];
                 if ($isDefault) {
                     $default = strtolower($m[1]);

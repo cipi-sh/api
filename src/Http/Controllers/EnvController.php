@@ -29,13 +29,16 @@ class EnvController extends Controller
             'set.*' => 'nullable|string',
             'unset' => 'nullable|array',
             'unset.*' => 'string',
+            'order' => 'nullable|array',
+            'order.*' => 'string',
         ]);
 
         $set = $validated['set'] ?? [];
         $unset = $validated['unset'] ?? [];
+        $order = isset($validated['order']) ? array_values($validated['order']) : null;
 
         try {
-            return response()->json(['data' => $this->env->update($name, $set, $unset)], 200);
+            return response()->json(['data' => $this->env->update($name, $set, $unset, $order)], 200);
         } catch (\InvalidArgumentException $e) {
             return response()->json(['error' => $e->getMessage()], 422);
         } catch (\RuntimeException $e) {

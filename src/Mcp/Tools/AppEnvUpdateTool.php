@@ -11,7 +11,7 @@ use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Merge Laravel app .env keys (set/unset). Same as PUT /api/apps/{name}/env. Custom apps unsupported. Secrets are redacted.')]
+#[Description('Merge Laravel app .env keys (set/unset) and optionally reorder them (order: every key once, Cipi 5.13.0+). Same as PUT /api/apps/{name}/env. Custom apps unsupported. Secrets are redacted.')]
 class AppEnvUpdateTool extends Tool
 {
     public function __construct(
@@ -50,8 +50,20 @@ class AppEnvUpdateTool extends Tool
             $unset = $unsetRaw;
         }
 
+        $order = null;
+        $orderRaw = $request->get('order');
+        if (is_string($orderRaw) && $orderRaw !== '') {
+            $decoded = json_decode($orderRaw, true);
+            if (! is_array($decoded) || ! array_is_list($decoded)) {
+                return Response::text('Error: order must be a JSON array string of every key, e.g. ["APP_NAME","APP_ENV"]');
+            }
+            $order = $decoded;
+        } elseif (is_array($orderRaw)) {
+            $order = array_values($orderRaw);
+        }
+
         try {
-            $data = $this->env->update($name, $set, $unset);
+            $data = $this->env->update($name, $set, $unset, $order);
             $json = json_encode($data['vars'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) ?: '{}';
 
             return Response::text(McpProductionContent::formatSensitiveResponse(
@@ -70,6 +82,7 @@ class AppEnvUpdateTool extends Tool
             'name' => $schema->string()->description('App name')->required(),
             'set' => $schema->string()->description('JSON object of keys to set, e.g. {"FOO":"bar"}'),
             'unset' => $schema->string()->description('JSON array of keys to remove, e.g. ["OLD_KEY"]'),
+            'order' => $schema->string()->description('JSON array of every key of the .env, in the order wanted (applied after set/unset), e.g. ["APP_NAME","APP_ENV","APP_KEY"]'),
         ];
     }
 }

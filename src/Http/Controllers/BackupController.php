@@ -19,7 +19,7 @@ use Illuminate\Routing\Controller;
 class BackupController extends Controller
 {
     protected const PROFILE_FIELDS = [
-        'scope', 'apps', 'databases', 'exclude_databases', 'exclude_tables',
+        'scope', 'apps', 'databases', 'exclude_databases', 'exclude_tables', 'exclude_paths',
         'every', 'cron', 'destinations', 'keep', 'keep_days', 'keep_weeks', 'encrypt',
     ];
 

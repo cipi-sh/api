@@ -26,12 +26,24 @@ class CipiBackupCliService
 
     public const SCOPES = ['all', 'files', 'db'];
 
+    /** exclude_paths: an older core would take the flag and ignore it. */
+    public const MIN_CIPI_EXCLUDE_PATHS = '5.13.0';
+
     /** Same shapes the CLI and cipi.yml accept. */
     protected const NAME_RE = '/^[a-z][a-z0-9-]{1,31}$/';
 
     protected const GLOB_RE = '/^[a-zA-Z0-9_.*?\[\]-]{1,64}$/';
 
     protected const TABLE_GLOB_RE = '/^[a-zA-Z0-9_.*?\[\]-]{1,128}$/';
+
+    /**
+     * A path left out of the app archives (Cipi 5.13.0): a tar exclusion
+     * pattern relative to the app, optionally "<apps>:" first. Never absolute.
+     */
+    protected const PATH_RE = '/^(?:[a-z0-9*?-]+:)?(?!\/)[A-Za-z0-9._*?\/@+ \[\]-]{1,255}$/';
+
+    /** Patterns that would leave the whole app out of its archive. */
+    protected const PATH_WHOLE_APP = ['*', '*/', 'shared', 'htdocs'];
 
     protected const EVERY_RE = '/^[1-9][0-9]{0,2}[mhd]$/';
 
@@ -196,6 +208,7 @@ class CipiBackupCliService
             'databases' => ['--databases', self::GLOB_RE, false],
             'exclude_databases' => ['--exclude-databases', self::GLOB_RE, true],
             'exclude_tables' => ['--exclude-tables', self::TABLE_GLOB_RE, true],
+            'exclude_paths' => ['--exclude-paths', self::PATH_RE, true],
         ] as $field => [$flag, $re, $mayBeEmpty]) {
             if (! array_key_exists($field, $in) || $in[$field] === null) {
                 continue;
@@ -207,6 +220,21 @@ class CipiBackupCliService
                 continue;
             }
             foreach ($list as $item) {
+                if ($field === 'exclude_paths') {
+                    if (! $this->version->atLeast(self::MIN_CIPI_EXCLUDE_PATHS)) {
+                        $errors[$field] = 'exclude_paths needs Cipi ' . self::MIN_CIPI_EXCLUDE_PATHS . '+ on the server (cipi self-update)';
+
+                        continue 2;
+                    }
+                    $pattern = preg_replace('/^[a-z0-9*?-]+:/', '', $item);
+                    if (! preg_match($re, $item) || in_array($pattern, self::PATH_WHOLE_APP, true)) {
+                        $errors[$field] = "Invalid entry '{$item}' in exclude_paths (a path relative to the app, e.g. storage/app/uploads or *.mp4, optionally <apps>: first; never absolute, never the whole app)";
+
+                        continue 2;
+                    }
+
+                    continue;
+                }
                 if (! preg_match($re, $item)) {
                     $errors[$field] = "Invalid entry '{$item}' in {$field} (letters, digits, _ . - and the globs * ? [ ])";
 
@@ -215,7 +243,12 @@ class CipiBackupCliService
             }
             if ($list === []) {
                 // An empty selector is the CLI's to judge (scope files with
-                // no apps is refused there); an empty exclusion clears it.
+                // no apps is refused there); an empty exclusion clears it —
+                // exclude_paths only on a core that knows it (nothing to clear
+                // before 5.13.0).
+                if ($field === 'exclude_paths' && ! $this->version->atLeast(self::MIN_CIPI_EXCLUDE_PATHS)) {
+                    continue;
+                }
                 if ($mayBeEmpty && $isEdit) {
                     $flags[] = $flag . '=';
                 }

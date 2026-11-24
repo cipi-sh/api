@@ -384,9 +384,87 @@ namespace {
     $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
     ok(str_contains($routes, "Route::get('/notifications', [NotificationController::class, 'show'])->middleware('ability:notifications-view,smtp-view')") && str_contains($routes, "Route::put('/notifications/channels/{id}', [NotificationController::class, 'update'])->middleware('ability:notifications-manage,smtp-manage')") && str_contains($routes, "Route::put('/notifications/triggers', [NotificationController::class, 'updateTriggers'])->middleware('ability:notifications-manage,smtp-manage')"), 'notification routes: new abilities, or the smtp ones');
     $spec = json_decode(file_get_contents(dirname($src, 2) . '/public/api-docs/openapi.json'), true);
-    ok($spec['info']['version'] === '1.42.0' && isset($spec['paths']['/notifications']['get'], $spec['paths']['/notifications/channels']['post'], $spec['paths']['/notifications/channels/{id}']['put'], $spec['paths']['/notifications/channels/{id}/test']['post'], $spec['paths']['/notifications/triggers']['put']), 'OpenAPI 1.42.0: the notification routes');
+    ok(version_compare($spec['info']['version'], '1.42.0', '>=') && isset($spec['paths']['/notifications']['get'], $spec['paths']['/notifications/channels']['post'], $spec['paths']['/notifications/channels/{id}']['put'], $spec['paths']['/notifications/channels/{id}/test']['post'], $spec['paths']['/notifications/triggers']['put']), 'OpenAPI >= 1.42.0: the notification routes');
     $mcp = file_get_contents(dirname($src, 2) . '/src/Mcp/Servers/CipiServer.php');
     ok(substr_count($mcp, 'Notification') >= 10, 'five notification MCP tools registered');
+
+    echo "--- 1.43.0 (Cipi 5.13.0)\n";
+    foreach (['CipiBasicAuthCliService', 'CipiDatabaseEnginesCliService', 'CipiAppEnvService'] as $c) {
+        require_once $src . $c . '.php';
+    }
+    $parser = new CipiApi\Services\CipiOutputParser;
+    // A CLI that answers each command from a script, in order.
+    $scripted = new class extends FakeCli {
+        public array $answers = [];
+        public function run(string $command): array {
+            if (! $this->commandIsPermitted($command)) { return ['output' => "Command not allowed: {$command}", 'exit_code' => 1, 'success' => false]; }
+            $this->ran[] = $command;
+            return array_shift($this->answers) ?? ['output' => '', 'exit_code' => 0, 'success' => true];
+        }
+    };
+    $ansi = "\e[1mBasic auth — shop\e[0m\n━━━━━━━━━━━━━━━━\n  Status     \e[2mdisabled\e[0m\n";
+    $c = clone $scripted; $c->answers = [['output' => '{"app":"shop","enabled":true,"users":["admin","ops"],"agent":{"mode":"public","public_prefix":"/cipi/"}}', 'exit_code' => 0, 'success' => true]];
+    $st = (new CipiApi\Services\CipiBasicAuthCliService($c, $parser))->status('shop');
+    ok($c->ran === ["basicauth status 'shop' --json"] && $st['enabled'] === true && $st['users'] === ['admin', 'ops'] && $st['agent'] === ['mode' => 'public', 'public_prefix' => '/cipi/'], 'basic auth status: --json, users and agent');
+    $c = clone $scripted; $c->answers = [['output' => $ansi, 'exit_code' => 1, 'success' => false]];
+    $st = null; $err = thrown(function () use ($c, $parser, &$st) { $st = (new CipiApi\Services\CipiBasicAuthCliService($c, $parser))->status('shop'); });
+    ok($err === null && $st['enabled'] === false && count($c->ran) === 1, 'Cipi 5.11–5.12 (status printed, then exit 1): read as disabled, no raw output thrown at the panel');
+    $c = clone $scripted; $c->answers = [['output' => "Unknown flag", 'exit_code' => 1, 'success' => false], ['output' => "  Status     enabled\n  Users      admin\n", 'exit_code' => 0, 'success' => true]];
+    $st = (new CipiApi\Services\CipiBasicAuthCliService($c, $parser))->status('shop');
+    ok(count($c->ran) === 2 && $st['enabled'] === true && $st['users'] === ['admin'], 'a core that refuses --json is asked again in text');
+    $c = clone $scripted; $c->answers = [['output' => "\e[31m✗\e[0m App 'x' not found", 'exit_code' => 1, 'success' => false], ['output' => "\e[31m✗\e[0m App 'x' not found", 'exit_code' => 1, 'success' => false]];
+    $err = (string) thrown(fn () => (new CipiApi\Services\CipiBasicAuthCliService($c, $parser))->status('x'));
+    ok(str_contains($err, "App 'x' not found") && ! str_contains($err, "\e["), 'an error comes back without colour codes: ' . $err);
+    $c = clone $scripted; $c->answers = [['output' => "\e[32m✓\e[0m User 'admin' added\n\e[32m✓\e[0m Basic auth enabled\n", 'exit_code' => 1, 'success' => false]];
+    $en = (new CipiApi\Services\CipiBasicAuthCliService($c, $parser))->enable('shop', 'admin');
+    ok($en['enabled'] === true && str_contains($en['notice'] ?? '', 'set the password again'), 'enable on Cipi 5.11–5.12 (enabled, then exit 1): enabled, with a notice');
+
+    $c = clone $scripted; $c->answers = [['output' => '{"default":"mariadb","engines":[{"engine":"mariadb","status":"installed","port":3306,"default":true,"server":"mysql","label":"MySQL"},{"engine":"pgsql","status":"not_installed","port":5432,"default":false,"server":"pgsql","label":"PostgreSQL"}]}', 'exit_code' => 0, 'success' => true]];
+    $en = (new CipiApi\Services\CipiDatabaseEnginesCliService($c, $parser, new FakeVersion('5.13.0')))->list();
+    ok($c->ran === ['db engines --json'] && $en['engines'][0]['server'] === 'mysql' && $en['engines'][0]['label'] === 'MySQL' && $en['engines'][0]['engine'] === 'mariadb', 'engines: --json on 5.13.0, server mysql on the engine mariadb');
+    $table = "\n\e[1mDatabase engines\e[0m\n  \e[1mENGINE       STATUS         PORT     DEFAULT\e[0m\n  mariadb      installed      3306     *\n  pgsql        not_installed  5432     \n\n  Install:  cipi db install pgsql\n  Default:  cipi db default <engine>\n  Port 3306 runs MySQL (engine id: mariadb). Back to MariaDB: cipi db switch mariadb\n";
+    $c = clone $scripted; $c->answers = [['output' => $table, 'exit_code' => 0, 'success' => true]];
+    $en = (new CipiApi\Services\CipiDatabaseEnginesCliService($c, $parser, new FakeVersion('5.12.0')))->list();
+    ok($c->ran === ['db engines'] && count($en['engines']) === 2 && $en['engines'][0]['server'] === 'mysql' && $en['engines'][1]['label'] === 'PostgreSQL' && $en['default'] === 'mariadb', 'engines: the table on an older core (no --json the sudoers would refuse); the MySQL line read');
+    $c = clone $scripted; $c->answers = [['output' => str_replace('Port 3306 runs MySQL', 'MySQL instead of MariaDB', $table), 'exit_code' => 0, 'success' => true]];
+    $en = (new CipiApi\Services\CipiDatabaseEnginesCliService($c, $parser))->list();
+    ok($en['engines'][0]['server'] === 'mariadb' && $en['engines'][0]['label'] === 'MariaDB', 'engines: MariaDB when the table does not say MySQL');
+
+    $vtmp = $GLOBALS['T'] . '/apps.json'; file_put_contents($vtmp, json_encode(['shop' => ['php' => '8.4'], 'site' => ['custom' => true]]));
+    $val = new class($vtmp) extends CipiApi\Services\CipiValidationService {
+        public function __construct(public string $f) {}
+        public function appExists(string $name): bool { return array_key_exists($name, json_decode(file_get_contents($this->f), true)); }
+        public function isCustomApp(string $name): bool { return (json_decode(file_get_contents($this->f), true)[$name]['custom'] ?? false) === true; }
+    };
+    $c = clone $scripted; $c->answers = [['output' => '{"DB_HOST":"127.0.0.1","APP_NAME":"Shop","NEW":"x"}', 'exit_code' => 0, 'success' => true]];
+    $env = new CipiApi\Services\CipiAppEnvService($c, $val, new FakeVersion('5.13.0'));
+    $r = $env->update('shop', ['NEW' => 'x'], [], ['DB_HOST', 'APP_NAME', 'NEW']);
+    ok($c->ran === ["app env 'shop' --set='NEW=x' --order='DB_HOST,APP_NAME,NEW' --json"] && array_keys($r['vars']) === ['DB_HOST', 'APP_NAME', 'NEW'], 'env: set, then --order, vars back in the file order');
+    ok(str_contains((string) thrown(fn () => $env->update('shop', [], [], ['A', 'A'])), 'twice'), 'env order: a key twice is refused before the CLI');
+    ok(str_contains((string) thrown(fn () => $env->update('shop', [], [], ['A; rm'])), 'Invalid env key'), 'env order: an invalid key is refused');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiAppEnvService(clone $scripted, $val, new FakeVersion('5.12.0')))->update('shop', [], [], ['A'])), 'needs Cipi 5.13.0'), 'env order on an older core: refused, not sent');
+    ok(str_contains((string) thrown(fn () => $env->update('shop')), 'set, unset or order'), 'env: nothing to do is refused');
+    $c = clone $scripted; $c->answers = [['output' => "\e[31m✗\e[0m Order not applied: the order leaves out APP_KEY", 'exit_code' => 1, 'success' => false]];
+    $err = (string) thrown(fn () => (new CipiApi\Services\CipiAppEnvService($c, $val, new FakeVersion('5.13.0')))->update('shop', [], [], ['APP_NAME']));
+    ok(str_starts_with($err, 'InvalidArgumentException: ✗ Order not applied: the order leaves out APP_KEY'), "the core's refusal of an order: 422, without colours");
+
+    $bk13 = new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.13.0'));
+    $f = $bk13->profileFlags(['exclude_paths' => ['storage/app/uploads', 'shop:*.mp4', 'my files/a[1]']], true);
+    ok($f['errors'] === [] && $f['flags'] === ["--exclude-paths='storage/app/uploads,shop:*.mp4,my files/a[1]'"], 'exclude_paths: one quoted flag: ' . implode(' ', $f['flags']));
+    ok($bk13->profileFlags(['exclude_paths' => []], true)['flags'] === ['--exclude-paths='], 'exclude_paths: an empty list on edit clears it');
+    foreach (['/var/www', 'shared', '*', 'shop:htdocs', "a'; rm -rf /", "x\ny"] as $bad) {
+        ok(isset($bk13->profileFlags(['exclude_paths' => [$bad]], true)['errors']['exclude_paths']), 'exclude_paths refused: ' . json_encode($bad));
+    }
+    ok(str_contains((string) ($bk->profileFlags(['exclude_paths' => ['storage/app/uploads']], true)['errors']['exclude_paths'] ?? ''), 'needs Cipi 5.13.0'), 'exclude_paths on an older core: refused (it would ignore the flag)');
+    ok($bk->profileFlags(['exclude_paths' => []], true) === ['flags' => [], 'errors' => []] || ($bk->profileFlags(['exclude_paths' => []], true)['flags'] ?? null) === [], 'exclude_paths: an empty list on an older core passes no flag');
+
+    ok($parser->parse('app-deploy-unlock', "\e[32m✓\e[0m Deploy unlocked — run: cipi deploy shop\n\e[32m✓\e[0m Automatic deploys resumed — commit 0ff6512a9c1e deploys again on the next push or webhook\n") === ['unlocked' => true, 'resumed' => true, 'resumed_commit' => '0ff6512a9c1e'], 'unlock: lock removed and commit resumed');
+    ok($parser->parse('app-deploy-unlock', "✓ Automatic deploys resumed\n") === ['unlocked' => false, 'resumed' => true], 'unlock: only a paused commit');
+    $spec = json_decode(file_get_contents(dirname($src, 2) . '/public/api-docs/openapi.json'), true);
+    $sc = $spec['components']['schemas'];
+    ok($spec['info']['version'] === '1.43.0' && isset($sc['AppEnvUpdateRequest']['properties']['order'], $sc['BackupProfileRequest']['properties']['exclude_paths'], $sc['BackupProfileCreateRequest']['properties']['exclude_paths'], $sc['DbEnginesResponse']['properties']['data']['properties']['engines']['items']['properties']['server'], $sc['DeployStatusResponse']['properties']['data']['properties']['paused_commit'], $sc['BasicAuthStatusResponse']['properties']['data']['properties']['agent'], $sc['JobResultAppDeployUnlock']['properties']['resumed']), 'OpenAPI 1.43.0: order, exclude_paths, server, paused_commit, agent, resumed');
+    ok(str_contains(file_get_contents(dirname($src, 2) . '/src/Mcp/Tools/AppEnvUpdateTool.php'), "'order' =>"), 'MCP AppEnvUpdate: order');
+    ok(str_contains(file_get_contents(dirname($src, 2) . '/src/Http/Controllers/BackupController.php'), "'exclude_paths',"), 'backup controller passes exclude_paths');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);
