@@ -8,9 +8,13 @@ namespace CipiApi\Services;
  */
 class CipiAppEnvService
 {
+    /** `--order` (the panel's drag and drop): Cipi 5.13.0. */
+    public const MIN_CIPI_ORDER = '5.13.0';
+
     public function __construct(
         protected CipiCliService $cli,
         protected CipiValidationService $validator,
+        protected ?CipiVersionService $version = null,
     ) {}
 
     /**
@@ -33,16 +37,37 @@ class CipiAppEnvService
     }
 
     /**
+     * Set and unset keys, then put the keys in $order when given: every key
+     * the file has once the set/unset are done, each once (`cipi app env
+     * --order`, Cipi 5.13.0). The vars come back in the file's order.
+     *
      * @param  array<string, string>  $set
      * @param  list<string>  $unset
+     * @param  list<string>|null  $order
      * @return array{app: string, vars: array<string, string>}
      */
-    public function update(string $app, array $set = [], array $unset = []): array
+    public function update(string $app, array $set = [], array $unset = [], ?array $order = null): array
     {
         $this->assertLaravelApp($app);
 
-        if ($set === [] && $unset === []) {
-            throw new \InvalidArgumentException('Provide at least one of set or unset');
+        if ($set === [] && $unset === [] && ($order === null || $order === [])) {
+            throw new \InvalidArgumentException('Provide at least one of set, unset or order');
+        }
+        if ($order !== null && $order !== []) {
+            $seen = [];
+            foreach ($order as $key) {
+                if (! is_string($key)) {
+                    throw new \InvalidArgumentException('order must be a list of keys');
+                }
+                $this->assertEnvKey($key);
+                if (isset($seen[$key])) {
+                    throw new \InvalidArgumentException("{$key} is twice in order");
+                }
+                $seen[$key] = true;
+            }
+            if ($this->version !== null && ! $this->version->atLeast(self::MIN_CIPI_ORDER)) {
+                throw new \InvalidArgumentException('Reordering .env needs Cipi ' . self::MIN_CIPI_ORDER . '+ on the server (cipi self-update)');
+            }
         }
 
         foreach (array_keys($set) as $key) {
@@ -62,11 +87,18 @@ class CipiAppEnvService
         foreach ($unset as $key) {
             $parts[] = '--unset=' . escapeshellarg((string) $key);
         }
+        if ($order !== null && $order !== []) {
+            $parts[] = '--order=' . escapeshellarg(implode(',', $order));
+        }
         $parts[] = '--json';
 
         $result = $this->cli->run(implode(' ', $parts));
         if ($result['exit_code'] !== 0) {
-            $detail = trim($result['output'] ?? '');
+            $detail = trim(preg_replace('/\x1b\[[0-9;]*m/', '', (string) ($result['output'] ?? '')) ?? '');
+            // The core's own refusal of an order (a key left out, unknown…): the caller's to fix.
+            if (str_contains($detail, 'Order not applied')) {
+                throw new \InvalidArgumentException($detail);
+            }
             throw new \RuntimeException($detail !== '' ? $detail : 'cipi app env update failed');
         }
 

@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.43.0] - 2026-11-24
+
+What Cipi 5.13.0 adds, read by the panel — and the Access tab that showed raw output on every app.
+
+### Fixed
+
+- **`GET /api/apps/{name}/basicauth` failed on every app whose vhost has no cipi/agent marker**, and the panel showed the CLI's raw output, colour codes included (`[1mBasic auth — <app>[0m ━━━ Status [2mdisabled[0m`). Cipi 5.11.0–5.12.x printed the status, then exited 1 (fixed in Cipi 5.13.0). The status is read from `cipi basicauth status --json` (Cipi 5.13.0); on an older core, a text that holds the status is the answer whatever the exit code. `enable` on those versions — enabled, then exit 1 before the credentials — answers `enabled` with a `notice` to set the password again. Errors of the basic auth routes come back without colour codes.
+
+### Added
+
+- **`.env` order**: `PUT /api/apps/{name}/env` takes `order`, every key of the file once, applied after `set` and `unset` (`cipi app env --order`, Cipi 5.13.0) — the panel's drag and drop. A key twice or not a key: `422` before the CLI runs; a key left out or unknown: `422` with the core's message, the file unchanged; an older core: `422`, nothing sent. `vars` come back in the order of the file. MCP `AppEnvUpdate` takes `order`.
+- **Backup `exclude_paths`** on `POST /api/backups/profiles` and `PUT /api/backups/profiles/{name}`: folders and files left out of the app archives (`storage/app/uploads`, `*.mp4`, `shop:storage/app/uploads`). Absolute paths, the whole app (`*`, `shared`, `htdocs`) and shell characters are refused with `422`; an empty list on update clears it. Needs Cipi 5.13.0 (`422` below: an older core would ignore the flag); an empty list sent to an older core passes nothing, since there is nothing to clear.
+- **`GET /api/dbs/engines`**: each engine says which server runs on it — `server` (`mariadb` or `mysql` for the engine `mariadb`, `pgsql`) and `label` — from `cipi db engines --json` on Cipi 5.13.0, from the table (and its MySQL line) on an older core. Replacing MariaDB with MySQL stays on the server's CLI (`cipi db switch`): no route.
+- **`GET /api/apps/{name}/deploy/status`**: `paused_commit` (Cipi 5.13.0) — the commit whose automatic deploy failed; the webhook does not deploy it again until a new push. The `app-deploy-unlock` job result reports `resumed` / `resumed_commit` when `--unlock` resumed it.
+- `GET /api/apps/{name}/basicauth` returns `agent` (`mode`, `public_prefix`) with Cipi 5.13.0.
+- OpenAPI 1.43.0.
+
 ## [1.42.0] - 2026-11-23
 
 Every notification channel and trigger, not only SMTP, for a core that has them (Cipi 5.12.0).
