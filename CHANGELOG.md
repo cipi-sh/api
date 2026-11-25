@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.45.0] - 2026-11-25
+
+For Cipi 5.15.0: what each notification channel takes, the visitor's address behind Cloudflare from the panel, and a database list that holds databases only.
+
+### Added
+
+- **`events` on a notification channel** — what it takes (Cipi 5.15.0): `null` (everything, the default), or categories (`security`, `deploy`, `backup`, `basic-auth`…), single triggers (`backup_fail`) and `urgent` (failures and security events). Taken by `POST /api/notifications/channels` and `PUT /api/notifications/channels/{id}` — alone too, for a channel whose fields do not change — and passed to the CLI as `--events=` (`--events=all` for `null`, `[]` or a list with `all`). Changing only what SMTP takes neither saves its settings again nor sends a test. `GET /api/notifications` gives every channel its `events` and lists the `categories` (`id`, `label`, `triggers`) and `selectors`; `GET /api/notifications/triggers` gives every trigger its `category_id`. On an older core a request with `events` is refused (`503`, the version it needs) instead of being saved without them. `CipiNotificationsService::eventsFlag()`, `EVENTS_MIN_CIPI`.
+- **The visitor's address behind Cloudflare** (`cipi nginx real-ip`, Cipi 5.15.0), on the Firewall routes and ability `firewall-manage`, synchronous, answering with the firewall after the change:
+  - `GET /api/firewall` has **`real_ip`**: `enabled`, `provider`, `header`, `kept_by` (`real-ip`, `zero-trust`, `both`, `other`), `ranges`, `refreshed_at`, `nightly_refresh`, `can_disable`, `bans_active`; `null` on an older core;
+  - **`PUT /api/firewall/real-ip`** turns it on (`cipi nginx real-ip cloudflare`; on already, Cloudflare's ranges are fetched again), **`POST /api/firewall/real-ip/refresh`** fetches the ranges again, **`DELETE /api/firewall/real-ip`** turns it off (`off --yes`: the client asks first, with what the CLI warns of);
+  - **`DELETE` is refused (`409`) when the request itself came through Cloudflare** (`CF-Connecting-IP`): from then on the API would see Cloudflare's address instead of the panel's — outside its own IP whitelist, and an address fail2ban or CrowdSec may ban. That is turned off at the server;
+  - the CLI's refusals (a `real_ip` configuration Cipi did not write, nginx refusing the file, Cloudflare's ranges unreachable) are `422` with its words; an older core is `503` before anything runs.
+  - Allowed commands: `nginx real-ip status --json`, `cloudflare`, `refresh`, `off --yes` — each spelled out.
+- OpenAPI 1.45.0: `/firewall/real-ip`, `/firewall/real-ip/refresh`, `FirewallStatus.real_ip`, `events` on the channel requests.
+
+### Fixed
+
+- **`GET /api/dbs` listed a MySQL client's warning as a database** on a server switched to MySQL: "mysql: [Warning] Using a password on the command line interface can be insecure." Cipi 5.15.0 fixes the cause (the password is no longer on the client's command line, and `cipi db list` keeps stderr apart); the API now drops such a line whatever the core — a client's `[Warning]`/`[Note]`/`[ERROR]` line, or psql's `WARNING:`/`NOTICE:` — so nothing offers to back it up, restore it or change its password. `CipiDatabaseListCliService::withoutClientNoise()`.
+
 ## [1.44.0] - 2026-11-25
 
 The firewall, for a core that has it (Cipi 5.14.0): the panel's Firewall tab. The optional packages, installed and removed from the panel. An app's own nginx directives. And a job's output while it runs.

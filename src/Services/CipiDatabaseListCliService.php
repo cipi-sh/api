@@ -48,7 +48,7 @@ class CipiDatabaseListCliService
         if ($json) {
             $decoded = json_decode(trim($result['output'] ?? ''), true);
             if (is_array($decoded) && isset($decoded['databases']) && is_array($decoded['databases'])) {
-                return array_values($decoded['databases']);
+                return self::withoutClientNoise($decoded['databases']);
             }
 
             throw new MysqlDatabaseListingUnavailableException('cipi db list --json returned no JSON');
@@ -57,6 +57,29 @@ class CipiDatabaseListCliService
         $parsed = $this->parser->parse('db-list', $result['output'], true);
         $databases = is_array($parsed) ? ($parsed['databases'] ?? []) : [];
 
-        return is_array($databases) ? $databases : [];
+        return is_array($databases) ? self::withoutClientNoise($databases) : [];
+    }
+
+    /**
+     * Drops what a database client printed on stderr and a core read as a
+     * database: on a server switched to MySQL, `cipi db list` before Cipi
+     * 5.15.0 listed "mysql: [Warning] Using a password on the command line
+     * interface can be insecure." (the client's warning about -p) as one.
+     *
+     * @param  array<mixed>  $databases
+     * @return list<array<string, mixed>>
+     */
+    public static function withoutClientNoise(array $databases): array
+    {
+        return array_values(array_filter($databases, fn ($db) => is_array($db)
+            && isset($db['name'])
+            && ! self::isClientNoise((string) $db['name'])));
+    }
+
+    public static function isClientNoise(string $name): bool
+    {
+        return preg_match('/^(mysql|mariadb|mysqldump|mariadb-dump|psql):\s*\[?(warning|note|error)\b/i', $name) === 1
+            || preg_match('/^(WARNING|NOTICE|DETAIL|HINT|ERROR):\s/', $name) === 1
+            || str_contains($name, 'Using a password on the command line');
     }
 }

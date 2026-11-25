@@ -169,6 +169,12 @@ class CipiCliService
         'nginx show ',
         'nginx set ',
         'nginx reset ',
+        // Cipi CLI ≥ 5.15.0: the visitor's address behind Cloudflare, each
+        // with its arguments spelled out (the sudoers have them so too).
+        'nginx real-ip status --json',
+        'nginx real-ip cloudflare',
+        'nginx real-ip refresh',
+        'nginx real-ip off --yes',
     ];
 
     /**

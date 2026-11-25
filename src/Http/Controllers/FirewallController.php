@@ -18,6 +18,10 @@ use Illuminate\Routing\Controller;
  * which are jobs (`crowdsec-enable`, `crowdsec-disable`). On an older core
  * every route answers 503 before anything runs.
  *
+ * The visitor's address behind Cloudflare (`cipi nginx real-ip`, Cipi CLI ≥
+ * 5.15.0): on, refreshed, off — synchronous too, under `firewall-manage`:
+ * it decides which address fail2ban and CrowdSec ban.
+ *
  * Never from here: denying or removing the ports the server is reached on,
  * undoing a Zero Trust lock (the CLI refuses both, and ignores --force from
  * the panel), blocking the address this request comes from, CrowdSec's
@@ -196,6 +200,40 @@ class FirewallController extends Controller
         $job = $this->jobs->dispatch('crowdsec-disable', 'crowdsec disable --force');
 
         return response()->json(['job_id' => $job->id, 'status' => 'pending'], 202);
+    }
+
+    /**
+     * nginx takes the visitor's address from Cloudflare's CF-Connecting-IP
+     * for requests from Cloudflare's ranges (`cipi nginx real-ip cloudflare`).
+     * Already on: Cloudflare's ranges are fetched again.
+     */
+    public function realIpEnable(): JsonResponse
+    {
+        return $this->change(fn () => $this->firewall->realIpEnable());
+    }
+
+    public function realIpRefresh(): JsonResponse
+    {
+        return $this->change(fn () => $this->firewall->realIpRefresh());
+    }
+
+    /**
+     * Back to the address of each connection (`cipi nginx real-ip off`).
+     *
+     * Not when this request itself came through Cloudflare: from then on the
+     * API would see Cloudflare's address for the panel — out of its own IP
+     * whitelist, and an address fail2ban or CrowdSec may ban. That is turned
+     * off at the server, where the panel's connection is not at stake.
+     */
+    public function realIpDisable(Request $request): JsonResponse
+    {
+        if ($request->headers->has('CF-Connecting-IP')) {
+            return response()->json([
+                'error' => 'This request came through Cloudflare: turned off, the API would see Cloudflare instead of the panel, which can lock the panel out of this server. Turn it off at the server: cipi nginx real-ip off',
+            ], 409);
+        }
+
+        return $this->change(fn () => $this->firewall->realIpDisable());
     }
 
     /** A change, then the firewall as it is: `{data, message}`; the CLI's refusal is a 422 with its words. */

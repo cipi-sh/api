@@ -6,7 +6,10 @@ namespace CipiApi\Services;
  * Notifications (`cipi notification`, Cipi CLI ≥ 5.12.0): every channel —
  * SMTP, Resend, Amazon SES, Slack, Discord, Mattermost, Google Chat,
  * Telegram, ntfy, Pushover, webhook — and the triggers that decide which
- * events reach them. Every enabled trigger reaches every enabled channel.
+ * events reach them. An enabled trigger reaches every enabled channel that
+ * takes it: a channel takes every trigger, or (Cipi CLI ≥ 5.15.0) only its
+ * `events` — categories (security, deploy, backup…), single triggers, or
+ * "urgent" (failures and security events).
  *
  * All synchronous: the CLI edits the encrypted vault and answers at once, so
  * the secrets passed as flags never reach the jobs table. Secrets never come
@@ -17,6 +20,12 @@ namespace CipiApi\Services;
 class CipiNotificationsService
 {
     public const MIN_CIPI = '5.12.0';
+
+    /** The core that keeps `events` per channel (`--events=`, `categories` in the status). */
+    public const EVENTS_MIN_CIPI = '5.15.0';
+
+    /** A selector of a channel's events: all, urgent, a category id (basic-auth) or a trigger id (backup_fail). */
+    public const EVENT_PATTERN = '/^[a-z][a-z0-9_-]{1,40}$/';
 
     public const TYPES = ['smtp', 'resend', 'ses', 'slack', 'discord', 'mattermost', 'googlechat', 'telegram', 'ntfy', 'pushover', 'webhook'];
 
@@ -81,6 +90,10 @@ class CipiNotificationsService
         'secret_key' => 'sometimes|nullable|string|max:255',
         'enabled' => 'sometimes|boolean',
         'test' => 'sometimes|boolean',
+        // What the channel takes: null or [] or ["all"] — everything; else
+        // categories, triggers, "urgent".
+        'events' => 'sometimes|nullable|array|max:120',
+        'events.*' => ['string', 'regex:/^[a-z][a-z0-9_-]{1,40}$/'],
     ];
 
     public const TRIGGERS_RULES = [
@@ -98,7 +111,11 @@ class CipiNotificationsService
         protected CipiVersionService $version,
     ) {}
 
-    /** {channels: [...], triggers: {enabled, total}, types: [...]} — no secret in it. */
+    /**
+     * {channels: [...], triggers: {enabled, total}, types: [...]} — no secret in it.
+     * From Cipi 5.15.0 every channel has `events` (null: everything), and the
+     * status has `categories` [{id, label, triggers}] and `selectors`.
+     */
     public function status(): array
     {
         return $this->json('notification status --json');
@@ -132,7 +149,7 @@ class CipiNotificationsService
         if ($current !== null && isset($input['type']) && $input['type'] !== $type) {
             return "The type of '{$current['id']}' is {$type}; remove it and add a new channel to change it";
         }
-        $allowed = array_merge(self::FIELDS[$type], ['type', 'id', 'enabled', 'test'], $type === 'webhook' ? ['clear_secret'] : []);
+        $allowed = array_merge(self::FIELDS[$type], ['type', 'id', 'enabled', 'test', 'events'], $type === 'webhook' ? ['clear_secret'] : []);
         $extra = array_diff(array_keys($input), $allowed);
         if ($extra !== []) {
             return 'Not a field of a ' . $type . ' channel: ' . implode(', ', $extra) . ' (' . implode(', ', self::FIELDS[$type]) . ')';
@@ -157,8 +174,24 @@ class CipiNotificationsService
                 return "{$f}: an email address" . ($f === 'to' ? ' (several, comma-separated)' : '');
             }
         }
+        foreach ((array) ($input['events'] ?? []) as $e) {
+            if (! is_string($e) || ! preg_match(self::EVENT_PATTERN, $e)) {
+                return 'events: categories (security, deploy…), triggers (backup_fail…), urgent or all';
+            }
+        }
 
         return null;
+    }
+
+    /** `--events=a,b` — or `--events=all` for null, [] or a list with "all". */
+    public static function eventsFlag(?array $events): string
+    {
+        $events = array_values(array_unique(array_filter((array) $events, 'is_string')));
+        if ($events === [] || in_array('all', $events, true)) {
+            return '--events=all';
+        }
+
+        return '--events=' . implode(',', $events);
     }
 
     /** The CLI arguments for the fields given: --flag='value'. Secrets left empty are left out (kept). */
@@ -166,6 +199,11 @@ class CipiNotificationsService
     {
         $parts = [];
         foreach ($input as $k => $v) {
+            if ($k === 'events') {
+                $parts[] = self::eventsFlag(is_array($v) ? $v : null);
+
+                continue;
+            }
             if (in_array($k, ['type', 'id', 'enabled', 'test', 'clear_secret'], true) || $v === null || $v === '') {
                 continue;
             }
@@ -206,7 +244,8 @@ class CipiNotificationsService
     public function updateCommand(string $id, string $type, array $input): string
     {
         $parts = array_merge(['notification update', $id], $this->flags($input));
-        if ($type === 'smtp') {
+        // Only what the channel takes: nothing of SMTP is saved again, nor tested.
+        if ($type === 'smtp' && array_keys($input) !== ['events']) {
             $parts[] = '--no-test';
         }
 
@@ -220,6 +259,9 @@ class CipiNotificationsService
      */
     public function add(array $input): array
     {
+        if (array_key_exists('events', $input)) {
+            $this->version->require(self::EVENTS_MIN_CIPI, 'Choosing the events of a channel');
+        }
         $this->runOk($this->addCommand($input));
         $id = $input['type'] === 'smtp' ? 'smtp' : $input['id'];
         if ($input['type'] !== 'smtp' && array_key_exists('enabled', $input) && ! $input['enabled']) {
@@ -233,6 +275,9 @@ class CipiNotificationsService
     public function update(string $id, string $type, array $input): array
     {
         $changes = array_diff_key($input, array_flip(['enabled', 'test']));
+        if (array_key_exists('events', $changes)) {
+            $this->version->require(self::EVENTS_MIN_CIPI, 'Choosing the events of a channel');
+        }
         if ($changes !== []) {
             $this->runOk($this->updateCommand($id, $type, $changes));
         }

@@ -266,6 +266,10 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/firewall/crowdsec/disable', [FirewallController::class, 'crowdsecDisable'])->middleware('ability:firewall-manage');
     Route::post('/firewall/crowdsec/allowlist', [FirewallController::class, 'crowdsecAllow'])->middleware('ability:firewall-manage');
     Route::delete('/firewall/crowdsec/allowlist', [FirewallController::class, 'crowdsecUnallow'])->middleware('ability:firewall-manage');
+    // The visitor's address behind Cloudflare (Cipi CLI ≥ 5.15.0): `real_ip` in GET /firewall.
+    Route::put('/firewall/real-ip', [FirewallController::class, 'realIpEnable'])->middleware('ability:firewall-manage');
+    Route::post('/firewall/real-ip/refresh', [FirewallController::class, 'realIpRefresh'])->middleware('ability:firewall-manage');
+    Route::delete('/firewall/real-ip', [FirewallController::class, 'realIpDisable'])->middleware('ability:firewall-manage');
 
     // Cloudflare Zero Trust — read-only status (Cipi CLI ≥ 5.3.0)
     Route::get('/zt', [ZtController::class, 'status'])->middleware('ability:zt-view');
