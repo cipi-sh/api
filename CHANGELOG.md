@@ -4,10 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [1.44.0] - 2026-11-25
 
-The firewall, for a core that has it (Cipi 5.14.0): the panel's Firewall tab. And the optional packages, installed and removed from the panel.
+The firewall, for a core that has it (Cipi 5.14.0): the panel's Firewall tab. The optional packages, installed and removed from the panel. An app's own nginx directives. And a job's output while it runs.
 
 ### Added
 
+- **`GET|PUT|DELETE /api/apps/{name}/nginx`** — an app's own nginx directives (`cipi nginx show|set|reset`, Cipi 5.14.0): headers, caching, limits, rewrites, `location` blocks, kept by Cipi and included in the app's server block. `GET` (`nginx-view`) answers `{app, config, bytes, max_bytes, active, suspended}`; `PUT {config}` (`nginx-manage`) replaces the text — empty removes it — and `DELETE` removes it. Synchronous: `nginx -t` runs before nginx reloads, and a refused text is a `422` with `reasons` (`line 2: unknown directive "boom"`), nothing changed.
+  - **A subset of nginx's language.** The CLI knows the call comes from the API and takes only the directives of a list (`lib/nginx-lint.sh`): no `access_log`/`error_log` with a path, `include`, `listen`, `server_name`, `*_pass`, certificates; `root` and `alias` only under the app's home. With those a token would be root (nginx opens log paths and reads included files as root) or reach another app. Reverse proxies and redirects stay on their endpoints; the whole language is `cipi nginx edit <app>` at the server.
+  - `CipiNginxCliService`, `NginxController`, `NginxConfigRefusedException`; `nginx show|set|reset` among the allowed commands (not `edit`, `upgrade`, `default-server`); abilities `nginx-view`, `nginx-manage`.
+- **A running job says what its command has printed so far.** `GET /api/jobs/{id}` on a `running` job carries `output` — its last 50,000 characters, refreshed once a second at most — so a deploy, an install or a backup can be followed while it runs; `result` and `exit_code` still come with the finished job. `CipiCliService::runStreaming()` reads the command's output as it arrives (the result is the one `run()` gives, byte for byte); `CipiJob::recordProgress()` keeps it, and never fails a job.
+- **`system.ipv6`** in `GET /api/status` — the server's public IPv6 address, for a domain's AAAA record (every vhost Cipi writes listens on IPv6 too). Read from the interfaces, nothing asked of an outside service: the first global address that is not temporary, deprecated or unique-local; `null` without one.
+- **`subject`** on the records of `GET /api/apps/{name}/deploy/audit` — the first line of each deploy's commit message (Cipi 5.14.0 reads it from the app's clone; it is not in the ledger and no hash covers it). Passed through as the CLI gives it.
 - **`GET /api/firewall`** — `cipi firewall status --json`, typed: UFW (active, default policies, every rule with `kind`, `family`, `comment`, `managed_by`, `protected`, `removable`), `protected_ports`, the Zero Trust locks, fail2ban (threshold, timings, jails and banned addresses) and CrowdSec (engine, bouncer, allowlist, decisions, `enable_blockers`).
 - **`POST|DELETE /api/firewall/rules`** — open a port or a range (`port`, `from`, `proto`), remove what allow (or deny, `action: deny`) made.
 - **`POST|DELETE /api/firewall/blocks`** — every port refused to an `address`, ahead of every allow; refused for the address of the request and for ranges wider than /8 (IPv4) or /16 (IPv6).

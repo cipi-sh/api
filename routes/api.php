@@ -26,6 +26,7 @@ use CipiApi\Http\Controllers\MonitorController;
 use CipiApi\Http\Controllers\NodeController;
 use CipiApi\Http\Controllers\PackageController;
 use CipiApi\Http\Controllers\PhpController;
+use CipiApi\Http\Controllers\NginxController;
 use CipiApi\Http\Controllers\ProxyController;
 use CipiApi\Http\Controllers\RedirectController;
 use CipiApi\Http\Controllers\SearchController;
@@ -109,6 +110,12 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::get('/apps/{name}/proxies', [ProxyController::class, 'list'])->middleware('ability:proxies-view');
     Route::post('/apps/{name}/proxies', [ProxyController::class, 'add'])->middleware('ability:proxies-manage');
     Route::delete('/apps/{name}/proxies', [ProxyController::class, 'remove'])->middleware('ability:proxies-manage');
+
+    // An app's own nginx directives (Cipi CLI ≥ 5.14.0). From the API the CLI
+    // takes a subset of the language; a refused text is a 422 and changes nothing.
+    Route::get('/apps/{name}/nginx', [NginxController::class, 'show'])->middleware('ability:nginx-view');
+    Route::put('/apps/{name}/nginx', [NginxController::class, 'update'])->middleware('ability:nginx-manage');
+    Route::delete('/apps/{name}/nginx', [NginxController::class, 'destroy'])->middleware('ability:nginx-manage');
 
     // Node apps + runtimes (Cipi CLI ≥ 5.4.0 + API sudoers ≥ 5.4.1)
     Route::get('/node', [NodeController::class, 'runtimes'])->middleware('ability:node-view');

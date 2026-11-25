@@ -30,6 +30,12 @@ class CipiJobStatusService
         ];
 
         if (! in_array($job->status, ['completed', 'failed'], true)) {
+            // A running job says what its command has printed so far (1.44):
+            // the text only — the result is parsed once it has finished.
+            if ($includeOutput && $job->status === 'running' && is_string($job->output) && $job->output !== '') {
+                $data['output'] = $this->truncateOutput(CipiCliService::asExec($job->output));
+            }
+
             return $data;
         }
 

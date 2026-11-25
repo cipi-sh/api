@@ -51,6 +51,8 @@ return [
         'redirects-manage' => 'Manage app + path redirects',
         'proxies-view' => 'View prefix reverse proxies',
         'proxies-manage' => 'Manage prefix reverse proxies',
+        'nginx-view' => 'View an app\'s own nginx directives',
+        'nginx-manage' => 'Replace or remove an app\'s own nginx directives (a subset of nginx\'s language; tested with nginx -t)',
         'node-view' => 'View Node app status and runtimes',
         'node-manage' => 'Restart Node apps (blue/green)',
         'node-runtimes-manage' => 'Install / upgrade / remove Node runtimes, set the server default',

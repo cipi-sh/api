@@ -163,6 +163,12 @@ class CipiCliService
         // --force and --autoremove from the panel.
         'package install ',
         'package remove ',
+        // Cipi CLI ≥ 5.14.0: an app's own nginx directives. Not `nginx edit`
+        // (a terminal), nor upgrade and default-server. From sudo the CLI
+        // takes --content-b64 only, and a subset of nginx's language.
+        'nginx show ',
+        'nginx set ',
+        'nginx reset ',
     ];
 
     /**
@@ -183,15 +189,74 @@ class CipiCliService
             ];
         }
 
-        $fullCommand = 'sudo /usr/local/bin/cipi ' . $command . ' 2>&1';
         $output = [];
-        exec($fullCommand, $output, $exitCode);
+        exec($this->shellLine($command), $output, $exitCode);
 
         return [
             'output' => implode("\n", $output),
             'exit_code' => $exitCode,
             'success' => $exitCode === 0,
         ];
+    }
+
+    /**
+     * run(), handing what the command has printed so far to $onOutput each
+     * time more of it arrives — for a job, whose output can then be read while
+     * it runs (a deploy takes minutes). The result is the one run() gives.
+     *
+     * @param  callable(string): void  $onOutput
+     */
+    public function runStreaming(string $command, callable $onOutput): array
+    {
+        if (! $this->commandIsPermitted($command) || ! function_exists('proc_open')) {
+            return $this->run($command);
+        }
+
+        $process = @proc_open($this->shellLine($command), [1 => ['pipe', 'w']], $pipes);
+        if (! is_resource($process)) {
+            return $this->run($command);
+        }
+
+        $buffer = '';
+        while (! feof($pipes[1])) {
+            $chunk = fread($pipes[1], 8192);
+            if ($chunk === false) {
+                break;
+            }
+            if ($chunk !== '') {
+                $buffer .= $chunk;
+                try {
+                    $onOutput($buffer);
+                } catch (\Throwable) {
+                    // Showing progress must never be what stops the command.
+                }
+            }
+        }
+        fclose($pipes[1]);
+        $exitCode = proc_close($process);
+
+        return [
+            'output' => self::asExec($buffer),
+            'exit_code' => $exitCode,
+            'success' => $exitCode === 0,
+        ];
+    }
+
+    /** The command line both run() and runStreaming() execute: stderr with stdout. */
+    protected function shellLine(string $command): string
+    {
+        return 'sudo /usr/local/bin/cipi ' . $command . ' 2>&1';
+    }
+
+    /** Output as exec() returns it: no trailing whitespace on a line, no newline after the last. */
+    public static function asExec(string $buffer): string
+    {
+        if ($buffer === '') {
+            return '';
+        }
+        $lines = explode("\n", str_ends_with($buffer, "\n") ? substr($buffer, 0, -1) : $buffer);
+
+        return implode("\n", array_map('rtrim', $lines));
     }
 
     private function isAllowed(string $command): bool

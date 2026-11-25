@@ -579,6 +579,75 @@ namespace {
     ok(str_contains($ctl, "! \$entry['installed'] && ! \$entry['partial'] && ! \$entry['outdated']"), 'controller: an outdated upstream entry may be removed (and installed: it updates)');
     ok(isset($spec['paths']['/packages/{package}']['post'], $spec['paths']['/packages/{package}']['delete'], $sc['JobResultPackageInstall'], $sc['JobResultPackageRemove'], $sc['PackagesResponse']['properties']['data']['items']['properties']['kind']), 'OpenAPI: the package routes, kind, the job results');
 
+    echo "--- nginx directives, live job output, IPv6 (Cipi 5.14.0)\n";
+    $root = $argv[1] ?? dirname(__DIR__);
+    foreach (['CipiNginxCliService', 'NginxConfigRefusedException'] as $c) {
+        require_once $root . "/src/Services/{$c}.php";
+    }
+    $ncli = new FakeCli;
+    $ng = new CipiApi\Services\CipiNginxCliService($ncli, new CipiApi\Services\CipiOutputParser);
+    $ncli->next = ['output' => '{"app":"shop","config":"expires 1d;\n","bytes":12,"max_bytes":32768,"file":"/etc/nginx/cipi-custom/shop.conf","active":true,"suspended":false}', 'exit_code' => 0, 'success' => true];
+    $shown = $ng->show('shop');
+    ok($ncli->ran === ["nginx show 'shop' --json"] && $shown === ['app' => 'shop', 'config' => "expires 1d;\n", 'bytes' => 12, 'max_bytes' => 32768, 'active' => true, 'suspended' => false], 'nginx show: the text, its size, whether it is live — not the path on the server');
+    $ncli->ran = [];
+    $ng->update('shop', "expires 7d;\r\nlocation /x { deny all; }\r\n");
+    ok($ncli->ran[0] === "nginx set 'shop' --content-b64='" . base64_encode("expires 7d;\nlocation /x { deny all; }\n") . "'" && $ncli->ran[1] === "nginx show 'shop' --json", 'nginx update: the text goes as base64, line ends as LF, then it is read back');
+    $ncli->ran = [];
+    $ng->update('shop', "  \n\t");
+    ok($ncli->ran[0] === "nginx reset 'shop'", 'nginx update: an empty text removes the directives');
+    $ncli->next = ['output' => "\e[0;31m[ERROR]\e[0m Not accepted from the API — the whole nginx language is for 'cipi nginx edit shop' at the server\n  line 1: `listen` is not allowed from the API — the ports of an app are Cipi's\n  line 2: root: a path under /home/shop/, without variables or `..`", 'exit_code' => 1, 'success' => false];
+    $refused = null;
+    try { $ng->update('shop', "listen 81;\nroot /etc;"); } catch (CipiApi\Services\NginxConfigRefusedException $e) { $refused = $e; }
+    ok($refused !== null && count($refused->reasons()) === 3 && str_starts_with($refused->reasons()[0], 'Not accepted from the API') && $refused->reasons()[1] === "line 1: `listen` is not allowed from the API — the ports of an app are Cipi's", 'nginx update: what the CLI refuses comes back as reasons, one per line, without colours');
+    $ncli->next = ['output' => "[ERROR] nginx refused the directives — nothing changed\n  line 2: unknown directive \"boom\"", 'exit_code' => 1, 'success' => false];
+    $refused = null;
+    try { $ng->update('shop', "expires 1d;\nboom;"); } catch (CipiApi\Services\NginxConfigRefusedException $e) { $refused = $e; }
+    ok($refused !== null && $refused->reasons() === ['nginx refused the directives — nothing changed', 'line 2: unknown directive "boom"'], 'nginx update: nginx\'s own verdict too');
+    $ncli->next = ['output' => '[ERROR] Use: cipi nginx default-server on|off|status | security | upgrade [--yes]', 'exit_code' => 1, 'success' => false];
+    ok(str_contains((string) thrown(fn () => $ng->show('shop')), 'Cipi 5.14.0+ is required') && str_starts_with((string) thrown(fn () => $ng->update('shop', 'expires 1d;')), 'RuntimeException'), 'nginx: a CLI before 5.14.0 is told apart from a refused text');
+    $ncli->next = ['output' => '[ERROR] nginx configuration is already invalid — fix it first (nginx -t)', 'exit_code' => 1, 'success' => false];
+    ok(str_starts_with((string) thrown(fn () => $ng->update('shop', 'expires 1d;')), 'RuntimeException: [ERROR] nginx configuration is already invalid'), 'nginx update: a server problem is not a refused text (503, not 422)');
+    $perm = new CipiApi\Services\CipiCliService;
+    ok($perm->commandIsPermitted("nginx show 'shop' --json") && $perm->commandIsPermitted("nginx set 'shop' --content-b64='eA=='") && $perm->commandIsPermitted("nginx reset 'shop'")
+        && ! $perm->commandIsPermitted("nginx edit 'shop'") && ! $perm->commandIsPermitted('nginx upgrade --yes') && ! $perm->commandIsPermitted('nginx default-server off') && ! $perm->commandIsPermitted('nginx security'), 'allowed commands: nginx show, set, reset — not edit, upgrade, default-server');
+    $routes = (string) file_get_contents($root . '/routes/api.php');
+    ok(str_contains($routes, "Route::get('/apps/{name}/nginx', [NginxController::class, 'show'])->middleware('ability:nginx-view');")
+        && str_contains($routes, "Route::put('/apps/{name}/nginx', [NginxController::class, 'update'])->middleware('ability:nginx-manage');")
+        && str_contains($routes, "Route::delete('/apps/{name}/nginx', [NginxController::class, 'destroy'])->middleware('ability:nginx-manage');"), 'routes: GET with nginx-view, PUT and DELETE with nginx-manage');
+    $abilities = (string) file_get_contents($root . '/config/cipi.php');
+    ok(str_contains($abilities, "'nginx-view' =>") && str_contains($abilities, "'nginx-manage' =>"), 'abilities: nginx-view, nginx-manage');
+    $nctl = (string) file_get_contents($root . '/src/Http/Controllers/NginxController.php');
+    ok(str_contains($nctl, "'reasons' => \$e->reasons()], 422") && str_contains($nctl, "'config' => 'present|nullable|string|max:' . CipiNginxCliService::MAX_BYTES"), 'controller: a refused text is a 422 with the reasons');
+    ok(isset($spec['paths']['/apps/{name}/nginx']['get'], $spec['paths']['/apps/{name}/nginx']['put'], $spec['paths']['/apps/{name}/nginx']['delete'], $sc['NginxDirectives']), 'OpenAPI: /apps/{name}/nginx');
+
+    // A job's output while it runs.
+    $stream = new class extends CipiApi\Services\CipiCliService {
+        public string $line = '';
+        protected function shellLine(string $command): string { return $this->line . ' 2>&1'; }
+    };
+    $stream->line = "sh -c 'printf \"one  \\n\"; sleep 0.3; printf \"two\\n\" >&2; sleep 0.3; printf \"three\\t\\n\\n\"; exit 3'";
+    $seenAt = []; $t0 = microtime(true);
+    $streamed = $stream->runStreaming('status', function (string $soFar) use (&$seenAt, $t0) { $seenAt[] = [microtime(true) - $t0, $soFar]; });
+    ok($streamed === $stream->run('status') && $streamed === ['output' => "one\ntwo\nthree\n", 'exit_code' => 3, 'success' => false], 'runStreaming: the result run() gives — output as exec() shapes it, the exit code');
+    ok(count($seenAt) >= 2 && $seenAt[0][1] === "one  \n" && $seenAt[0][0] < 0.25 && str_ends_with(end($seenAt)[1], "three\t\n\n"), 'runStreaming: the output is handed over as it arrives, whole so far each time');
+    ok($stream->runStreaming('rm -rf /', fn () => null)['output'] === 'Command not allowed: rm -rf /', 'runStreaming: a command not allowed is not run');
+    $stream->line = "sh -c 'echo x'";
+    ok($stream->runStreaming('status', function () { throw new RuntimeException('db down'); }) === ['output' => 'x', 'exit_code' => 0, 'success' => true], 'runStreaming: a failing listener does not stop the command');
+    ok(CipiApi\Services\CipiCliService::asExec('') === '' && CipiApi\Services\CipiCliService::asExec("a \n\nb") === "a\n\nb", 'asExec: trailing whitespace of a line, the last newline');
+    $jobSrc = (string) file_get_contents($root . '/src/Jobs/RunCipiCommand.php');
+    $modelSrc = (string) file_get_contents($root . '/src/Models/CipiJob.php');
+    $statusSrc = (string) file_get_contents($root . '/src/Services/CipiJobStatusService.php');
+    ok(str_contains($jobSrc, '$cipi->runStreaming($this->command, function (string $soFar) use ($job, &$saved): void {') && str_contains($jobSrc, 'if ($now - $saved >= 1.0) {') && str_contains($jobSrc, "\$job->markCompleted(\$result['output'], \$result['exit_code']);"), 'job: progress saved once a second at most, the final output as before');
+    ok(str_contains($modelSrc, "if (\$this->status !== 'running') {") && str_contains($modelSrc, 'substr($output, -self::PROGRESS_CHARS)') && (bool) preg_match('/recordProgress.*?catch \(\\\\Throwable\)/s', $modelSrc), 'job model: progress only while running, its last 50,000 characters, never an error');
+    ok(str_contains($statusSrc, "\$job->status === 'running' && is_string(\$job->output) && \$job->output !== ''") && str_contains($statusSrc, "\$data['output'] = \$this->truncateOutput(CipiCliService::asExec(\$job->output));"), 'GET /jobs/{id}: a running job carries its output so far, no result yet');
+
+    // The server's IPv6 address.
+    $S = CipiApi\Services\CipiServerStatusService::class;
+    $ipOut = "2: eth0    inet6 2a01:4f8:c0c:1234:aaaa:bbbb:cccc:dddd/64 scope global temporary dynamic \\       valid_lft 600sec\n2: eth0    inet6 2A01:4F8:C0C:1234::1/64 scope global \\       valid_lft forever preferred_lft forever\n3: docker0    inet6 fd00:dead:beef::1/48 scope global \\  valid_lft forever\n";
+    ok($S::firstPublicIpv6($ipOut) === '2a01:4f8:c0c:1234::1', 'IPv6: the first global address — not a temporary one, lower case');
+    ok($S::firstPublicIpv6('') === null && $S::firstPublicIpv6("3: docker0    inet6 fd00::1/48 scope global \n4: x inet6 2001:db8::5/64 scope global deprecated \n") === null && $S::firstPublicIpv6('2: eth0    inet6 2001:db8::7;id/64 scope global') === null, 'IPv6: none, only unique-local or deprecated ones, or not an address: null');
+    ok(str_contains((string) file_get_contents($root . '/src/Services/CipiServerStatusService.php'), "'ipv6' => \$this->publicIpv6(),") && isset($spec['paths']) && str_contains((string) file_get_contents($root . '/public/api-docs/openapi.json'), '"ipv6": {'), 'status: system.ipv6, in the OpenAPI too');
+
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);
 }

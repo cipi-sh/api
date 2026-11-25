@@ -1978,6 +1978,160 @@
                 }
             }
         },
+        "/apps/{name}/nginx": {
+            "get": {
+                "tags": [
+                    "Nginx"
+                ],
+                "summary": "Show an app's nginx directives",
+                "description": "The directives an app adds to its own nginx server block (`cipi nginx show --json`). Synchronous. Requires `nginx-view` ability and Cipi CLI >= 5.14.0.",
+                "operationId": "nginxShow",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The app's directives",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NginxDirectivesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Nginx"
+                ],
+                "summary": "Replace an app's nginx directives",
+                "description": "Replaces the app's directives (`cipi nginx set`); an empty `config` removes them. Synchronous: `nginx -t` runs before nginx reloads, and a refused text changes nothing. From the API the CLI takes a subset of nginx's language: headers, caching, limits, rewrites, `location` and `if` blocks, `root`/`alias` under the app's home. Not `access_log`/`error_log` with a path, `include`, `listen`, `server_name`, any `*_pass`, certificates: reverse proxies and redirects have their own endpoints, and the whole language is `cipi nginx edit <app>` at the server. Requires `nginx-manage` ability and Cipi CLI >= 5.14.0.",
+                "operationId": "nginxUpdate",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/NginxDirectivesRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The app's directives",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NginxDirectivesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Refused: not in the subset the API takes, or `nginx -t` said no. Nothing changed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NginxRefusedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Nginx"
+                ],
+                "summary": "Remove an app's nginx directives",
+                "description": "Removes the app's directives (`cipi nginx reset`). Synchronous. Requires `nginx-manage` ability and Cipi CLI >= 5.14.0.",
+                "operationId": "nginxReset",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The app's directives",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/NginxDirectivesResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/apps/{name}/yml": {
             "get": {
                 "tags": [
@@ -9790,6 +9944,12 @@
                                         "nullable": true,
                                         "example": "178.104.60.48"
                                     },
+                                    "ipv6": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "Public IPv6 address read from the server's interfaces (1.44); null without one.",
+                                        "example": "2a01:4f8:c0c:1234::1"
+                                    },
                                     "hostname": {
                                         "type": "string",
                                         "nullable": true,
@@ -11071,6 +11231,76 @@
                     }
                 }
             },
+            "NginxDirectives": {
+                "type": "object",
+                "properties": {
+                    "app": {
+                        "type": "string",
+                        "example": "shop"
+                    },
+                    "config": {
+                        "type": "string",
+                        "description": "The directives, as text. Empty when the app has none.",
+                        "example": "client_max_body_size 512M;\nlocation ^~ /downloads/ {\n    expires 1y;\n}\n"
+                    },
+                    "bytes": {
+                        "type": "integer",
+                        "example": 68
+                    },
+                    "max_bytes": {
+                        "type": "integer",
+                        "example": 32768
+                    },
+                    "active": {
+                        "type": "boolean",
+                        "description": "Whether the app's vhost includes them right now (not while the app is suspended)."
+                    },
+                    "suspended": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "NginxDirectivesResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/NginxDirectives"
+                    }
+                }
+            },
+            "NginxDirectivesRequest": {
+                "type": "object",
+                "required": [
+                    "config"
+                ],
+                "properties": {
+                    "config": {
+                        "type": "string",
+                        "nullable": true,
+                        "maxLength": 32768,
+                        "description": "The whole text: it replaces what the app had. Empty removes it."
+                    }
+                }
+            },
+            "NginxRefusedResponse": {
+                "type": "object",
+                "properties": {
+                    "error": {
+                        "type": "string",
+                        "example": "nginx refused the directives \u2014 nothing changed"
+                    },
+                    "reasons": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "example": [
+                            "nginx refused the directives \u2014 nothing changed",
+                            "line 2: unknown directive \"boom\""
+                        ]
+                    }
+                }
+            },
             "ProxyRule": {
                 "type": "object",
                 "properties": {
@@ -11312,6 +11542,11 @@
                                         "commit": {
                                             "type": "string",
                                             "example": "7dff7cc0aa11..."
+                                        },
+                                        "subject": {
+                                            "type": "string",
+                                            "description": "First line of the commit's message, read from the app's clone when asked (Cipi 5.14.0+). Not part of the ledger; absent when the clone no longer has the commit.",
+                                            "example": "Fix checkout tax rounding"
                                         },
                                         "origin": {
                                             "type": "string",
@@ -13731,6 +13966,10 @@
         {
             "name": "Redirects",
             "description": "Whole-app and path redirects rendered into the nginx vhost (Cipi 5.3.1+)"
+        },
+        {
+            "name": "Nginx",
+            "description": "An app's own nginx directives"
         },
         {
             "name": "Proxies",

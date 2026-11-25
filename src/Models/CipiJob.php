@@ -31,6 +31,30 @@ class CipiJob extends Model
         $this->update(['status' => 'running']);
     }
 
+    /** How much of a running job's output is kept: its last characters. */
+    public const PROGRESS_CHARS = 50000;
+
+    /**
+     * What a running job has printed so far. Only while it runs, and never
+     * what makes it fail: the output that counts is the one markCompleted() saves.
+     */
+    public function recordProgress(string $output): void
+    {
+        if ($this->status !== 'running') {
+            return;
+        }
+        if (strlen($output) > self::PROGRESS_CHARS) {
+            $output = substr($output, -self::PROGRESS_CHARS);
+            $cut = strpos($output, "\n");
+            $output = $cut === false ? $output : substr($output, $cut + 1); // from the start of a line
+        }
+        try {
+            $this->update(['output' => $output]);
+        } catch (\Throwable) {
+            // A busy database: the next second tries again.
+        }
+    }
+
     public function markCompleted(string $output, int $exitCode): void
     {
         $this->update([
