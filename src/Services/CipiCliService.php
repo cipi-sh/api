@@ -143,6 +143,21 @@ class CipiCliService
         'notification test ',
         'notification enable ',
         'notification disable ',
+        // Cipi CLI ≥ 5.14.0 (API sudoers ≥ 5.14.0): the Firewall tab. Not
+        // `firewall deny` (the panel opens ports and blocks addresses), not
+        // `crowdsec rescue|refresh`; `crowdsec disable` only with --force,
+        // which there skips the question.
+        'firewall status --json',
+        'firewall allow ',
+        'firewall remove ',
+        'firewall block ',
+        'firewall unblock ',
+        'firewall attempts ',
+        'ban unban ',
+        'crowdsec enable',
+        'crowdsec disable --force',
+        'crowdsec allow ',
+        'crowdsec unallow ',
     ];
 
     /**

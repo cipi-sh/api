@@ -33,7 +33,7 @@ namespace {
     function config(string $k, mixed $d = null): mixed { return $GLOBALS['CFG'][$k] ?? $d; }
     function env(string $k, mixed $d = null): mixed { return $d; }
     $src = ($argv[1] ?? dirname(__DIR__)) . '/src/Services/';
-    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService', 'CipiAppJitService', 'CipiFrankenPhpService', 'CipiOutputParser', 'CipiMetricsService', 'CipiNotificationsService'] as $c) {
+    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService', 'CipiAppJitService', 'CipiFrankenPhpService', 'CipiOutputParser', 'CipiMetricsService', 'CipiNotificationsService', 'CipiIpWhitelistService', 'CipiFirewallService', 'CipiJobAbilities'] as $c) {
         require $src . $c . '.php';
     }
 
@@ -462,9 +462,77 @@ namespace {
     ok($parser->parse('app-deploy-unlock', "✓ Automatic deploys resumed\n") === ['unlocked' => false, 'resumed' => true], 'unlock: only a paused commit');
     $spec = json_decode(file_get_contents(dirname($src, 2) . '/public/api-docs/openapi.json'), true);
     $sc = $spec['components']['schemas'];
-    ok($spec['info']['version'] === '1.43.0' && isset($sc['AppEnvUpdateRequest']['properties']['order'], $sc['BackupProfileRequest']['properties']['exclude_paths'], $sc['BackupProfileCreateRequest']['properties']['exclude_paths'], $sc['DbEnginesResponse']['properties']['data']['properties']['engines']['items']['properties']['server'], $sc['DeployStatusResponse']['properties']['data']['properties']['paused_commit'], $sc['BasicAuthStatusResponse']['properties']['data']['properties']['agent'], $sc['JobResultAppDeployUnlock']['properties']['resumed']), 'OpenAPI 1.43.0: order, exclude_paths, server, paused_commit, agent, resumed');
+    ok(version_compare($spec['info']['version'], '1.43.0', '>=') && isset($sc['AppEnvUpdateRequest']['properties']['order'], $sc['BackupProfileRequest']['properties']['exclude_paths'], $sc['BackupProfileCreateRequest']['properties']['exclude_paths'], $sc['DbEnginesResponse']['properties']['data']['properties']['engines']['items']['properties']['server'], $sc['DeployStatusResponse']['properties']['data']['properties']['paused_commit'], $sc['BasicAuthStatusResponse']['properties']['data']['properties']['agent'], $sc['JobResultAppDeployUnlock']['properties']['resumed']), 'OpenAPI 1.43.0: order, exclude_paths, server, paused_commit, agent, resumed');
     ok(str_contains(file_get_contents(dirname($src, 2) . '/src/Mcp/Tools/AppEnvUpdateTool.php'), "'order' =>"), 'MCP AppEnvUpdate: order');
     ok(str_contains(file_get_contents(dirname($src, 2) . '/src/Http/Controllers/BackupController.php'), "'exclude_paths',"), 'backup controller passes exclude_paths');
+
+    echo "--- firewall (Cipi 5.14.0)\n";
+    $F = 'CipiApi\Services\CipiFirewallService';
+    foreach (['8080' => '8080', '0080' => '80', '8000:8100' => '8000:8100', 22 => '22', ' 443 ' => '443'] as $in => $want) {
+        ok($F::normalizePort($in) === $want, "port " . json_encode($in) . " → {$want}");
+    }
+    foreach (['0', '65536', '8000:7000', '8000:8000', '22;id', '80,443', 'ssh', '-1', '', '1:70000'] as $bad) {
+        ok($F::normalizePort($bad) === null, 'port refused: ' . json_encode($bad));
+    }
+    ok($F::normalizePort(['22']) === null, 'port refused: an array');
+    $cli = new FakeCli;
+    $fw = new $F($cli, new FakeVersion('5.14.0'), new CipiApi\Services\CipiIpWhitelistService($cli));
+    foreach (['1.2.3.4', '10.0.0.0/8', '2001:db8::/48', '::1'] as $a) { ok($fw->isAddress($a), "address {$a}"); }
+    foreach (['*', '1.2.3.4;id', '999.1.1.1', '', '1.2.3.4/33', 'example.com', '-1.2.3.4', "1.2.3.4\n5.6.7.8"] as $a) { ok(! $fw->isAddress($a), 'not an address: ' . json_encode($a)); }
+    ok($F::tooWide('0.0.0.0/0') && $F::tooWide('10.0.0.0/7') && ! $F::tooWide('10.0.0.0/8') && $F::tooWide('2001::/15') && ! $F::tooWide('2001:db8::/16') && ! $F::tooWide('1.2.3.4'), 'too wide: IPv4 below /8, IPv6 below /16');
+    ok($fw->takesIn('203.0.113.0/24', $fw->clientIp('::ffff:203.0.113.9')) && $fw->takesIn('203.0.113.9', '203.0.113.9') && ! $fw->takesIn('203.0.114.0/24', '203.0.113.9') && ! $fw->takesIn('203.0.113.0/24', ''), 'the caller: in a range, itself, IPv4-mapped IPv6 read as IPv4; nobody when unknown');
+    $cli->next = ['output' => "\e[32m✓\e[0m Allowed 8080/tcp", 'exit_code' => 0, 'success' => true];
+    ok($fw->allow('8080', null) === 'Allowed 8080/tcp', 'allow: the CLI line, without colours or ✓');
+    $fw->allow('5432', '10.0.0.0/8', 'udp');
+    $fw->remove('8080', null);
+    $fw->remove('3000', null, 'any');
+    $fw->remove('22', '198.51.100.0/24', 'tcp', 'deny');
+    $fw->block('192.0.2.66'); $fw->unblock('2001:db8:bad::/48');
+    $fw->attempts(5); $fw->attempts(null);
+    $cli->next = ['output' => 'IP 11.2.3.45 unbanned', 'exit_code' => 0, 'success' => true]; $fw->unban('11.2.3.45');
+    $fw->crowdsecAllow('203.0.113.0/24');
+    $cli->next = ['output' => 'Removed 203.0.113.0/24', 'exit_code' => 0, 'success' => true]; $fw->crowdsecUnallow('203.0.113.0/24');
+    ok($cli->ran === [
+        "firewall allow '8080'", "firewall allow '5432' --from='10.0.0.0/8' --proto='udp'",
+        "firewall remove '8080'", "firewall remove '3000' --proto='any'", "firewall remove '22' --from='198.51.100.0/24' --deny",
+        "firewall block '192.0.2.66'", "firewall unblock '2001:db8:bad::/48'", 'firewall attempts 5', 'firewall attempts default',
+        "ban unban '11.2.3.45'", "crowdsec allow '203.0.113.0/24'", "crowdsec unallow '203.0.113.0/24'",
+    ], 'every change is a whitelisted command, values quoted: ' . json_encode($cli->ran));
+    $cli->next = ['output' => "\e[0;31m[ERROR]\e[0m Port 443 is how this server is reached (SSH, HTTP, HTTPS): it is not closed from here\n  To close it to the world, Zero Trust keeps it working: cipi zt lock http|ssh", 'exit_code' => 1, 'success' => false];
+    $err = (string) thrown(fn () => $fw->remove('443', null));
+    ok(str_starts_with($err, 'InvalidArgumentException: Port 443 is how this server is reached') && ! str_contains($err, '[ERROR]') && ! str_contains($err, "\e"), "the CLI's refusal: 422 with its words, no colours, no [ERROR]");
+    $cli->next = ['output' => "\e[1;33m[WARN]\e[0m 1.2.3.4 is not currently banned", 'exit_code' => 0, 'success' => true];
+    ok(str_contains((string) thrown(fn () => $fw->unban('1.2.3.4')), '1.2.3.4 is not currently banned'), 'unban of an address not banned: 422');
+    $cli->next = ['output' => "[WARN] 9.9.9.9 is not on the extra allowlist", 'exit_code' => 0, 'success' => true];
+    ok(str_contains((string) thrown(fn () => $fw->crowdsecUnallow('9.9.9.9')), 'not on the CrowdSec allowlist'), 'unallow of an address not there: 422');
+    $old = new $F(new FakeCli, new FakeVersion('5.13.1'), new CipiApi\Services\CipiIpWhitelistService(new FakeCli));
+    ok(str_starts_with((string) thrown(fn () => $old->allow('8080', null)), 'RuntimeException: The firewall from the panel needs Cipi 5.14.0+ — this server runs Cipi 5.13.1'), 'an older core: refused before anything runs (503)');
+    ok(str_starts_with((string) thrown(fn () => $old->status()), 'RuntimeException'), '…the status too');
+    ok($F::crowdsecEnableCommand('203.0.113.9') === "crowdsec enable --allow='203.0.113.9'" && $F::crowdsecEnableCommand('') === 'crowdsec enable', 'crowdsec enable: the caller allowlisted');
+    $perm = new CipiApi\Services\CipiCliService;
+    ok($perm->commandIsPermitted($F::crowdsecEnableCommand('203.0.113.9')) && $perm->commandIsPermitted('crowdsec disable --force') && $perm->commandIsPermitted('firewall status --json'), 'crowdsec enable, disable --force and the status are whitelisted');
+    foreach (['firewall deny 22', 'crowdsec disable', 'crowdsec rescue token', 'crowdsec refresh', 'firewall status', 'firewall list'] as $c) {
+        ok(! $perm->commandIsPermitted($c), "not whitelisted: {$c}");
+    }
+    ok(CipiApi\Services\CipiJobAbilities::forType('crowdsec-enable') === 'firewall-manage' && CipiApi\Services\CipiJobAbilities::forType('crowdsec-disable') === 'firewall-manage', 'CrowdSec jobs are read back with firewall-manage');
+    $raw = '{"ufw":{"installed":true,"active":true,"default_incoming":"deny","default_outgoing":"allow","rules":[{"action":"allow","log":false,"proto":"tcp","port":"22","to":"any","from":"any","app":"","direction":"in","interface":"","comment":"","family":"both","managed_by":"","kind":"port","protected":true,"removable":false},{"action":"deny","port":"any","proto":"any","from":"192.0.2.66","family":"v4","kind":"block","removable":true},"junk"]},"protected_ports":[22,80,443,"x"],"zero_trust":{"lock_http":true},"fail2ban":{"installed":true,"running":true,"attempts":3,"attempts_default":3,"attempts_custom":null,"findtime":3600,"bantime":86400,"jails":[{"jail":"sshd","banned":["11.2.3.45"],"count":1,"total":9,"failed":2},{"x":1}]},"crowdsec":{"installed":false,"decisions":[{"ip":""}],"enable_blockers":["Only 300 MB of RAM free"]}}';
+    $cli2 = new FakeCli; $cli2->next = ['output' => $raw, 'exit_code' => 0, 'success' => true];
+    $st = (new $F($cli2, new FakeVersion('5.14.0'), new CipiApi\Services\CipiIpWhitelistService($cli2)))->status();
+    ok($cli2->ran === ['firewall status --json'], 'status: one command');
+    ok(count($st['ufw']['rules']) === 2 && $st['ufw']['rules'][0]['protected'] === true && $st['ufw']['rules'][1]['kind'] === 'block' && $st['ufw']['rules'][1]['to'] === 'any' && $st['ufw']['rules'][1]['managed_by'] === '', 'status: rules typed, every key present, junk dropped');
+    ok($st['protected_ports'] === [22, 80, 443] && $st['zero_trust'] === ['lock_http' => true, 'lock_ssh' => false], 'status: protected ports and Zero Trust locks');
+    ok($st['fail2ban']['attempts'] === 3 && $st['fail2ban']['attempts_custom'] === null && count($st['fail2ban']['jails']) === 1 && $st['fail2ban']['jails'][0]['banned'] === ['11.2.3.45'], 'status: fail2ban');
+    ok($st['crowdsec']['installed'] === false && $st['crowdsec']['decisions'] === [] && $st['crowdsec']['enable_blockers'] === ['Only 300 MB of RAM free'] && $st['crowdsec']['allowlist'] === [], 'status: CrowdSec, a decision without an address dropped');
+    $cli2->next = ['output' => 'not json', 'exit_code' => 0, 'success' => true];
+    ok(str_contains((string) thrown(fn () => (new $F($cli2, new FakeVersion('5.14.0'), new CipiApi\Services\CipiIpWhitelistService($cli2)))->status()), 'invalid JSON'), 'status: invalid JSON is an error, never an empty firewall');
+    $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
+    ok(substr_count($routes, "FirewallController::class") === 11 && str_contains($routes, "Route::get('/firewall', [FirewallController::class, 'status'])->middleware('ability:firewall-view')") && substr_count($routes, "->middleware('ability:firewall-manage')") === 10, 'routes: GET with firewall-view, the ten changes with firewall-manage');
+    $cfg = file_get_contents(dirname($src, 2) . '/config/cipi.php');
+    ok(str_contains($cfg, "'firewall-view' =>") && str_contains($cfg, "'firewall-manage' =>"), 'abilities firewall-view and firewall-manage');
+    ok(isset($spec['paths']['/firewall']['get'], $spec['paths']['/firewall/rules']['post'], $spec['paths']['/firewall/rules']['delete'], $spec['paths']['/firewall/blocks']['delete'], $spec['paths']['/firewall/attempts']['put'], $spec['paths']['/firewall/bans']['delete'], $spec['paths']['/firewall/crowdsec/enable']['post'], $spec['paths']['/firewall/crowdsec/allowlist']['delete'], $sc['FirewallStatus'], $sc['FirewallRule']) && $spec['info']['version'] === '1.44.0', 'OpenAPI 1.44.0: the firewall routes and schemas');
+    $mcp = file_get_contents(dirname($src, 2) . '/src/Mcp/Servers/CipiServer.php');
+    preg_match('/defaultPaginationLength = (\d+)/', $mcp, $pg);
+    ok(substr_count($mcp, '::class,') <= (int) ($pg[1] ?? 0) && str_contains($mcp, 'FirewallStatusTool::class'), 'MCP: FirewallStatus, and every tool fits in one tools/list page (' . substr_count($mcp, '::class,') . ' ≤ ' . ($pg[1] ?? '?') . ')');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);

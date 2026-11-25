@@ -56,6 +56,8 @@ final class CipiJobAbilities
         'node-default' => 'node-runtimes-manage',
         'node-remove' => 'node-runtimes-manage',
         'backup-verify' => 'backups-manage',
+        'crowdsec-enable' => 'firewall-manage',
+        'crowdsec-disable' => 'firewall-manage',
     ];
 
     public static function forType(string $type): ?string

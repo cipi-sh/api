@@ -47,6 +47,7 @@ use CipiApi\Mcp\Tools\RedirectUnsetTool;
 use CipiApi\Mcp\Tools\SearchDisableTool;
 use CipiApi\Mcp\Tools\SearchEnableTool;
 use CipiApi\Mcp\Tools\SearchStatusTool;
+use CipiApi\Mcp\Tools\FirewallStatusTool;
 use CipiApi\Mcp\Tools\ZtStatusTool;
 use CipiApi\Mcp\Tools\AppDeployConfigShowTool;
 use CipiApi\Mcp\Tools\AppDeployConfigUpdateTool;
@@ -100,17 +101,18 @@ use Laravel\Mcp\Server\Attributes\Version;
 use Laravel\Mcp\Server;
 
 #[Name('Cipi Server')]
-#[Version('1.7.0')]
-#[Instructions('Cipi server management: apps (Laravel, custom, Node) with an environment label each (production, staging, …), aliases, www redirects, app/path redirects, prefix proxies, databases (MariaDB/PostgreSQL), resource and soft disk limits, disk usage (server, apps, databases), cipi.yml (plan, apply, auto-apply after deploy; cipi-<env>.yml per environment), SSL (HTTP-01 or Cloudflare DNS-01 / wildcard), Meilisearch, deploy audit, monitor, jobs, logs, and server status. Requires mcp-access token ability only.')]
+#[Version('1.8.0')]
+#[Instructions('Cipi server management: apps (Laravel, custom, Node) with an environment label each (production, staging, …), aliases, www redirects, app/path redirects, prefix proxies, databases (MariaDB/PostgreSQL), resource and soft disk limits, disk usage (server, apps, databases), cipi.yml (plan, apply, auto-apply after deploy; cipi-<env>.yml per environment), SSL (HTTP-01 or Cloudflare DNS-01 / wildcard), Meilisearch, deploy audit, monitor, the firewall (UFW, fail2ban, CrowdSec — read-only here), jobs, logs, and server status. Requires mcp-access token ability only.')]
 class CipiServer extends Server
 {
     /**
      * Laravel MCP paginates tools/list (default 15). Cursor does not fetch further pages,
-     * so expose all Cipi tools in a single list response.
+     * so expose all Cipi tools in a single list response. Keep it above the number of
+     * tools below: at 80, with 92 of them, the last twelve were never listed (1.44.0).
      */
-    public int $defaultPaginationLength = 80;
+    public int $defaultPaginationLength = 120;
 
-    public int $maxPaginationLength = 80;
+    public int $maxPaginationLength = 120;
 
     protected array $tools = [
         AppListTool::class,
@@ -185,6 +187,7 @@ class CipiServer extends Server
         NotificationChannelRemoveTool::class,
         NotificationTriggersUpdateTool::class,
         ZtStatusTool::class,
+        FirewallStatusTool::class,
         DiskUsageTool::class,
         DiskDatabasesTool::class,
         DbEnginesTool::class,

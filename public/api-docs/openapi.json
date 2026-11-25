@@ -2,8 +2,8 @@
     "openapi": "3.0.3",
     "info": {
         "title": "Cipi API",
-        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`. Each endpoint names the ability it requires; a token created with `--full-access` (ability `*`) passes all of them, including the ones later versions add.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status: the token needs the ability the job was created under (`apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, \u2026 \u2014 since 1.36.1), otherwise `404`. **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Deploy status (Cipi >= 5.8.4):** `GET /apps/{name}/deploy/status` says whether a deploy is running right now \u2014 whoever started it: Git webhook, CLI, panel, rollback \u2014 with its trigger, branch, start time and elapsed seconds, and how the last one ended; `tail` adds the last lines of the deploy log (ability `deploy-manage`). `503` on an older core: the flag is never sent to a Cipi that does not know it.\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0), `GET /disk` and `GET /disk/dbs` (`disk-view`, Cipi >= 5.5.2 for the API sudoers) \u2014 the figures of `cipi disk --json` / `cipi disk db --json` (server filesystem, every app with files, database, total, share of the disk and soft limit; every database per engine), measured on request.\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).\n\n**App create & repository access (Cipi >= 5.6.0):** `POST /apps` accepts `node_build` (Laravel asset build run inside every deploy). The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access` (`ok` | `nobranch` | `denied`, with git's error and the CLI fix as `hint`): Cipi tests the deploy key against the repository on the spot.\n\n**cipi.yml (Cipi >= 5.6.4):** `GET /apps/{name}/yml` (ability `yml-view`) returns the app's cipi.yml plan: file, auto-apply, validity, changes, blockers. `POST /apps/{name}/yml/apply` applies it as an async job (`app-yml-apply`); `POST /apps/{name}/yml/auto/enable|disable` turn on or off the apply after every successful deploy (ability `yml-manage`). With auto-apply on, whoever can commit to the repository controls the app's server configuration.\n\n**Environments (Cipi >= 5.8.0):** every app carries an `env` label (`production` unless set). `POST /apps` and `PUT /apps/{name}` accept `env` (lowercase letters, digits, `-`, `_`, max 32 chars; 422 otherwise), app list/show return it, and the cipi.yml plan/auto responses report the `env` Cipi read the file for (`cipi-<env>.yml` before `cipi.yml`).\n\n**Metrics & health history (Cipi >= 5.11.0):** `GET /metrics` (latest values, last-hour trend per app, uptime 24h/7d/30d, recent events), `GET /metrics/series`, `GET /apps/{name}/metrics`, `GET /metrics/uptime`, `GET /metrics/events`, `GET /metrics/settings` (ability `metrics-view`); `PUT /metrics/settings` (retention, probe, collector on/off), `PUT|DELETE /metrics/heartbeat`, `POST /metrics/heartbeat/test` (ability `metrics-manage`). Synchronous: the CLI reads the server's SQLite. The OpenMetrics endpoint, prune and reset stay on the host. `GET|PUT /apps/{name}/basicauth/agent` (ability `apps-basicauth`): whether the cipi/agent routes are left out of basic auth.\n\n**Notifications (Cipi >= 5.12.0):** `GET /notifications` and `GET /notifications/triggers` (ability `notifications-view`, or `smtp-view`); `POST /notifications/channels`, `PUT|DELETE /notifications/channels/{id}`, `POST /notifications/channels/{id}/enable|disable|test`, `PUT /notifications/triggers`, `POST /notifications/triggers/reset` (ability `notifications-manage`, or `smtp-manage`). Every channel type \u2014 SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook \u2014 and every trigger. Synchronous: secrets go straight to the server's vault, never to the jobs table, and never come back (`*_set` flags). The `/smtp` routes are unchanged.\n\n**Cipi 5.13.0:** `PUT /apps/{name}/env` takes `order` \u2014 every key once, applied after `set`/`unset` (the panel's drag and drop); an older core is refused with `422`. Backup profiles take `exclude_paths` (folders and files left out of the app archives; `422` on an older core, which would ignore it). `GET /apps/{name}/deploy/status` reports `paused_commit`: the commit whose automatic deploy failed, which the webhook no longer deploys until a new push, a deploy from the panel, or `POST /apps/{name}/deploy/unlock`, which also resumes it. `GET /dbs/engines` says which server runs on each engine (`server`: `mariadb` or `mysql` for the engine `mariadb`, `label`); replacing MariaDB with MySQL is a CLI-only action (`cipi db switch`). `GET /apps/{name}/basicauth` reads `cipi basicauth status --json` (and the agent mode), and no longer fails on Cipi 5.11\u20135.12, which exited 1 after printing the status.",
-        "version": "1.43.0",
+        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`. Each endpoint names the ability it requires; a token created with `--full-access` (ability `*`) passes all of them, including the ones later versions add.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status: the token needs the ability the job was created under (`apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, \u2026 \u2014 since 1.36.1), otherwise `404`. **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Deploy status (Cipi >= 5.8.4):** `GET /apps/{name}/deploy/status` says whether a deploy is running right now \u2014 whoever started it: Git webhook, CLI, panel, rollback \u2014 with its trigger, branch, start time and elapsed seconds, and how the last one ended; `tail` adds the last lines of the deploy log (ability `deploy-manage`). `503` on an older core: the flag is never sent to a Cipi that does not know it.\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0), `GET /disk` and `GET /disk/dbs` (`disk-view`, Cipi >= 5.5.2 for the API sudoers) \u2014 the figures of `cipi disk --json` / `cipi disk db --json` (server filesystem, every app with files, database, total, share of the disk and soft limit; every database per engine), measured on request.\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).\n\n**App create & repository access (Cipi >= 5.6.0):** `POST /apps` accepts `node_build` (Laravel asset build run inside every deploy). The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access` (`ok` | `nobranch` | `denied`, with git's error and the CLI fix as `hint`): Cipi tests the deploy key against the repository on the spot.\n\n**cipi.yml (Cipi >= 5.6.4):** `GET /apps/{name}/yml` (ability `yml-view`) returns the app's cipi.yml plan: file, auto-apply, validity, changes, blockers. `POST /apps/{name}/yml/apply` applies it as an async job (`app-yml-apply`); `POST /apps/{name}/yml/auto/enable|disable` turn on or off the apply after every successful deploy (ability `yml-manage`). With auto-apply on, whoever can commit to the repository controls the app's server configuration.\n\n**Environments (Cipi >= 5.8.0):** every app carries an `env` label (`production` unless set). `POST /apps` and `PUT /apps/{name}` accept `env` (lowercase letters, digits, `-`, `_`, max 32 chars; 422 otherwise), app list/show return it, and the cipi.yml plan/auto responses report the `env` Cipi read the file for (`cipi-<env>.yml` before `cipi.yml`).\n\n**Metrics & health history (Cipi >= 5.11.0):** `GET /metrics` (latest values, last-hour trend per app, uptime 24h/7d/30d, recent events), `GET /metrics/series`, `GET /apps/{name}/metrics`, `GET /metrics/uptime`, `GET /metrics/events`, `GET /metrics/settings` (ability `metrics-view`); `PUT /metrics/settings` (retention, probe, collector on/off), `PUT|DELETE /metrics/heartbeat`, `POST /metrics/heartbeat/test` (ability `metrics-manage`). Synchronous: the CLI reads the server's SQLite. The OpenMetrics endpoint, prune and reset stay on the host. `GET|PUT /apps/{name}/basicauth/agent` (ability `apps-basicauth`): whether the cipi/agent routes are left out of basic auth.\n\n**Notifications (Cipi >= 5.12.0):** `GET /notifications` and `GET /notifications/triggers` (ability `notifications-view`, or `smtp-view`); `POST /notifications/channels`, `PUT|DELETE /notifications/channels/{id}`, `POST /notifications/channels/{id}/enable|disable|test`, `PUT /notifications/triggers`, `POST /notifications/triggers/reset` (ability `notifications-manage`, or `smtp-manage`). Every channel type \u2014 SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook \u2014 and every trigger. Synchronous: secrets go straight to the server's vault, never to the jobs table, and never come back (`*_set` flags). The `/smtp` routes are unchanged.\n\n**Cipi 5.13.0:** `PUT /apps/{name}/env` takes `order` \u2014 every key once, applied after `set`/`unset` (the panel's drag and drop); an older core is refused with `422`. Backup profiles take `exclude_paths` (folders and files left out of the app archives; `422` on an older core, which would ignore it). `GET /apps/{name}/deploy/status` reports `paused_commit`: the commit whose automatic deploy failed, which the webhook no longer deploys until a new push, a deploy from the panel, or `POST /apps/{name}/deploy/unlock`, which also resumes it. `GET /dbs/engines` says which server runs on each engine (`server`: `mariadb` or `mysql` for the engine `mariadb`, `label`); replacing MariaDB with MySQL is a CLI-only action (`cipi db switch`). `GET /apps/{name}/basicauth` reads `cipi basicauth status --json` (and the agent mode), and no longer fails on Cipi 5.11\u20135.12, which exited 1 after printing the status.\n\n**Firewall (Cipi >= 5.14.0):** `GET /firewall` (ability `firewall-view`) reads UFW, fail2ban and CrowdSec in one call; with `firewall-manage`: `POST|DELETE /firewall/rules` (open a port, remove what allow made), `POST|DELETE /firewall/blocks` (every port refused to an address, ahead of every allow), `PUT /firewall/attempts` (fail2ban threshold), `DELETE /firewall/bans` (fail2ban and CrowdSec), `POST|DELETE /firewall/crowdsec/allowlist`, and `POST /firewall/crowdsec/enable|disable` (async jobs `crowdsec-enable`, `crowdsec-disable`). Synchronous changes answer with the firewall after them. Never from the API: denying or removing the SSH port, 80 or 443 for everyone, reopening what a Zero Trust lock keeps closed, blocking the address of the caller; the CLI ignores `--force` from the panel.",
+        "version": "1.44.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -8128,6 +8128,717 @@
                     }
                 }
             }
+        },
+        "/firewall": {
+            "get": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Firewall status",
+                "description": "`cipi firewall status --json`: UFW state and rules, the ports kept open, Zero Trust locks, fail2ban (threshold, jails, bans) and CrowdSec (engine, bouncer, allowlist, decisions, what would stop an enable). Synchronous. Requires `firewall-view` and Cipi 5.14.0+.",
+                "operationId": "firewallStatus",
+                "responses": {
+                    "200": {
+                        "description": "Firewall",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FirewallStatusResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/firewall/rules": {
+            "post": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Open a port",
+                "description": "`cipi firewall allow`: a port or a range, tcp or udp, to everyone or to one address/range. An allow to everyone that a Zero Trust lock keeps closed is refused. Requires `firewall-manage`.",
+                "operationId": "firewallAllow",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "port"
+                                ],
+                                "properties": {
+                                    "port": {
+                                        "type": "string",
+                                        "description": "A port (1–65535) or a range `8000:8100`",
+                                        "example": "8080"
+                                    },
+                                    "from": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "Only this IPv4/IPv6 address or CIDR range; omitted (or `any`) for everyone",
+                                        "example": "10.0.0.0/8"
+                                    },
+                                    "proto": {
+                                        "type": "string",
+                                        "enum": [
+                                            "tcp",
+                                            "udp"
+                                        ],
+                                        "default": "tcp"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Done: the firewall as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FirewallChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — a protected port, a Zero Trust lock, a rule that is not there (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Remove a port rule",
+                "description": "`cipi firewall remove`: drops the rule `allow` (or `deny`, with `action: deny`) made. The rule that opens the SSH port, 80 or 443 to everyone is never removed from here. Requires `firewall-manage`.",
+                "operationId": "firewallRemove",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "port"
+                                ],
+                                "properties": {
+                                    "port": {
+                                        "type": "string",
+                                        "description": "A port (1–65535) or a range `8000:8100`",
+                                        "example": "8080"
+                                    },
+                                    "from": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "Only this IPv4/IPv6 address or CIDR range; omitted (or `any`) for everyone",
+                                        "example": "10.0.0.0/8"
+                                    },
+                                    "proto": {
+                                        "type": "string",
+                                        "enum": [
+                                            "tcp",
+                                            "udp",
+                                            "any"
+                                        ],
+                                        "default": "tcp",
+                                        "description": "`any`: a rule made without a protocol (`ufw allow 3000`), single ports only"
+                                    },
+                                    "action": {
+                                        "type": "string",
+                                        "enum": [
+                                            "allow",
+                                            "deny"
+                                        ],
+                                        "default": "allow"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Done: the firewall as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FirewallChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — a protected port, a Zero Trust lock, a rule that is not there (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/firewall/blocks": {
+            "post": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Block an address",
+                "description": "`cipi firewall block`: every port refused to an address or range, ahead of every allow. Refused for the address the request comes from, and for ranges wider than IPv4 /8 or IPv6 /16. Requires `firewall-manage`.",
+                "operationId": "firewallBlock",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "address"
+                                ],
+                                "properties": {
+                                    "address": {
+                                        "type": "string",
+                                        "description": "IPv4/IPv6 address or CIDR range",
+                                        "example": "203.0.113.66"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Done: the firewall as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FirewallChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — a protected port, a Zero Trust lock, a rule that is not there (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Unblock an address",
+                "description": "`cipi firewall unblock`. Requires `firewall-manage`.",
+                "operationId": "firewallUnblock",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "address"
+                                ],
+                                "properties": {
+                                    "address": {
+                                        "type": "string",
+                                        "description": "IPv4/IPv6 address or CIDR range",
+                                        "example": "203.0.113.66"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Done: the firewall as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FirewallChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — a protected port, a Zero Trust lock, a rule that is not there (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/firewall/attempts": {
+            "put": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "fail2ban threshold",
+                "description": "`cipi firewall attempts`: failed SSH logins before fail2ban bans the address (1–100), `null` for the default (3). Requires `firewall-manage`.",
+                "operationId": "firewallAttempts",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "attempts"
+                                ],
+                                "properties": {
+                                    "attempts": {
+                                        "type": "integer",
+                                        "nullable": true,
+                                        "minimum": 1,
+                                        "maximum": 100,
+                                        "example": 5
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Done: the firewall as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FirewallChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — a protected port, a Zero Trust lock, a rule that is not there (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/firewall/bans": {
+            "delete": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Lift a ban",
+                "description": "`cipi ban unban`: from every fail2ban jail and CrowdSec's decisions (a CIDR: a CrowdSec range). `422` when the address is not banned. Requires `firewall-manage`.",
+                "operationId": "firewallUnban",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "ip"
+                                ],
+                                "properties": {
+                                    "ip": {
+                                        "type": "string",
+                                        "example": "198.51.100.20"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Done: the firewall as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FirewallChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — a protected port, a Zero Trust lock, a rule that is not there (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/firewall/crowdsec/enable": {
+            "post": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Enable CrowdSec",
+                "description": "`cipi crowdsec enable --allow=<the address of this request>`: engine, firewall bouncer, allowlists, scenarios — an async job (`crowdsec-enable`) of a few minutes. What would stop it (`enable_blockers`: RAM, a reverse proxy without real_ip) is a `422` at once; `--force` is never sent, and the CLI ignores it from the panel. Requires `firewall-manage`.",
+                "operationId": "crowdsecEnable",
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "CrowdSec cannot be enabled on this server (`blockers`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/firewall/crowdsec/disable": {
+            "post": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Disable CrowdSec",
+                "description": "`cipi crowdsec disable --force`: flushes CrowdSec's firewall rules, removes it; fail2ban stays. Async job (`crowdsec-disable`). Requires `firewall-manage`.",
+                "operationId": "crowdsecDisable",
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "409": {
+                        "description": "CrowdSec is not installed",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/firewall/crowdsec/allowlist": {
+            "post": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Never ban an address (CrowdSec)",
+                "description": "`cipi crowdsec allow`. Requires `firewall-manage`.",
+                "operationId": "crowdsecAllow",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "address"
+                                ],
+                                "properties": {
+                                    "address": {
+                                        "type": "string",
+                                        "description": "IPv4/IPv6 address or CIDR range",
+                                        "example": "203.0.113.66"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Done: the firewall as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FirewallChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — a protected port, a Zero Trust lock, a rule that is not there (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Firewall"
+                ],
+                "summary": "Drop an address from CrowdSec's allowlist",
+                "description": "`cipi crowdsec unallow`. Requires `firewall-manage`.",
+                "operationId": "crowdsecUnallow",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "address"
+                                ],
+                                "properties": {
+                                    "address": {
+                                        "type": "string",
+                                        "description": "IPv4/IPv6 address or CIDR range",
+                                        "example": "203.0.113.66"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Done: the firewall as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FirewallChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — a protected port, a Zero Trust lock, a rule that is not there (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     },
     "components": {
@@ -12303,6 +13014,321 @@
                         }
                     }
                 }
+            },
+            "FirewallRule": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "allow",
+                            "deny",
+                            "reject",
+                            "limit"
+                        ]
+                    },
+                    "port": {
+                        "type": "string",
+                        "example": "22",
+                        "description": "`22`, `80,443`, `8000:8100` or `any`"
+                    },
+                    "proto": {
+                        "type": "string",
+                        "enum": [
+                            "tcp",
+                            "udp",
+                            "any"
+                        ]
+                    },
+                    "from": {
+                        "type": "string",
+                        "example": "any"
+                    },
+                    "to": {
+                        "type": "string",
+                        "example": "any"
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": [
+                            "in",
+                            "out"
+                        ]
+                    },
+                    "interface": {
+                        "type": "string"
+                    },
+                    "app": {
+                        "type": "string",
+                        "description": "ufw application profile, when the rule uses one"
+                    },
+                    "comment": {
+                        "type": "string",
+                        "example": "cipi metrics"
+                    },
+                    "family": {
+                        "type": "string",
+                        "enum": [
+                            "both",
+                            "v4",
+                            "v6"
+                        ]
+                    },
+                    "log": {
+                        "type": "boolean"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "enum": [
+                            "port",
+                            "block",
+                            "other"
+                        ],
+                        "description": "`port`: what `allow`/`deny` make; `block`: every port refused to an address; `other`: anything else, managed at the server"
+                    },
+                    "managed_by": {
+                        "type": "string",
+                        "enum": [
+                            "",
+                            "zero-trust",
+                            "metrics",
+                            "crowdsec",
+                            "cipi"
+                        ],
+                        "description": "The Cipi feature that owns the rule (from its comment)"
+                    },
+                    "protected": {
+                        "type": "boolean",
+                        "description": "Keeps one of `protected_ports` open to everyone"
+                    },
+                    "removable": {
+                        "type": "boolean",
+                        "description": "May be removed through this API (`DELETE /firewall/rules` or `/firewall/blocks`)"
+                    }
+                }
+            },
+            "FirewallStatus": {
+                "type": "object",
+                "properties": {
+                    "ufw": {
+                        "type": "object",
+                        "properties": {
+                            "installed": {
+                                "type": "boolean"
+                            },
+                            "active": {
+                                "type": "boolean"
+                            },
+                            "default_incoming": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "deny"
+                            },
+                            "default_outgoing": {
+                                "type": "string",
+                                "nullable": true,
+                                "example": "allow"
+                            },
+                            "rules": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/FirewallRule"
+                                }
+                            }
+                        }
+                    },
+                    "protected_ports": {
+                        "type": "array",
+                        "items": {
+                            "type": "integer"
+                        },
+                        "example": [
+                            22,
+                            80,
+                            443
+                        ],
+                        "description": "The SSH port(s) sshd listens on, 80 and 443: never denied to everyone or removed from here"
+                    },
+                    "zero_trust": {
+                        "type": "object",
+                        "properties": {
+                            "lock_http": {
+                                "type": "boolean"
+                            },
+                            "lock_ssh": {
+                                "type": "boolean"
+                            }
+                        }
+                    },
+                    "fail2ban": {
+                        "type": "object",
+                        "properties": {
+                            "installed": {
+                                "type": "boolean"
+                            },
+                            "running": {
+                                "type": "boolean"
+                            },
+                            "attempts": {
+                                "type": "integer",
+                                "nullable": true,
+                                "example": 3
+                            },
+                            "attempts_default": {
+                                "type": "integer",
+                                "nullable": true,
+                                "example": 3
+                            },
+                            "attempts_custom": {
+                                "type": "integer",
+                                "nullable": true
+                            },
+                            "attempts_pending": {
+                                "type": "boolean",
+                                "description": "Saved, but fail2ban still runs another value until restarted"
+                            },
+                            "findtime": {
+                                "type": "integer",
+                                "nullable": true,
+                                "example": 3600
+                            },
+                            "bantime": {
+                                "type": "integer",
+                                "nullable": true,
+                                "example": 86400
+                            },
+                            "jails": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "jail": {
+                                            "type": "string",
+                                            "example": "sshd"
+                                        },
+                                        "banned": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "count": {
+                                            "type": "integer"
+                                        },
+                                        "total": {
+                                            "type": "integer"
+                                        },
+                                        "failed": {
+                                            "type": "integer"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "crowdsec": {
+                        "type": "object",
+                        "properties": {
+                            "installed": {
+                                "type": "boolean"
+                            },
+                            "running": {
+                                "type": "boolean"
+                            },
+                            "bouncer": {
+                                "type": "string",
+                                "example": "running",
+                                "description": "`running`, `stopped` or `not installed`"
+                            },
+                            "mode": {
+                                "type": "string",
+                                "example": "nftables"
+                            },
+                            "rescue": {
+                                "type": "string",
+                                "example": "listening"
+                            },
+                            "rescue_port": {
+                                "type": "integer",
+                                "nullable": true
+                            },
+                            "allowlist": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "The operator's extra allowlist (`cipi crowdsec allow`)"
+                            },
+                            "decisions": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "ip": {
+                                            "type": "string"
+                                        },
+                                        "scope": {
+                                            "type": "string"
+                                        },
+                                        "type": {
+                                            "type": "string"
+                                        },
+                                        "reason": {
+                                            "type": "string"
+                                        },
+                                        "origin": {
+                                            "type": "string"
+                                        },
+                                        "duration": {
+                                            "type": "string",
+                                            "example": "3h59m"
+                                        }
+                                    }
+                                }
+                            },
+                            "ram_available_mb": {
+                                "type": "integer",
+                                "nullable": true
+                            },
+                            "ram_required_mb": {
+                                "type": "integer",
+                                "nullable": true
+                            },
+                            "enable_blockers": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                },
+                                "description": "What would stop `POST /firewall/crowdsec/enable` (RAM, a reverse proxy without real_ip)"
+                            }
+                        }
+                    }
+                }
+            },
+            "FirewallStatusResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "$ref": "#/components/schemas/FirewallStatus"
+                    }
+                }
+            },
+            "FirewallChangeResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/FirewallStatus"
+                            }
+                        ],
+                        "nullable": true
+                    },
+                    "message": {
+                        "type": "string",
+                        "example": "Allowed 8080/tcp"
+                    }
+                }
             }
         },
         "responses": {
@@ -12458,6 +13484,10 @@
         {
             "name": "Notifications",
             "description": "Every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and the triggers (Cipi CLI \u2265 5.12.0). Abilities `notifications-view` / `notifications-manage`; tokens with `smtp-view` / `smtp-manage` are accepted too."
+        },
+        {
+            "name": "Firewall",
+            "description": "UFW rules, fail2ban and CrowdSec (Cipi 5.14.0+). Abilities `firewall-view` / `firewall-manage`. The ports the server is reached on, Zero Trust locks and the address of the caller are never closed from here."
         }
     ]
 }

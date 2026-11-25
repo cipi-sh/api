@@ -65,6 +65,8 @@ return [
         'notifications-view' => 'View notification channels (no secrets) and triggers',
         'notifications-manage' => 'Add, change, test, enable/disable and remove notification channels; turn triggers on and off',
         'zt-view' => 'View Cloudflare Zero Trust status',
+        'firewall-view' => 'View the firewall: UFW rules, fail2ban threshold and bans, CrowdSec state, allowlist and decisions',
+        'firewall-manage' => 'Open ports, block addresses, unban, set the fail2ban threshold, turn CrowdSec on/off and edit its allowlist',
         'disk-view' => 'View disk usage: server, apps, databases',
         'yml-view' => 'Read cipi.yml status and plan',
         'yml-manage' => 'Apply cipi.yml, turn auto-apply on/off',

@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.44.0] - 2026-11-25
+
+The firewall, for a core that has it (Cipi 5.14.0): the panel's Firewall tab.
+
+### Added
+
+- **`GET /api/firewall`** — `cipi firewall status --json`, typed: UFW (active, default policies, every rule with `kind`, `family`, `comment`, `managed_by`, `protected`, `removable`), `protected_ports`, the Zero Trust locks, fail2ban (threshold, timings, jails and banned addresses) and CrowdSec (engine, bouncer, allowlist, decisions, `enable_blockers`).
+- **`POST|DELETE /api/firewall/rules`** — open a port or a range (`port`, `from`, `proto`), remove what allow (or deny, `action: deny`) made.
+- **`POST|DELETE /api/firewall/blocks`** — every port refused to an `address`, ahead of every allow; refused for the address of the request and for ranges wider than /8 (IPv4) or /16 (IPv6).
+- **`PUT /api/firewall/attempts`** — failed SSH logins before a fail2ban ban (1–100, `null` for the default).
+- **`DELETE /api/firewall/bans`** — lift a ban, fail2ban's and CrowdSec's (`422` when the address is not banned).
+- **`POST|DELETE /api/firewall/crowdsec/allowlist`**, and **`POST /api/firewall/crowdsec/enable|disable`** as jobs (`crowdsec-enable`, `crowdsec-disable`). Enabling answers `422` with `blockers` when the server cannot take it, and allowlists the address of the request (`--allow`), so the server never bans the panel that manages it.
+- Every change answers with the firewall after it: `{data, message}`. The CLI's refusals — a protected port, a Zero Trust lock, a rule that is not there — are `422` with its words, without colours.
+- Abilities **`firewall-view`** and **`firewall-manage`**; job types `crowdsec-enable` and `crowdsec-disable` read back with `firewall-manage`.
+- MCP tool **`FirewallStatus`** (read-only). MCP server 1.8.0.
+- OpenAPI 1.44.0: tag *Firewall*, the routes, `FirewallStatus`, `FirewallRule`.
+
+### Fixed
+
+- **MCP `tools/list` left out the last twelve tools** — `ApiLogShow`, `ServerStatus`, `ServiceList`, `PhpList`, `FrankenPhpStatus`, `FrankenPhpUpgrade`, `IpWhitelistShow` among them: the page held 80 and there are 93. It holds 120; a check in `tests/standalone.php` keeps it above the count.
+
+### Notes
+
+- Needs Cipi 5.14.0 (`cipi self-update`): its `cipi firewall status --json` and the panel's whitelist. The API never sends `--force`; the CLI ignores it from the panel anyway, so the SSH port, 80 and 443 stay open and Zero Trust locks stay in place whatever a token can do. Not here: `cipi firewall deny` (the panel opens ports and blocks addresses), CrowdSec's rescue listener.
+
 ## [1.43.0] - 2026-11-24
 
 What Cipi 5.13.0 adds, read by the panel — and the Access tab that showed raw output on every app.
