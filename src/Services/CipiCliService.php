@@ -158,6 +158,11 @@ class CipiCliService
         'crowdsec disable --force',
         'crowdsec allow ',
         'crowdsec unallow ',
+        // Cipi CLI ≥ 5.14.0: optional packages from the closed catalog, with
+        // --yes. The CLI refuses a name outside the catalog, and ignores
+        // --force and --autoremove from the panel.
+        'package install ',
+        'package remove ',
     ];
 
     /**

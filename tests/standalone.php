@@ -33,7 +33,7 @@ namespace {
     function config(string $k, mixed $d = null): mixed { return $GLOBALS['CFG'][$k] ?? $d; }
     function env(string $k, mixed $d = null): mixed { return $d; }
     $src = ($argv[1] ?? dirname(__DIR__)) . '/src/Services/';
-    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService', 'CipiAppJitService', 'CipiFrankenPhpService', 'CipiOutputParser', 'CipiMetricsService', 'CipiNotificationsService', 'CipiIpWhitelistService', 'CipiFirewallService', 'CipiJobAbilities'] as $c) {
+    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService', 'CipiAppJitService', 'CipiFrankenPhpService', 'CipiOutputParser', 'CipiMetricsService', 'CipiNotificationsService', 'CipiIpWhitelistService', 'CipiFirewallService', 'CipiJobAbilities', 'CipiPackageCliService'] as $c) {
         require $src . $c . '.php';
     }
 
@@ -533,6 +533,41 @@ namespace {
     $mcp = file_get_contents(dirname($src, 2) . '/src/Mcp/Servers/CipiServer.php');
     preg_match('/defaultPaginationLength = (\d+)/', $mcp, $pg);
     ok(substr_count($mcp, '::class,') <= (int) ($pg[1] ?? 0) && str_contains($mcp, 'FirewallStatusTool::class'), 'MCP: FirewallStatus, and every tool fits in one tools/list page (' . substr_count($mcp, '::class,') . ' ≤ ' . ($pg[1] ?? '?') . ')');
+
+    echo "--- optional packages (Cipi 5.14.0)\n";
+    $P = 'CipiApi\Services\CipiPackageCliService';
+    foreach (['browsershot', 'fonts-cjk', 'image-optimizers', 'avif', 'tesseract'] as $id) { ok($P::validId($id), "id {$id}"); }
+    foreach (['', 'Browsershot', 'ffmpeg;id', '-ffmpeg', 'a b', '../x', str_repeat('a', 41), "ffmpeg\n"] as $bad) { ok(! $P::validId($bad), 'not an id: ' . json_encode($bad)); }
+    ok($P::installCommand('browsershot') === "package install 'browsershot' --yes" && $P::removeCommand('pdftk') === "package remove 'pdftk' --yes", 'commands: the id quoted, --yes, never --force or --autoremove');
+    $perm = new CipiApi\Services\CipiCliService;
+    ok($perm->commandIsPermitted($P::installCommand('browsershot')) && $perm->commandIsPermitted($P::removeCommand('pdftk')) && $perm->commandIsPermitted('package list --json'), 'install, remove and list are whitelisted');
+    ok(! $perm->commandIsPermitted('package purge ffmpeg') && ! $perm->commandIsPermitted('packages install x'), 'nothing else of package is');
+    ok(CipiApi\Services\CipiJobAbilities::forType('package-install') === 'packages-manage' && CipiApi\Services\CipiJobAbilities::forType('package-remove') === 'packages-manage', 'package jobs are read back with packages-manage');
+    $cli = new FakeCli;
+    $cli->next = ['output' => '{"packages":[{"id":"browsershot","packages":["libnss3","libasound2t64"],"description":"Libraries","kind":"libraries","binaries":[],"missing":["libnss3"],"installed":false,"partial":false},{"id":"pdftk","packages":["pdftk-java"],"description":"PDF","kind":"tools","binaries":["pdftk"],"missing":[],"installed":true,"partial":false},{"x":1}]}', 'exit_code' => 0, 'success' => true];
+    $pk = new $P($cli, new FakeVersion('5.14.0'));
+    $list = $pk->list();
+    ok(count($list) === 2 && $list[0]['kind'] === 'libraries' && $list[0]['missing'] === ['libnss3'] && $list[0]['binaries'] === [] && $list[1]['binaries'] === ['pdftk'] && $list[1]['installed'] === true, 'list: kind, binaries, missing typed; junk dropped');
+    ok($pk->find('pdftk')['installed'] === true && $pk->find('chromium') === null, 'find: an entry of the catalog, null for anything else');
+    $cli->next = ['output' => '{"packages":[{"id":"ffmpeg","packages":["ffmpeg"],"description":"Video","installed":true,"partial":false}]}', 'exit_code' => 0, 'success' => true];
+    $l = $pk->list();
+    ok($l[0]['kind'] === 'tools' && $l[0]['binaries'] === [] && $l[0]['missing'] === [], 'list from an older core: tools, empty binaries and missing');
+    ok(thrown(fn () => $pk->requireManage()) === null, 'Cipi 5.14.0 may install from the panel');
+    ok(str_starts_with((string) thrown(fn () => (new $P(new FakeCli, new FakeVersion('5.13.1')))->requireManage()), 'RuntimeException: Installing and removing packages from the panel needs Cipi 5.14.0+ — this server runs Cipi 5.13.1'), 'an older core (its sudoers list only): 503');
+    $parser = new CipiApi\Services\CipiOutputParser;
+    $r = $parser->parse('package-install', "\e[0;36m→\e[0m Installing libreoffice-writer-nogui...\n\n\e[0;32m✓\e[0m libreoffice installed — soffice available\n");
+    ok($r === ['package' => 'libreoffice', 'installed' => true, 'already' => false, 'binaries' => ['soffice'], 'missing' => []], 'parse install: the entry and its binaries');
+    ok($parser->parse('package-install', "✓ browsershot installed\n")['binaries'] === [] && $parser->parse('package-install', "✓ ffmpeg is already installed\n")['already'] === true, 'parse install: libraries, already there');
+    $r = $parser->parse('package-remove', "→ Purging pdftk-java default-jre-headless...\n✓ pdftk removed\n");
+    ok($r === ['package' => 'pdftk', 'removed' => true, 'apt' => ['pdftk-java', 'default-jre-headless']], 'parse remove: what apt purged');
+    ok($parser->parse('package-remove', "[INFO] browsershot: other packages still use these libraries — nothing to remove\n")['still_needed'] === true, 'parse remove: libraries still needed');
+    ok(($parser->parse('package-remove', "[ERROR] Removing ffmpeg would also remove: reports\n", false)['error'] ?? '') === 'Removing ffmpeg would also remove: reports', "parse remove refused: the CLI's words");
+    $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
+    ok(str_contains($routes, "Route::post('/packages/{package}', [PackageController::class, 'install'])->middleware('ability:packages-manage')") && str_contains($routes, "Route::delete('/packages/{package}', [PackageController::class, 'remove'])->middleware('ability:packages-manage')"), 'routes: POST and DELETE /packages/{package} with packages-manage');
+    ok(str_contains(file_get_contents(dirname($src, 2) . '/config/cipi.php'), "'packages-manage' =>"), 'ability packages-manage');
+    $ctl = file_get_contents(dirname($src, 2) . '/src/Http/Controllers/PackageController.php');
+    ok(str_contains($ctl, 'validId($package)') && str_contains($ctl, '->find($package)') && str_contains($ctl, '->requireManage()'), 'controller: the id checked, found in the catalog, the core new enough — before any job');
+    ok(isset($spec['paths']['/packages/{package}']['post'], $spec['paths']['/packages/{package}']['delete'], $sc['JobResultPackageInstall'], $sc['JobResultPackageRemove'], $sc['PackagesResponse']['properties']['data']['items']['properties']['kind']), 'OpenAPI: the package routes, kind, the job results');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);

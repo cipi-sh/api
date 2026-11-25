@@ -47,6 +47,8 @@ class CipiOutputParser
             'app-limits' => $this->parseAppLimits($plain),
             'app-jit' => $this->parseAppJit($plain),
             'frankenphp-upgrade' => $this->parseFrankenPhpUpgrade($plain),
+            'package-install' => $this->parsePackageInstall($plain),
+            'package-remove' => $this->parsePackageRemove($plain),
             'app-yml-apply' => $this->parseAppYmlApply($plain),
             'status' => $this->parseStatus($plain),
             default => null,
@@ -244,6 +246,43 @@ class CipiOutputParser
         }
         if (preg_match('/already installed/i', $text)) {
             return ['installed' => true, 'message' => 'Already installed'];
+        }
+
+        return null;
+    }
+
+    /** `cipi package install <id> --yes` (Cipi 5.14.0): which entry, and whether it was already there. */
+    protected function parsePackageInstall(string $text): ?array
+    {
+        if (preg_match('/✓\s+([a-z0-9-]+) is already installed/u', $text, $m)) {
+            return ['package' => $m[1], 'installed' => true, 'already' => true];
+        }
+        if (preg_match('/✓\s+([a-z0-9-]+) installed(?:\s+—\s+(\S+) available)?/u', $text, $m)) {
+            $missing = preg_match('/Installed, but these are missing:\s*(.+)/u', $text, $mm) ? preg_split('/\s+/', trim($mm[1])) : [];
+
+            return ['package' => $m[1], 'installed' => true, 'already' => false,
+                'binaries' => isset($m[2]) ? explode(',', $m[2]) : [], 'missing' => $missing];
+        }
+        if (preg_match('/\[WARN\]\s+Installed, but these are missing:\s*(.+)/u', $text, $m)) {
+            return ['installed' => true, 'already' => false, 'binaries' => [], 'missing' => preg_split('/\s+/', trim($m[1]))];
+        }
+
+        return null;
+    }
+
+    /** `cipi package remove <id> --yes` (Cipi 5.14.0): removed, not there, or libraries other packages still use. */
+    protected function parsePackageRemove(string $text): ?array
+    {
+        if (preg_match('/✓\s+([a-z0-9-]+) removed/u', $text, $m)) {
+            $removed = preg_match('/Purging\s+(.+?)\.\.\./u', $text, $mm) ? preg_split('/\s+/', trim($mm[1])) : [];
+
+            return ['package' => $m[1], 'removed' => true, 'apt' => $removed];
+        }
+        if (preg_match('/([a-z0-9-]+): other packages still use these libraries/u', $text, $m)) {
+            return ['package' => $m[1], 'removed' => false, 'still_needed' => true];
+        }
+        if (preg_match('/([a-z0-9-]+) is not installed/u', $text, $m)) {
+            return ['package' => $m[1], 'removed' => false, 'still_needed' => false];
         }
 
         return null;

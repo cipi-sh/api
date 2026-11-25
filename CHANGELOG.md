@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [1.44.0] - 2026-11-25
 
-The firewall, for a core that has it (Cipi 5.14.0): the panel's Firewall tab.
+The firewall, for a core that has it (Cipi 5.14.0): the panel's Firewall tab. And the optional packages, installed and removed from the panel.
 
 ### Added
 
@@ -18,6 +18,9 @@ The firewall, for a core that has it (Cipi 5.14.0): the panel's Firewall tab.
 - Abilities **`firewall-view`** and **`firewall-manage`**; job types `crowdsec-enable` and `crowdsec-disable` read back with `firewall-manage`.
 - MCP tool **`FirewallStatus`** (read-only). MCP server 1.8.0.
 - OpenAPI 1.44.0: tag *Firewall*, the routes, `FirewallStatus`, `FirewallRule`.
+- **`POST /api/packages/{package}`** and **`DELETE /api/packages/{package}`** — install and remove one entry of the server's optional packages as jobs (`package-install`, `package-remove`), ability **`packages-manage`**, read back with it. Cipi 5.14.0 widens the catalog to eleven entries (`browsershot`, `fonts-cjk`, `avif`, `pdftk`, `libreoffice`, `pandoc`, `tesseract` join `image-optimizers`, `ffmpeg`, `imagemagick`, `poppler-utils`) and lets the panel run `package install|remove`. Before any job: the id must be one of the server's own catalog (`404`), not already installed or not installed (`409`), on a core that allows it (`503`). The commands carry `--yes` and never `--force` or `--autoremove`. Job results: `binaries` and `missing` after an install, `apt` (what was purged) or `still_needed` after a removal; a refusal (a package that depends on the entry) fails the job with the CLI's words.
+- `GET /api/packages` returns `kind` (`tools` | `libraries`), `binaries` and `missing` per entry; on an older core every entry reads as tools with both empty. MCP `PackageList` says so; installing stays out of MCP, like the firewall's changes.
+- OpenAPI: `POST|DELETE /packages/{package}`, `kind`/`binaries`/`missing`, `JobResultPackageInstall`, `JobResultPackageRemove`.
 
 ### Fixed
 
@@ -25,7 +28,7 @@ The firewall, for a core that has it (Cipi 5.14.0): the panel's Firewall tab.
 
 ### Notes
 
-- Needs Cipi 5.14.0 (`cipi self-update`): its `cipi firewall status --json` and the panel's whitelist. The API never sends `--force`; the CLI ignores it from the panel anyway, so the SSH port, 80 and 443 stay open and Zero Trust locks stay in place whatever a token can do. Not here: `cipi firewall deny` (the panel opens ports and blocks addresses), CrowdSec's rescue listener.
+- Needs Cipi 5.14.0 (`cipi self-update`): its `cipi firewall status --json`, `cipi package install|remove` from the panel, and the panel's whitelist. Tokens do not get `packages-manage` by themselves (full-access tokens do). The API never sends `--force`; the CLI ignores it from the panel anyway, so the SSH port, 80 and 443 stay open and Zero Trust locks stay in place whatever a token can do. Not here: `cipi firewall deny` (the panel opens ports and blocks addresses), CrowdSec's rescue listener.
 
 ## [1.43.0] - 2026-11-24
 

@@ -213,8 +213,11 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/apps/{name}/search/enable', [SearchController::class, 'enable'])->middleware('ability:search-manage');
     Route::post('/apps/{name}/search/disable', [SearchController::class, 'disable'])->middleware('ability:search-manage');
 
-    // Optional host packages — read-only catalog (Cipi CLI ≥ 5.2.2)
+    // Optional host packages: the catalog (Cipi CLI ≥ 5.2.2); install and
+    // remove an entry as jobs (Cipi CLI ≥ 5.14.0, closed catalog)
     Route::get('/packages', [PackageController::class, 'list'])->middleware('ability:packages-view');
+    Route::post('/packages/{package}', [PackageController::class, 'install'])->middleware('ability:packages-manage');
+    Route::delete('/packages/{package}', [PackageController::class, 'remove'])->middleware('ability:packages-manage');
 
     // System monitor checks — read-only (Cipi CLI ≥ 5.3.0)
     Route::get('/monitor', [MonitorController::class, 'list'])->middleware('ability:monitor-view');

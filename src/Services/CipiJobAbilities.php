@@ -58,6 +58,8 @@ final class CipiJobAbilities
         'backup-verify' => 'backups-manage',
         'crowdsec-enable' => 'firewall-manage',
         'crowdsec-disable' => 'firewall-manage',
+        'package-install' => 'packages-manage',
+        'package-remove' => 'packages-manage',
     ];
 
     public static function forType(string $type): ?string

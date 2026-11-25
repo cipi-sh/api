@@ -2,7 +2,7 @@
     "openapi": "3.0.3",
     "info": {
         "title": "Cipi API",
-        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`. Each endpoint names the ability it requires; a token created with `--full-access` (ability `*`) passes all of them, including the ones later versions add.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status: the token needs the ability the job was created under (`apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, \u2026 \u2014 since 1.36.1), otherwise `404`. **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Deploy status (Cipi >= 5.8.4):** `GET /apps/{name}/deploy/status` says whether a deploy is running right now \u2014 whoever started it: Git webhook, CLI, panel, rollback \u2014 with its trigger, branch, start time and elapsed seconds, and how the last one ended; `tail` adds the last lines of the deploy log (ability `deploy-manage`). `503` on an older core: the flag is never sent to a Cipi that does not know it.\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0), `GET /disk` and `GET /disk/dbs` (`disk-view`, Cipi >= 5.5.2 for the API sudoers) \u2014 the figures of `cipi disk --json` / `cipi disk db --json` (server filesystem, every app with files, database, total, share of the disk and soft limit; every database per engine), measured on request.\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).\n\n**App create & repository access (Cipi >= 5.6.0):** `POST /apps` accepts `node_build` (Laravel asset build run inside every deploy). The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access` (`ok` | `nobranch` | `denied`, with git's error and the CLI fix as `hint`): Cipi tests the deploy key against the repository on the spot.\n\n**cipi.yml (Cipi >= 5.6.4):** `GET /apps/{name}/yml` (ability `yml-view`) returns the app's cipi.yml plan: file, auto-apply, validity, changes, blockers. `POST /apps/{name}/yml/apply` applies it as an async job (`app-yml-apply`); `POST /apps/{name}/yml/auto/enable|disable` turn on or off the apply after every successful deploy (ability `yml-manage`). With auto-apply on, whoever can commit to the repository controls the app's server configuration.\n\n**Environments (Cipi >= 5.8.0):** every app carries an `env` label (`production` unless set). `POST /apps` and `PUT /apps/{name}` accept `env` (lowercase letters, digits, `-`, `_`, max 32 chars; 422 otherwise), app list/show return it, and the cipi.yml plan/auto responses report the `env` Cipi read the file for (`cipi-<env>.yml` before `cipi.yml`).\n\n**Metrics & health history (Cipi >= 5.11.0):** `GET /metrics` (latest values, last-hour trend per app, uptime 24h/7d/30d, recent events), `GET /metrics/series`, `GET /apps/{name}/metrics`, `GET /metrics/uptime`, `GET /metrics/events`, `GET /metrics/settings` (ability `metrics-view`); `PUT /metrics/settings` (retention, probe, collector on/off), `PUT|DELETE /metrics/heartbeat`, `POST /metrics/heartbeat/test` (ability `metrics-manage`). Synchronous: the CLI reads the server's SQLite. The OpenMetrics endpoint, prune and reset stay on the host. `GET|PUT /apps/{name}/basicauth/agent` (ability `apps-basicauth`): whether the cipi/agent routes are left out of basic auth.\n\n**Notifications (Cipi >= 5.12.0):** `GET /notifications` and `GET /notifications/triggers` (ability `notifications-view`, or `smtp-view`); `POST /notifications/channels`, `PUT|DELETE /notifications/channels/{id}`, `POST /notifications/channels/{id}/enable|disable|test`, `PUT /notifications/triggers`, `POST /notifications/triggers/reset` (ability `notifications-manage`, or `smtp-manage`). Every channel type \u2014 SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook \u2014 and every trigger. Synchronous: secrets go straight to the server's vault, never to the jobs table, and never come back (`*_set` flags). The `/smtp` routes are unchanged.\n\n**Cipi 5.13.0:** `PUT /apps/{name}/env` takes `order` \u2014 every key once, applied after `set`/`unset` (the panel's drag and drop); an older core is refused with `422`. Backup profiles take `exclude_paths` (folders and files left out of the app archives; `422` on an older core, which would ignore it). `GET /apps/{name}/deploy/status` reports `paused_commit`: the commit whose automatic deploy failed, which the webhook no longer deploys until a new push, a deploy from the panel, or `POST /apps/{name}/deploy/unlock`, which also resumes it. `GET /dbs/engines` says which server runs on each engine (`server`: `mariadb` or `mysql` for the engine `mariadb`, `label`); replacing MariaDB with MySQL is a CLI-only action (`cipi db switch`). `GET /apps/{name}/basicauth` reads `cipi basicauth status --json` (and the agent mode), and no longer fails on Cipi 5.11\u20135.12, which exited 1 after printing the status.\n\n**Firewall (Cipi >= 5.14.0):** `GET /firewall` (ability `firewall-view`) reads UFW, fail2ban and CrowdSec in one call; with `firewall-manage`: `POST|DELETE /firewall/rules` (open a port, remove what allow made), `POST|DELETE /firewall/blocks` (every port refused to an address, ahead of every allow), `PUT /firewall/attempts` (fail2ban threshold), `DELETE /firewall/bans` (fail2ban and CrowdSec), `POST|DELETE /firewall/crowdsec/allowlist`, and `POST /firewall/crowdsec/enable|disable` (async jobs `crowdsec-enable`, `crowdsec-disable`). Synchronous changes answer with the firewall after them. Never from the API: denying or removing the SSH port, 80 or 443 for everyone, reopening what a Zero Trust lock keeps closed, blocking the address of the caller; the CLI ignores `--force` from the panel.",
+        "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`. Each endpoint names the ability it requires; a token created with `--full-access` (ability `*`) passes all of them, including the ones later versions add.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status: the token needs the ability the job was created under (`apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, \u2026 \u2014 since 1.36.1), otherwise `404`. **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Deploy status (Cipi >= 5.8.4):** `GET /apps/{name}/deploy/status` says whether a deploy is running right now \u2014 whoever started it: Git webhook, CLI, panel, rollback \u2014 with its trigger, branch, start time and elapsed seconds, and how the last one ended; `tail` adds the last lines of the deploy log (ability `deploy-manage`). `503` on an older core: the flag is never sent to a Cipi that does not know it.\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2; installing and removing below), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0), `GET /disk` and `GET /disk/dbs` (`disk-view`, Cipi >= 5.5.2 for the API sudoers) \u2014 the figures of `cipi disk --json` / `cipi disk db --json` (server filesystem, every app with files, database, total, share of the disk and soft limit; every database per engine), measured on request.\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).\n\n**App create & repository access (Cipi >= 5.6.0):** `POST /apps` accepts `node_build` (Laravel asset build run inside every deploy). The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access` (`ok` | `nobranch` | `denied`, with git's error and the CLI fix as `hint`): Cipi tests the deploy key against the repository on the spot.\n\n**cipi.yml (Cipi >= 5.6.4):** `GET /apps/{name}/yml` (ability `yml-view`) returns the app's cipi.yml plan: file, auto-apply, validity, changes, blockers. `POST /apps/{name}/yml/apply` applies it as an async job (`app-yml-apply`); `POST /apps/{name}/yml/auto/enable|disable` turn on or off the apply after every successful deploy (ability `yml-manage`). With auto-apply on, whoever can commit to the repository controls the app's server configuration.\n\n**Environments (Cipi >= 5.8.0):** every app carries an `env` label (`production` unless set). `POST /apps` and `PUT /apps/{name}` accept `env` (lowercase letters, digits, `-`, `_`, max 32 chars; 422 otherwise), app list/show return it, and the cipi.yml plan/auto responses report the `env` Cipi read the file for (`cipi-<env>.yml` before `cipi.yml`).\n\n**Metrics & health history (Cipi >= 5.11.0):** `GET /metrics` (latest values, last-hour trend per app, uptime 24h/7d/30d, recent events), `GET /metrics/series`, `GET /apps/{name}/metrics`, `GET /metrics/uptime`, `GET /metrics/events`, `GET /metrics/settings` (ability `metrics-view`); `PUT /metrics/settings` (retention, probe, collector on/off), `PUT|DELETE /metrics/heartbeat`, `POST /metrics/heartbeat/test` (ability `metrics-manage`). Synchronous: the CLI reads the server's SQLite. The OpenMetrics endpoint, prune and reset stay on the host. `GET|PUT /apps/{name}/basicauth/agent` (ability `apps-basicauth`): whether the cipi/agent routes are left out of basic auth.\n\n**Notifications (Cipi >= 5.12.0):** `GET /notifications` and `GET /notifications/triggers` (ability `notifications-view`, or `smtp-view`); `POST /notifications/channels`, `PUT|DELETE /notifications/channels/{id}`, `POST /notifications/channels/{id}/enable|disable|test`, `PUT /notifications/triggers`, `POST /notifications/triggers/reset` (ability `notifications-manage`, or `smtp-manage`). Every channel type \u2014 SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook \u2014 and every trigger. Synchronous: secrets go straight to the server's vault, never to the jobs table, and never come back (`*_set` flags). The `/smtp` routes are unchanged.\n\n**Cipi 5.13.0:** `PUT /apps/{name}/env` takes `order` \u2014 every key once, applied after `set`/`unset` (the panel's drag and drop); an older core is refused with `422`. Backup profiles take `exclude_paths` (folders and files left out of the app archives; `422` on an older core, which would ignore it). `GET /apps/{name}/deploy/status` reports `paused_commit`: the commit whose automatic deploy failed, which the webhook no longer deploys until a new push, a deploy from the panel, or `POST /apps/{name}/deploy/unlock`, which also resumes it. `GET /dbs/engines` says which server runs on each engine (`server`: `mariadb` or `mysql` for the engine `mariadb`, `label`); replacing MariaDB with MySQL is a CLI-only action (`cipi db switch`). `GET /apps/{name}/basicauth` reads `cipi basicauth status --json` (and the agent mode), and no longer fails on Cipi 5.11\u20135.12, which exited 1 after printing the status.\n\n**Firewall (Cipi >= 5.14.0):** `GET /firewall` (ability `firewall-view`) reads UFW, fail2ban and CrowdSec in one call; with `firewall-manage`: `POST|DELETE /firewall/rules` (open a port, remove what allow made), `POST|DELETE /firewall/blocks` (every port refused to an address, ahead of every allow), `PUT /firewall/attempts` (fail2ban threshold), `DELETE /firewall/bans` (fail2ban and CrowdSec), `POST|DELETE /firewall/crowdsec/allowlist`, and `POST /firewall/crowdsec/enable|disable` (async jobs `crowdsec-enable`, `crowdsec-disable`). Synchronous changes answer with the firewall after them. Never from the API: denying or removing the SSH port, 80 or 443 for everyone, reopening what a Zero Trust lock keeps closed, blocking the address of the caller; the CLI ignores `--force` from the panel.\n\n**Optional packages (Cipi >= 5.14.0):** `POST /packages/{package}` installs and `DELETE /packages/{package}` removes one entry of the server's closed catalog (`browsershot`, `fonts-cjk`, `avif`, `ffmpeg`, `imagemagick`, `image-optimizers`, `poppler-utils`, `pdftk`, `libreoffice`, `pandoc`, `tesseract`) as async jobs (`package-install`, `package-remove`; ability `packages-manage`). A removal takes nothing another package needs. `GET /packages` adds `kind` (`tools` | `libraries`), `binaries` and `missing`.",
         "version": "1.44.0",
         "contact": {
             "name": "Cipi",
@@ -2935,7 +2935,7 @@
                     "Server"
                 ],
                 "summary": "Optional host packages catalog",
-                "description": "Allowlisted optional host packages with install state (`cipi package list --json`): image-optimizers, ffmpeg, imagemagick, poppler-utils, \u2026 Read-only: install/remove run as root and stay on the host CLI. Requires `packages-view` ability and Cipi 5.2.2+.",
+                "description": "Allowlisted optional host packages with install state (`cipi package list --json`): image-optimizers, avif, ffmpeg, imagemagick, poppler-utils, browsershot, fonts-cjk, pdftk, libreoffice, pandoc, tesseract. `kind` says whether an entry is tools (binaries on PATH) or libraries and fonts (`browsershot`, `fonts-cjk`); `missing` lists what is not installed yet. Install and remove with `POST|DELETE /packages/{package}`. Requires `packages-view` ability and Cipi 5.2.2+ (`kind`, `binaries`, `missing`: 5.14.0+; older cores read as tools without them).",
                 "operationId": "packageList",
                 "responses": {
                     "200": {
@@ -2956,6 +2956,144 @@
                     },
                     "503": {
                         "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/packages/{package}": {
+            "post": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Install an optional package",
+                "description": "`cipi package install <package> --yes`: apt installs the entry from Ubuntu's repositories — an async job (`package-install`) of seconds to a few minutes. Only ids of the server's closed catalog; the CLI refuses anything else and keeps its 1 GB free-space check (`--force` is never sent, and ignored from the panel). The job result names the binaries now available (`binaries`) and anything still `missing`. Requires `packages-manage`.",
+                "operationId": "packageInstall",
+                "parameters": [
+                    {
+                        "name": "package",
+                        "in": "path",
+                        "required": true,
+                        "description": "A catalog id, as `GET /packages` lists them",
+                        "schema": {
+                            "type": "string",
+                            "example": "browsershot"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "description": "Not an entry of this server's catalog",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Already installed (install), or not installed (remove)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Remove an optional package",
+                "description": "`cipi package remove <package> --yes` — an async job (`package-remove`). Takes the entry and the dependencies only it needed, nothing another package needs: a removal that would take a package depending on the entry is refused (job failed, nothing changed); for libraries (`browsershot`, `fonts-cjk`) only those nothing else uses go (`still_needed` when none). Orphans that were already on the server stay. Requires `packages-manage`.",
+                "operationId": "packageRemove",
+                "parameters": [
+                    {
+                        "name": "package",
+                        "in": "path",
+                        "required": true,
+                        "description": "A catalog id, as `GET /packages` lists them",
+                        "schema": {
+                            "type": "string",
+                            "example": "browsershot"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Job dispatched",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/JobAcceptedResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "description": "Not an entry of this server's catalog",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Already installed (install), or not installed (remove)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.14.0, or the CLI could not be run (message in `error`)",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -9889,7 +10027,9 @@
                                     "node-restart",
                                     "app-fix-permissions",
                                     "app-limits",
-                                    "app-yml-apply"
+                                    "app-yml-apply",
+                                    "package-install",
+                                    "package-remove"
                                 ],
                                 "example": "app-create"
                             },
@@ -9970,6 +10110,12 @@
                                     },
                                     {
                                         "$ref": "#/components/schemas/JobResultError"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/JobResultPackageInstall"
+                                    },
+                                    {
+                                        "$ref": "#/components/schemas/JobResultPackageRemove"
                                     }
                                 ]
                             },
@@ -11493,7 +11639,40 @@
                                 },
                                 "description": {
                                     "type": "string",
-                                    "example": "Image optimizer binaries for spatie/laravel-image-optimizer"
+                                    "example": "Image optimisers for spatie/laravel-image-optimizer"
+                                },
+                                "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                        "tools",
+                                        "libraries"
+                                    ],
+                                    "example": "tools",
+                                    "description": "`libraries`: shared libraries and fonts, nothing on PATH (browsershot, fonts-cjk). Cipi 5.14.0+; older cores: `tools`"
+                                },
+                                "binaries": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "example": [
+                                        "jpegoptim",
+                                        "optipng",
+                                        "pngquant",
+                                        "gifsicle",
+                                        "cwebp"
+                                    ],
+                                    "description": "What is on PATH once installed (empty for libraries). Cipi 5.14.0+"
+                                },
+                                "missing": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    },
+                                    "example": [
+                                        "pngquant"
+                                    ],
+                                    "description": "apt packages not installed yet. Cipi 5.14.0+"
                                 },
                                 "installed": {
                                     "type": "boolean",
@@ -13327,6 +13506,71 @@
                     "message": {
                         "type": "string",
                         "example": "Allowed 8080/tcp"
+                    }
+                }
+            },
+            "JobResultPackageInstall": {
+                "type": "object",
+                "description": "`package-install`",
+                "properties": {
+                    "package": {
+                        "type": "string",
+                        "example": "browsershot"
+                    },
+                    "installed": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "already": {
+                        "type": "boolean",
+                        "example": false,
+                        "description": "It was installed before the job ran"
+                    },
+                    "binaries": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "example": [
+                            "soffice"
+                        ]
+                    },
+                    "missing": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "example": []
+                    }
+                }
+            },
+            "JobResultPackageRemove": {
+                "type": "object",
+                "description": "`package-remove`",
+                "properties": {
+                    "package": {
+                        "type": "string",
+                        "example": "pdftk"
+                    },
+                    "removed": {
+                        "type": "boolean",
+                        "example": true
+                    },
+                    "apt": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "example": [
+                            "pdftk-java",
+                            "default-jre-headless"
+                        ],
+                        "description": "What apt purged"
+                    },
+                    "still_needed": {
+                        "type": "boolean",
+                        "example": false,
+                        "description": "Libraries other packages still use: nothing removed"
                     }
                 }
             }
