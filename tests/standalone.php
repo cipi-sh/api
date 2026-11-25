@@ -33,7 +33,7 @@ namespace {
     function config(string $k, mixed $d = null): mixed { return $GLOBALS['CFG'][$k] ?? $d; }
     function env(string $k, mixed $d = null): mixed { return $d; }
     $src = ($argv[1] ?? dirname(__DIR__)) . '/src/Services/';
-    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService', 'CipiAppJitService', 'CipiFrankenPhpService', 'CipiOutputParser', 'CipiMetricsService', 'CipiNotificationsService'] as $c) {
+    foreach (['CipiCliService', 'CipiVersionService', 'CipiValidationService', 'CipiDbUploadService', 'CipiBackupCliService', 'CipiDeployHistoryCliService', 'CipiServerStatusService', 'CipiAppJitService', 'CipiFrankenPhpService', 'CipiOutputParser', 'CipiMetricsService', 'CipiNotificationsService', 'CipiIpWhitelistService', 'CipiFirewallService', 'CipiJobAbilities', 'CipiPackageCliService'] as $c) {
         require $src . $c . '.php';
     }
 
@@ -462,9 +462,191 @@ namespace {
     ok($parser->parse('app-deploy-unlock', "✓ Automatic deploys resumed\n") === ['unlocked' => false, 'resumed' => true], 'unlock: only a paused commit');
     $spec = json_decode(file_get_contents(dirname($src, 2) . '/public/api-docs/openapi.json'), true);
     $sc = $spec['components']['schemas'];
-    ok($spec['info']['version'] === '1.43.0' && isset($sc['AppEnvUpdateRequest']['properties']['order'], $sc['BackupProfileRequest']['properties']['exclude_paths'], $sc['BackupProfileCreateRequest']['properties']['exclude_paths'], $sc['DbEnginesResponse']['properties']['data']['properties']['engines']['items']['properties']['server'], $sc['DeployStatusResponse']['properties']['data']['properties']['paused_commit'], $sc['BasicAuthStatusResponse']['properties']['data']['properties']['agent'], $sc['JobResultAppDeployUnlock']['properties']['resumed']), 'OpenAPI 1.43.0: order, exclude_paths, server, paused_commit, agent, resumed');
+    ok(version_compare($spec['info']['version'], '1.43.0', '>=') && isset($sc['AppEnvUpdateRequest']['properties']['order'], $sc['BackupProfileRequest']['properties']['exclude_paths'], $sc['BackupProfileCreateRequest']['properties']['exclude_paths'], $sc['DbEnginesResponse']['properties']['data']['properties']['engines']['items']['properties']['server'], $sc['DeployStatusResponse']['properties']['data']['properties']['paused_commit'], $sc['BasicAuthStatusResponse']['properties']['data']['properties']['agent'], $sc['JobResultAppDeployUnlock']['properties']['resumed']), 'OpenAPI 1.43.0: order, exclude_paths, server, paused_commit, agent, resumed');
     ok(str_contains(file_get_contents(dirname($src, 2) . '/src/Mcp/Tools/AppEnvUpdateTool.php'), "'order' =>"), 'MCP AppEnvUpdate: order');
     ok(str_contains(file_get_contents(dirname($src, 2) . '/src/Http/Controllers/BackupController.php'), "'exclude_paths',"), 'backup controller passes exclude_paths');
+
+    echo "--- firewall (Cipi 5.14.0)\n";
+    $F = 'CipiApi\Services\CipiFirewallService';
+    foreach (['8080' => '8080', '0080' => '80', '8000:8100' => '8000:8100', 22 => '22', ' 443 ' => '443'] as $in => $want) {
+        ok($F::normalizePort($in) === $want, "port " . json_encode($in) . " → {$want}");
+    }
+    foreach (['0', '65536', '8000:7000', '8000:8000', '22;id', '80,443', 'ssh', '-1', '', '1:70000'] as $bad) {
+        ok($F::normalizePort($bad) === null, 'port refused: ' . json_encode($bad));
+    }
+    ok($F::normalizePort(['22']) === null, 'port refused: an array');
+    $cli = new FakeCli;
+    $fw = new $F($cli, new FakeVersion('5.14.0'), new CipiApi\Services\CipiIpWhitelistService($cli));
+    foreach (['1.2.3.4', '10.0.0.0/8', '2001:db8::/48', '::1'] as $a) { ok($fw->isAddress($a), "address {$a}"); }
+    foreach (['*', '1.2.3.4;id', '999.1.1.1', '', '1.2.3.4/33', 'example.com', '-1.2.3.4', "1.2.3.4\n5.6.7.8"] as $a) { ok(! $fw->isAddress($a), 'not an address: ' . json_encode($a)); }
+    ok($F::tooWide('0.0.0.0/0') && $F::tooWide('10.0.0.0/7') && ! $F::tooWide('10.0.0.0/8') && $F::tooWide('2001::/15') && ! $F::tooWide('2001:db8::/16') && ! $F::tooWide('1.2.3.4'), 'too wide: IPv4 below /8, IPv6 below /16');
+    ok($fw->takesIn('203.0.113.0/24', $fw->clientIp('::ffff:203.0.113.9')) && $fw->takesIn('203.0.113.9', '203.0.113.9') && ! $fw->takesIn('203.0.114.0/24', '203.0.113.9') && ! $fw->takesIn('203.0.113.0/24', ''), 'the caller: in a range, itself, IPv4-mapped IPv6 read as IPv4; nobody when unknown');
+    $cli->next = ['output' => "\e[32m✓\e[0m Allowed 8080/tcp", 'exit_code' => 0, 'success' => true];
+    ok($fw->allow('8080', null) === 'Allowed 8080/tcp', 'allow: the CLI line, without colours or ✓');
+    $fw->allow('5432', '10.0.0.0/8', 'udp');
+    $fw->remove('8080', null);
+    $fw->remove('3000', null, 'any');
+    $fw->remove('22', '198.51.100.0/24', 'tcp', 'deny');
+    $fw->block('192.0.2.66'); $fw->unblock('2001:db8:bad::/48');
+    $fw->attempts(5); $fw->attempts(null);
+    $cli->next = ['output' => 'IP 11.2.3.45 unbanned', 'exit_code' => 0, 'success' => true]; $fw->unban('11.2.3.45');
+    $fw->crowdsecAllow('203.0.113.0/24');
+    $cli->next = ['output' => 'Removed 203.0.113.0/24', 'exit_code' => 0, 'success' => true]; $fw->crowdsecUnallow('203.0.113.0/24');
+    ok($cli->ran === [
+        "firewall allow '8080'", "firewall allow '5432' --from='10.0.0.0/8' --proto='udp'",
+        "firewall remove '8080'", "firewall remove '3000' --proto='any'", "firewall remove '22' --from='198.51.100.0/24' --deny",
+        "firewall block '192.0.2.66'", "firewall unblock '2001:db8:bad::/48'", 'firewall attempts 5', 'firewall attempts default',
+        "ban unban '11.2.3.45'", "crowdsec allow '203.0.113.0/24'", "crowdsec unallow '203.0.113.0/24'",
+    ], 'every change is a whitelisted command, values quoted: ' . json_encode($cli->ran));
+    $cli->next = ['output' => "\e[0;31m[ERROR]\e[0m Port 443 is how this server is reached (SSH, HTTP, HTTPS): it is not closed from here\n  To close it to the world, Zero Trust keeps it working: cipi zt lock http|ssh", 'exit_code' => 1, 'success' => false];
+    $err = (string) thrown(fn () => $fw->remove('443', null));
+    ok(str_starts_with($err, 'InvalidArgumentException: Port 443 is how this server is reached') && ! str_contains($err, '[ERROR]') && ! str_contains($err, "\e"), "the CLI's refusal: 422 with its words, no colours, no [ERROR]");
+    $cli->next = ['output' => "\e[1;33m[WARN]\e[0m 1.2.3.4 is not currently banned", 'exit_code' => 0, 'success' => true];
+    ok(str_contains((string) thrown(fn () => $fw->unban('1.2.3.4')), '1.2.3.4 is not currently banned'), 'unban of an address not banned: 422');
+    $cli->next = ['output' => "[WARN] 9.9.9.9 is not on the extra allowlist", 'exit_code' => 0, 'success' => true];
+    ok(str_contains((string) thrown(fn () => $fw->crowdsecUnallow('9.9.9.9')), 'not on the CrowdSec allowlist'), 'unallow of an address not there: 422');
+    $old = new $F(new FakeCli, new FakeVersion('5.13.1'), new CipiApi\Services\CipiIpWhitelistService(new FakeCli));
+    ok(str_starts_with((string) thrown(fn () => $old->allow('8080', null)), 'RuntimeException: The firewall from the panel needs Cipi 5.14.0+ — this server runs Cipi 5.13.1'), 'an older core: refused before anything runs (503)');
+    ok(str_starts_with((string) thrown(fn () => $old->status()), 'RuntimeException'), '…the status too');
+    ok($F::crowdsecEnableCommand('203.0.113.9') === "crowdsec enable --allow='203.0.113.9'" && $F::crowdsecEnableCommand('') === 'crowdsec enable', 'crowdsec enable: the caller allowlisted');
+    $perm = new CipiApi\Services\CipiCliService;
+    ok($perm->commandIsPermitted($F::crowdsecEnableCommand('203.0.113.9')) && $perm->commandIsPermitted('crowdsec disable --force') && $perm->commandIsPermitted('firewall status --json'), 'crowdsec enable, disable --force and the status are whitelisted');
+    foreach (['firewall deny 22', 'crowdsec disable', 'crowdsec rescue token', 'crowdsec refresh', 'firewall status', 'firewall list'] as $c) {
+        ok(! $perm->commandIsPermitted($c), "not whitelisted: {$c}");
+    }
+    ok(CipiApi\Services\CipiJobAbilities::forType('crowdsec-enable') === 'firewall-manage' && CipiApi\Services\CipiJobAbilities::forType('crowdsec-disable') === 'firewall-manage', 'CrowdSec jobs are read back with firewall-manage');
+    $raw = '{"ufw":{"installed":true,"active":true,"default_incoming":"deny","default_outgoing":"allow","rules":[{"action":"allow","log":false,"proto":"tcp","port":"22","to":"any","from":"any","app":"","direction":"in","interface":"","comment":"","family":"both","managed_by":"","kind":"port","protected":true,"removable":false},{"action":"deny","port":"any","proto":"any","from":"192.0.2.66","family":"v4","kind":"block","removable":true},"junk"]},"protected_ports":[22,80,443,"x"],"zero_trust":{"lock_http":true},"fail2ban":{"installed":true,"running":true,"attempts":3,"attempts_default":3,"attempts_custom":null,"findtime":3600,"bantime":86400,"jails":[{"jail":"sshd","banned":["11.2.3.45"],"count":1,"total":9,"failed":2},{"x":1}]},"crowdsec":{"installed":false,"decisions":[{"ip":""}],"enable_blockers":["Only 300 MB of RAM free"]}}';
+    $cli2 = new FakeCli; $cli2->next = ['output' => $raw, 'exit_code' => 0, 'success' => true];
+    $st = (new $F($cli2, new FakeVersion('5.14.0'), new CipiApi\Services\CipiIpWhitelistService($cli2)))->status();
+    ok($cli2->ran === ['firewall status --json'], 'status: one command');
+    ok(count($st['ufw']['rules']) === 2 && $st['ufw']['rules'][0]['protected'] === true && $st['ufw']['rules'][1]['kind'] === 'block' && $st['ufw']['rules'][1]['to'] === 'any' && $st['ufw']['rules'][1]['managed_by'] === '', 'status: rules typed, every key present, junk dropped');
+    ok($st['protected_ports'] === [22, 80, 443] && $st['zero_trust'] === ['lock_http' => true, 'lock_ssh' => false], 'status: protected ports and Zero Trust locks');
+    ok($st['fail2ban']['attempts'] === 3 && $st['fail2ban']['attempts_custom'] === null && count($st['fail2ban']['jails']) === 1 && $st['fail2ban']['jails'][0]['banned'] === ['11.2.3.45'], 'status: fail2ban');
+    ok($st['crowdsec']['installed'] === false && $st['crowdsec']['decisions'] === [] && $st['crowdsec']['enable_blockers'] === ['Only 300 MB of RAM free'] && $st['crowdsec']['allowlist'] === [], 'status: CrowdSec, a decision without an address dropped');
+    $cli2->next = ['output' => 'not json', 'exit_code' => 0, 'success' => true];
+    ok(str_contains((string) thrown(fn () => (new $F($cli2, new FakeVersion('5.14.0'), new CipiApi\Services\CipiIpWhitelistService($cli2)))->status()), 'invalid JSON'), 'status: invalid JSON is an error, never an empty firewall');
+    $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
+    ok(substr_count($routes, "FirewallController::class") === 11 && str_contains($routes, "Route::get('/firewall', [FirewallController::class, 'status'])->middleware('ability:firewall-view')") && substr_count($routes, "->middleware('ability:firewall-manage')") === 10, 'routes: GET with firewall-view, the ten changes with firewall-manage');
+    $cfg = file_get_contents(dirname($src, 2) . '/config/cipi.php');
+    ok(str_contains($cfg, "'firewall-view' =>") && str_contains($cfg, "'firewall-manage' =>"), 'abilities firewall-view and firewall-manage');
+    ok(isset($spec['paths']['/firewall']['get'], $spec['paths']['/firewall/rules']['post'], $spec['paths']['/firewall/rules']['delete'], $spec['paths']['/firewall/blocks']['delete'], $spec['paths']['/firewall/attempts']['put'], $spec['paths']['/firewall/bans']['delete'], $spec['paths']['/firewall/crowdsec/enable']['post'], $spec['paths']['/firewall/crowdsec/allowlist']['delete'], $sc['FirewallStatus'], $sc['FirewallRule']) && $spec['info']['version'] === '1.44.0', 'OpenAPI 1.44.0: the firewall routes and schemas');
+    $mcp = file_get_contents(dirname($src, 2) . '/src/Mcp/Servers/CipiServer.php');
+    preg_match('/defaultPaginationLength = (\d+)/', $mcp, $pg);
+    ok(substr_count($mcp, '::class,') <= (int) ($pg[1] ?? 0) && str_contains($mcp, 'FirewallStatusTool::class'), 'MCP: FirewallStatus, and every tool fits in one tools/list page (' . substr_count($mcp, '::class,') . ' ≤ ' . ($pg[1] ?? '?') . ')');
+
+    echo "--- optional packages (Cipi 5.14.0)\n";
+    $P = 'CipiApi\Services\CipiPackageCliService';
+    foreach (['browsershot', 'fonts-cjk', 'image-optimizers', 'avif', 'tesseract'] as $id) { ok($P::validId($id), "id {$id}"); }
+    foreach (['', 'Browsershot', 'ffmpeg;id', '-ffmpeg', 'a b', '../x', str_repeat('a', 41), "ffmpeg\n"] as $bad) { ok(! $P::validId($bad), 'not an id: ' . json_encode($bad)); }
+    ok($P::installCommand('browsershot') === "package install 'browsershot' --yes" && $P::removeCommand('pdftk') === "package remove 'pdftk' --yes", 'commands: the id quoted, --yes, never --force or --autoremove');
+    $perm = new CipiApi\Services\CipiCliService;
+    ok($perm->commandIsPermitted($P::installCommand('browsershot')) && $perm->commandIsPermitted($P::removeCommand('pdftk')) && $perm->commandIsPermitted('package list --json'), 'install, remove and list are whitelisted');
+    ok(! $perm->commandIsPermitted('package purge ffmpeg') && ! $perm->commandIsPermitted('packages install x'), 'nothing else of package is');
+    ok(CipiApi\Services\CipiJobAbilities::forType('package-install') === 'packages-manage' && CipiApi\Services\CipiJobAbilities::forType('package-remove') === 'packages-manage', 'package jobs are read back with packages-manage');
+    $cli = new FakeCli;
+    $cli->next = ['output' => '{"packages":[{"id":"browsershot","packages":["libnss3","libasound2t64"],"description":"Libraries","kind":"libraries","binaries":[],"missing":["libnss3"],"installed":false,"partial":false},{"id":"pdftk","packages":["pdftk-java"],"description":"PDF","kind":"tools","binaries":["pdftk"],"missing":[],"installed":true,"partial":false},{"x":1}]}', 'exit_code' => 0, 'success' => true];
+    $pk = new $P($cli, new FakeVersion('5.14.0'));
+    $list = $pk->list();
+    ok(count($list) === 2 && $list[0]['kind'] === 'libraries' && $list[0]['missing'] === ['libnss3'] && $list[0]['binaries'] === [] && $list[1]['binaries'] === ['pdftk'] && $list[1]['installed'] === true, 'list: kind, binaries, missing typed; junk dropped');
+    ok($pk->find('pdftk')['installed'] === true && $pk->find('chromium') === null, 'find: an entry of the catalog, null for anything else');
+    $cli->next = ['output' => '{"packages":[{"id":"ffmpeg","packages":["ffmpeg"],"description":"Video","installed":true,"partial":false}]}', 'exit_code' => 0, 'success' => true];
+    $l = $pk->list();
+    ok($l[0]['kind'] === 'tools' && $l[0]['binaries'] === [] && $l[0]['missing'] === [] && $l[0]['source'] === 'ubuntu' && $l[0]['version'] === null && $l[0]['outdated'] === false, 'list from an older core: tools from Ubuntu, empty binaries and missing');
+    $cli->next = ['output' => '{"packages":[{"id":"sec-nuclei","packages":[],"description":"nuclei","kind":"tools","binaries":["nuclei"],"missing":[],"installed":false,"partial":false,"source":"upstream","version":"3.11.1","installed_version":"3.10.0","outdated":true},{"id":"sec-zap","packages":["openjdk-21-jre-headless"],"description":"ZAP","kind":"tools","binaries":["zap.sh"],"missing":["zap.sh"],"installed":false,"partial":false,"source":"upstream","version":"2.17.0","installed_version":null,"outdated":false}]}', 'exit_code' => 0, 'success' => true];
+    $l = $pk->list();
+    ok($l[0]['source'] === 'upstream' && $l[0]['version'] === '3.11.1' && $l[0]['installed_version'] === '3.10.0' && $l[0]['outdated'] === true && $l[1]['installed_version'] === null && $l[1]['outdated'] === false, 'list: upstream entries with the pinned version, the installed one, outdated');
+    ok(thrown(fn () => $pk->requireManage()) === null, 'Cipi 5.14.0 may install from the panel');
+    ok(str_starts_with((string) thrown(fn () => (new $P(new FakeCli, new FakeVersion('5.13.1')))->requireManage()), 'RuntimeException: Installing and removing packages from the panel needs Cipi 5.14.0+ — this server runs Cipi 5.13.1'), 'an older core (its sudoers list only): 503');
+    $parser = new CipiApi\Services\CipiOutputParser;
+    $r = $parser->parse('package-install', "\e[0;36m→\e[0m Installing libreoffice-writer-nogui...\n\n\e[0;32m✓\e[0m libreoffice installed — soffice available\n");
+    ok($r === ['package' => 'libreoffice', 'installed' => true, 'already' => false, 'binaries' => ['soffice'], 'missing' => []], 'parse install: the entry and its binaries');
+    ok($parser->parse('package-install', "✓ browsershot installed\n")['binaries'] === [] && $parser->parse('package-install', "✓ ffmpeg is already installed\n")['already'] === true, 'parse install: libraries, already there');
+    $r = $parser->parse('package-install', "→ Downloading nuclei_3.11.1_linux_amd64.zip...\n[INFO] SHA-256 matches the pin\n\n✓ sec-nuclei 3.11.1 installed — nuclei available\n");
+    ok($r === ['package' => 'sec-nuclei', 'installed' => true, 'already' => false, 'binaries' => ['nuclei'], 'missing' => [], 'version' => '3.11.1'], 'parse install: an upstream entry and its version');
+    ok($parser->parse('package-install', "✓ sec-zap 2.17.0 is already installed\n") === ['package' => 'sec-zap', 'version' => '2.17.0', 'installed' => true, 'already' => true], 'parse install: upstream, already there');
+    ok(($parser->parse('package-install', "[ERROR] Checksum mismatch for nuclei_3.11.1_linux_amd64.zip — refused\n", false)['error'] ?? '') === 'Checksum mismatch for nuclei_3.11.1_linux_amd64.zip — refused', 'parse install refused on a checksum: the CLI\'s words');
+    $r = $parser->parse('package-remove', "→ Purging what only sec-zap needed: openjdk-21-jre-headless java-common...\n✓ sec-zap removed\n");
+    ok($r === ['package' => 'sec-zap', 'removed' => true, 'apt' => ['openjdk-21-jre-headless', 'java-common']], 'parse remove: an upstream entry and the apt packages only it needed');
+    $r = $parser->parse('package-remove', "→ Purging pdftk-java default-jre-headless...\n✓ pdftk removed\n");
+    ok($r === ['package' => 'pdftk', 'removed' => true, 'apt' => ['pdftk-java', 'default-jre-headless']], 'parse remove: what apt purged');
+    ok($parser->parse('package-remove', "[INFO] browsershot: other packages still use these libraries — nothing to remove\n")['still_needed'] === true, 'parse remove: libraries still needed');
+    ok(($parser->parse('package-remove', "[ERROR] Removing ffmpeg would also remove: reports\n", false)['error'] ?? '') === 'Removing ffmpeg would also remove: reports', "parse remove refused: the CLI's words");
+    $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
+    ok(str_contains($routes, "Route::post('/packages/{package}', [PackageController::class, 'install'])->middleware('ability:packages-manage')") && str_contains($routes, "Route::delete('/packages/{package}', [PackageController::class, 'remove'])->middleware('ability:packages-manage')"), 'routes: POST and DELETE /packages/{package} with packages-manage');
+    ok(str_contains(file_get_contents(dirname($src, 2) . '/config/cipi.php'), "'packages-manage' =>"), 'ability packages-manage');
+    $ctl = file_get_contents(dirname($src, 2) . '/src/Http/Controllers/PackageController.php');
+    ok(str_contains($ctl, 'validId($package)') && str_contains($ctl, '->find($package)') && str_contains($ctl, '->requireManage()'), 'controller: the id checked, found in the catalog, the core new enough — before any job');
+    ok(str_contains($ctl, "! \$entry['installed'] && ! \$entry['partial'] && ! \$entry['outdated']"), 'controller: an outdated upstream entry may be removed (and installed: it updates)');
+    ok(isset($spec['paths']['/packages/{package}']['post'], $spec['paths']['/packages/{package}']['delete'], $sc['JobResultPackageInstall'], $sc['JobResultPackageRemove'], $sc['PackagesResponse']['properties']['data']['items']['properties']['kind']), 'OpenAPI: the package routes, kind, the job results');
+
+    echo "--- nginx directives, live job output, IPv6 (Cipi 5.14.0)\n";
+    $root = $argv[1] ?? dirname(__DIR__);
+    foreach (['CipiNginxCliService', 'NginxConfigRefusedException'] as $c) {
+        require_once $root . "/src/Services/{$c}.php";
+    }
+    $ncli = new FakeCli;
+    $ng = new CipiApi\Services\CipiNginxCliService($ncli, new CipiApi\Services\CipiOutputParser);
+    $ncli->next = ['output' => '{"app":"shop","config":"expires 1d;\n","bytes":12,"max_bytes":32768,"file":"/etc/nginx/cipi-custom/shop.conf","active":true,"suspended":false}', 'exit_code' => 0, 'success' => true];
+    $shown = $ng->show('shop');
+    ok($ncli->ran === ["nginx show 'shop' --json"] && $shown === ['app' => 'shop', 'config' => "expires 1d;\n", 'bytes' => 12, 'max_bytes' => 32768, 'active' => true, 'suspended' => false], 'nginx show: the text, its size, whether it is live — not the path on the server');
+    $ncli->ran = [];
+    $ng->update('shop', "expires 7d;\r\nlocation /x { deny all; }\r\n");
+    ok($ncli->ran[0] === "nginx set 'shop' --content-b64='" . base64_encode("expires 7d;\nlocation /x { deny all; }\n") . "'" && $ncli->ran[1] === "nginx show 'shop' --json", 'nginx update: the text goes as base64, line ends as LF, then it is read back');
+    $ncli->ran = [];
+    $ng->update('shop', "  \n\t");
+    ok($ncli->ran[0] === "nginx reset 'shop'", 'nginx update: an empty text removes the directives');
+    $ncli->next = ['output' => "\e[0;31m[ERROR]\e[0m Not accepted from the API — the whole nginx language is for 'cipi nginx edit shop' at the server\n  line 1: `listen` is not allowed from the API — the ports of an app are Cipi's\n  line 2: root: a path under /home/shop/, without variables or `..`", 'exit_code' => 1, 'success' => false];
+    $refused = null;
+    try { $ng->update('shop', "listen 81;\nroot /etc;"); } catch (CipiApi\Services\NginxConfigRefusedException $e) { $refused = $e; }
+    ok($refused !== null && count($refused->reasons()) === 3 && str_starts_with($refused->reasons()[0], 'Not accepted from the API') && $refused->reasons()[1] === "line 1: `listen` is not allowed from the API — the ports of an app are Cipi's", 'nginx update: what the CLI refuses comes back as reasons, one per line, without colours');
+    $ncli->next = ['output' => "[ERROR] nginx refused the directives — nothing changed\n  line 2: unknown directive \"boom\"", 'exit_code' => 1, 'success' => false];
+    $refused = null;
+    try { $ng->update('shop', "expires 1d;\nboom;"); } catch (CipiApi\Services\NginxConfigRefusedException $e) { $refused = $e; }
+    ok($refused !== null && $refused->reasons() === ['nginx refused the directives — nothing changed', 'line 2: unknown directive "boom"'], 'nginx update: nginx\'s own verdict too');
+    $ncli->next = ['output' => '[ERROR] Use: cipi nginx default-server on|off|status | security | upgrade [--yes]', 'exit_code' => 1, 'success' => false];
+    ok(str_contains((string) thrown(fn () => $ng->show('shop')), 'Cipi 5.14.0+ is required') && str_starts_with((string) thrown(fn () => $ng->update('shop', 'expires 1d;')), 'RuntimeException'), 'nginx: a CLI before 5.14.0 is told apart from a refused text');
+    $ncli->next = ['output' => '[ERROR] nginx configuration is already invalid — fix it first (nginx -t)', 'exit_code' => 1, 'success' => false];
+    ok(str_starts_with((string) thrown(fn () => $ng->update('shop', 'expires 1d;')), 'RuntimeException: [ERROR] nginx configuration is already invalid'), 'nginx update: a server problem is not a refused text (503, not 422)');
+    $perm = new CipiApi\Services\CipiCliService;
+    ok($perm->commandIsPermitted("nginx show 'shop' --json") && $perm->commandIsPermitted("nginx set 'shop' --content-b64='eA=='") && $perm->commandIsPermitted("nginx reset 'shop'")
+        && ! $perm->commandIsPermitted("nginx edit 'shop'") && ! $perm->commandIsPermitted('nginx upgrade --yes') && ! $perm->commandIsPermitted('nginx default-server off') && ! $perm->commandIsPermitted('nginx security'), 'allowed commands: nginx show, set, reset — not edit, upgrade, default-server');
+    $routes = (string) file_get_contents($root . '/routes/api.php');
+    ok(str_contains($routes, "Route::get('/apps/{name}/nginx', [NginxController::class, 'show'])->middleware('ability:nginx-view');")
+        && str_contains($routes, "Route::put('/apps/{name}/nginx', [NginxController::class, 'update'])->middleware('ability:nginx-manage');")
+        && str_contains($routes, "Route::delete('/apps/{name}/nginx', [NginxController::class, 'destroy'])->middleware('ability:nginx-manage');"), 'routes: GET with nginx-view, PUT and DELETE with nginx-manage');
+    $abilities = (string) file_get_contents($root . '/config/cipi.php');
+    ok(str_contains($abilities, "'nginx-view' =>") && str_contains($abilities, "'nginx-manage' =>"), 'abilities: nginx-view, nginx-manage');
+    $nctl = (string) file_get_contents($root . '/src/Http/Controllers/NginxController.php');
+    ok(str_contains($nctl, "'reasons' => \$e->reasons()], 422") && str_contains($nctl, "'config' => 'present|nullable|string|max:' . CipiNginxCliService::MAX_BYTES"), 'controller: a refused text is a 422 with the reasons');
+    ok(isset($spec['paths']['/apps/{name}/nginx']['get'], $spec['paths']['/apps/{name}/nginx']['put'], $spec['paths']['/apps/{name}/nginx']['delete'], $sc['NginxDirectives']), 'OpenAPI: /apps/{name}/nginx');
+
+    // A job's output while it runs.
+    $stream = new class extends CipiApi\Services\CipiCliService {
+        public string $line = '';
+        protected function shellLine(string $command): string { return $this->line . ' 2>&1'; }
+    };
+    $stream->line = "sh -c 'printf \"one  \\n\"; sleep 0.3; printf \"two\\n\" >&2; sleep 0.3; printf \"three\\t\\n\\n\"; exit 3'";
+    $seenAt = []; $t0 = microtime(true);
+    $streamed = $stream->runStreaming('status', function (string $soFar) use (&$seenAt, $t0) { $seenAt[] = [microtime(true) - $t0, $soFar]; });
+    ok($streamed === $stream->run('status') && $streamed === ['output' => "one\ntwo\nthree\n", 'exit_code' => 3, 'success' => false], 'runStreaming: the result run() gives — output as exec() shapes it, the exit code');
+    ok(count($seenAt) >= 2 && $seenAt[0][1] === "one  \n" && $seenAt[0][0] < 0.25 && str_ends_with(end($seenAt)[1], "three\t\n\n"), 'runStreaming: the output is handed over as it arrives, whole so far each time');
+    ok($stream->runStreaming('rm -rf /', fn () => null)['output'] === 'Command not allowed: rm -rf /', 'runStreaming: a command not allowed is not run');
+    $stream->line = "sh -c 'echo x'";
+    ok($stream->runStreaming('status', function () { throw new RuntimeException('db down'); }) === ['output' => 'x', 'exit_code' => 0, 'success' => true], 'runStreaming: a failing listener does not stop the command');
+    ok(CipiApi\Services\CipiCliService::asExec('') === '' && CipiApi\Services\CipiCliService::asExec("a \n\nb") === "a\n\nb", 'asExec: trailing whitespace of a line, the last newline');
+    $jobSrc = (string) file_get_contents($root . '/src/Jobs/RunCipiCommand.php');
+    $modelSrc = (string) file_get_contents($root . '/src/Models/CipiJob.php');
+    $statusSrc = (string) file_get_contents($root . '/src/Services/CipiJobStatusService.php');
+    ok(str_contains($jobSrc, '$cipi->runStreaming($this->command, function (string $soFar) use ($job, &$saved): void {') && str_contains($jobSrc, 'if ($now - $saved >= 1.0) {') && str_contains($jobSrc, "\$job->markCompleted(\$result['output'], \$result['exit_code']);"), 'job: progress saved once a second at most, the final output as before');
+    ok(str_contains($modelSrc, "if (\$this->status !== 'running') {") && str_contains($modelSrc, 'substr($output, -self::PROGRESS_CHARS)') && (bool) preg_match('/recordProgress.*?catch \(\\\\Throwable\)/s', $modelSrc), 'job model: progress only while running, its last 50,000 characters, never an error');
+    ok(str_contains($statusSrc, "\$job->status === 'running' && is_string(\$job->output) && \$job->output !== ''") && str_contains($statusSrc, "\$data['output'] = \$this->truncateOutput(CipiCliService::asExec(\$job->output));"), 'GET /jobs/{id}: a running job carries its output so far, no result yet');
+
+    // The server's IPv6 address.
+    $S = CipiApi\Services\CipiServerStatusService::class;
+    $ipOut = "2: eth0    inet6 2a01:4f8:c0c:1234:aaaa:bbbb:cccc:dddd/64 scope global temporary dynamic \\       valid_lft 600sec\n2: eth0    inet6 2A01:4F8:C0C:1234::1/64 scope global \\       valid_lft forever preferred_lft forever\n3: docker0    inet6 fd00:dead:beef::1/48 scope global \\  valid_lft forever\n";
+    ok($S::firstPublicIpv6($ipOut) === '2a01:4f8:c0c:1234::1', 'IPv6: the first global address — not a temporary one, lower case');
+    ok($S::firstPublicIpv6('') === null && $S::firstPublicIpv6("3: docker0    inet6 fd00::1/48 scope global \n4: x inet6 2001:db8::5/64 scope global deprecated \n") === null && $S::firstPublicIpv6('2: eth0    inet6 2001:db8::7;id/64 scope global') === null, 'IPv6: none, only unique-local or deprecated ones, or not an address: null');
+    ok(str_contains((string) file_get_contents($root . '/src/Services/CipiServerStatusService.php'), "'ipv6' => \$this->publicIpv6(),") && isset($spec['paths']) && str_contains((string) file_get_contents($root . '/public/api-docs/openapi.json'), '"ipv6": {'), 'status: system.ipv6, in the OpenAPI too');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);

@@ -89,12 +89,13 @@ class CipiServerStatusService
     }
 
     /**
-     * @return array{ip: ?string, hostname: ?string, os: ?string, uptime: ?string, cipi: ?string}
+     * @return array{ip: ?string, ipv6: ?string, hostname: ?string, os: ?string, uptime: ?string, cipi: ?string}
      */
     protected function systemInfo(): array
     {
         return [
             'ip' => $this->publicIp(),
+            'ipv6' => $this->publicIpv6(),
             'hostname' => $this->hostname(),
             'os' => $this->osVersion(),
             'uptime' => $this->uptime(),
@@ -176,6 +177,41 @@ class CipiServerStatusService
         $ip = trim((string) shell_exec('curl -s --max-time 5 https://checkip.amazonaws.com 2>/dev/null'));
 
         return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : null;
+    }
+
+    /**
+     * The server's public IPv6 address (1.44), for the AAAA record of a domain:
+     * every vhost Cipi writes listens on IPv6 too. Read from the interfaces —
+     * nothing is asked of an outside service — and null on a server without one.
+     */
+    protected function publicIpv6(): ?string
+    {
+        return self::firstPublicIpv6((string) shell_exec('ip -6 -o addr show scope global 2>/dev/null'));
+    }
+
+    /**
+     * The first address of `ip -6 -o addr show scope global` that the internet
+     * can reach: not a temporary (privacy) or deprecated one, not a unique
+     * local one (fc00::/7 — Docker, a VPN).
+     */
+    public static function firstPublicIpv6(string $ipOutput): ?string
+    {
+        foreach (preg_split('/\R/', $ipOutput) ?: [] as $line) {
+            if (! preg_match('/\binet6\s+([0-9a-f:]+)\/\d+\s+scope\s+global\b(.*)$/i', $line, $m)) {
+                continue;
+            }
+            if (preg_match('/\b(temporary|deprecated|tentative|dadfailed)\b/i', $m[2])) {
+                continue;
+            }
+            $ip = strtolower($m[1]);
+            if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) || preg_match('/^f[cd]/', $ip)) {
+                continue;
+            }
+
+            return $ip;
+        }
+
+        return null;
     }
 
     protected function hostname(): ?string

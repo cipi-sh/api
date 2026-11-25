@@ -15,6 +15,7 @@ use CipiApi\Http\Controllers\DeployConfigController;
 use CipiApi\Http\Controllers\DeployController;
 use CipiApi\Http\Controllers\DiskController;
 use CipiApi\Http\Controllers\EnvController;
+use CipiApi\Http\Controllers\FirewallController;
 use CipiApi\Http\Controllers\FrankenPhpController;
 use CipiApi\Http\Controllers\JobController;
 use CipiApi\Http\Controllers\HealthController;
@@ -25,6 +26,7 @@ use CipiApi\Http\Controllers\MonitorController;
 use CipiApi\Http\Controllers\NodeController;
 use CipiApi\Http\Controllers\PackageController;
 use CipiApi\Http\Controllers\PhpController;
+use CipiApi\Http\Controllers\NginxController;
 use CipiApi\Http\Controllers\ProxyController;
 use CipiApi\Http\Controllers\RedirectController;
 use CipiApi\Http\Controllers\SearchController;
@@ -108,6 +110,12 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::get('/apps/{name}/proxies', [ProxyController::class, 'list'])->middleware('ability:proxies-view');
     Route::post('/apps/{name}/proxies', [ProxyController::class, 'add'])->middleware('ability:proxies-manage');
     Route::delete('/apps/{name}/proxies', [ProxyController::class, 'remove'])->middleware('ability:proxies-manage');
+
+    // An app's own nginx directives (Cipi CLI ≥ 5.14.0). From the API the CLI
+    // takes a subset of the language; a refused text is a 422 and changes nothing.
+    Route::get('/apps/{name}/nginx', [NginxController::class, 'show'])->middleware('ability:nginx-view');
+    Route::put('/apps/{name}/nginx', [NginxController::class, 'update'])->middleware('ability:nginx-manage');
+    Route::delete('/apps/{name}/nginx', [NginxController::class, 'destroy'])->middleware('ability:nginx-manage');
 
     // Node apps + runtimes (Cipi CLI ≥ 5.4.0 + API sudoers ≥ 5.4.1)
     Route::get('/node', [NodeController::class, 'runtimes'])->middleware('ability:node-view');
@@ -212,8 +220,11 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/apps/{name}/search/enable', [SearchController::class, 'enable'])->middleware('ability:search-manage');
     Route::post('/apps/{name}/search/disable', [SearchController::class, 'disable'])->middleware('ability:search-manage');
 
-    // Optional host packages — read-only catalog (Cipi CLI ≥ 5.2.2)
+    // Optional host packages: the catalog (Cipi CLI ≥ 5.2.2); install and
+    // remove an entry as jobs (Cipi CLI ≥ 5.14.0, closed catalog)
     Route::get('/packages', [PackageController::class, 'list'])->middleware('ability:packages-view');
+    Route::post('/packages/{package}', [PackageController::class, 'install'])->middleware('ability:packages-manage');
+    Route::delete('/packages/{package}', [PackageController::class, 'remove'])->middleware('ability:packages-manage');
 
     // System monitor checks — read-only (Cipi CLI ≥ 5.3.0)
     Route::get('/monitor', [MonitorController::class, 'list'])->middleware('ability:monitor-view');
@@ -241,6 +252,20 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::delete('/metrics/heartbeat', [MetricsController::class, 'deleteHeartbeat'])->middleware('ability:metrics-manage');
     Route::post('/metrics/heartbeat/test', [MetricsController::class, 'testHeartbeat'])->middleware('ability:metrics-manage');
     Route::get('/apps/{name}/metrics', [MetricsController::class, 'appSeries'])->middleware('ability:metrics-view');
+
+    // Firewall: UFW, fail2ban, CrowdSec (Cipi CLI ≥ 5.14.0; 503 on an older core). Synchronous,
+    // each change answers with the firewall after it; CrowdSec on/off are jobs.
+    Route::get('/firewall', [FirewallController::class, 'status'])->middleware('ability:firewall-view');
+    Route::post('/firewall/rules', [FirewallController::class, 'allow'])->middleware('ability:firewall-manage');
+    Route::delete('/firewall/rules', [FirewallController::class, 'remove'])->middleware('ability:firewall-manage');
+    Route::post('/firewall/blocks', [FirewallController::class, 'block'])->middleware('ability:firewall-manage');
+    Route::delete('/firewall/blocks', [FirewallController::class, 'unblock'])->middleware('ability:firewall-manage');
+    Route::put('/firewall/attempts', [FirewallController::class, 'attempts'])->middleware('ability:firewall-manage');
+    Route::delete('/firewall/bans', [FirewallController::class, 'unban'])->middleware('ability:firewall-manage');
+    Route::post('/firewall/crowdsec/enable', [FirewallController::class, 'crowdsecEnable'])->middleware('ability:firewall-manage');
+    Route::post('/firewall/crowdsec/disable', [FirewallController::class, 'crowdsecDisable'])->middleware('ability:firewall-manage');
+    Route::post('/firewall/crowdsec/allowlist', [FirewallController::class, 'crowdsecAllow'])->middleware('ability:firewall-manage');
+    Route::delete('/firewall/crowdsec/allowlist', [FirewallController::class, 'crowdsecUnallow'])->middleware('ability:firewall-manage');
 
     // Cloudflare Zero Trust — read-only status (Cipi CLI ≥ 5.3.0)
     Route::get('/zt', [ZtController::class, 'status'])->middleware('ability:zt-view');

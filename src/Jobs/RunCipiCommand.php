@@ -32,7 +32,16 @@ class RunCipiCommand implements ShouldQueue
 
         $job->markRunning();
         try {
-            $result = $cipi->run($this->command);
+            // What the command prints is kept on the job as it comes, once a
+            // second at most: GET /api/jobs/{id} shows it while the job runs.
+            $saved = 0.0;
+            $result = $cipi->runStreaming($this->command, function (string $soFar) use ($job, &$saved): void {
+                $now = microtime(true);
+                if ($now - $saved >= 1.0) {
+                    $saved = $now;
+                    $job->recordProgress($soFar);
+                }
+            });
             $job->markCompleted($result['output'], $result['exit_code']);
         } finally {
             $this->discardUpload($job);

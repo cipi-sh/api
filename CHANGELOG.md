@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.44.0] - 2026-11-25
+
+The firewall, for a core that has it (Cipi 5.14.0): the panel's Firewall tab. The optional packages, installed and removed from the panel. An app's own nginx directives. And a job's output while it runs.
+
+### Added
+
+- **`GET|PUT|DELETE /api/apps/{name}/nginx`** — an app's own nginx directives (`cipi nginx show|set|reset`, Cipi 5.14.0): headers, caching, limits, rewrites, `location` blocks, kept by Cipi and included in the app's server block. `GET` (`nginx-view`) answers `{app, config, bytes, max_bytes, active, suspended}`; `PUT {config}` (`nginx-manage`) replaces the text — empty removes it — and `DELETE` removes it. Synchronous: `nginx -t` runs before nginx reloads, and a refused text is a `422` with `reasons` (`line 2: unknown directive "boom"`), nothing changed.
+  - **A subset of nginx's language.** The CLI knows the call comes from the API and takes only the directives of a list (`lib/nginx-lint.sh`): no `access_log`/`error_log` with a path, `include`, `listen`, `server_name`, `*_pass`, certificates; `root` and `alias` only under the app's home. With those a token would be root (nginx opens log paths and reads included files as root) or reach another app. Reverse proxies and redirects stay on their endpoints; the whole language is `cipi nginx edit <app>` at the server.
+  - `CipiNginxCliService`, `NginxController`, `NginxConfigRefusedException`; `nginx show|set|reset` among the allowed commands (not `edit`, `upgrade`, `default-server`); abilities `nginx-view`, `nginx-manage`.
+- **A running job says what its command has printed so far.** `GET /api/jobs/{id}` on a `running` job carries `output` — its last 50,000 characters, refreshed once a second at most — so a deploy, an install or a backup can be followed while it runs; `result` and `exit_code` still come with the finished job. `CipiCliService::runStreaming()` reads the command's output as it arrives (the result is the one `run()` gives, byte for byte); `CipiJob::recordProgress()` keeps it, and never fails a job.
+- **`system.ipv6`** in `GET /api/status` — the server's public IPv6 address, for a domain's AAAA record (every vhost Cipi writes listens on IPv6 too). Read from the interfaces, nothing asked of an outside service: the first global address that is not temporary, deprecated or unique-local; `null` without one.
+- **`subject`** on the records of `GET /api/apps/{name}/deploy/audit` — the first line of each deploy's commit message (Cipi 5.14.0 reads it from the app's clone; it is not in the ledger and no hash covers it). Passed through as the CLI gives it.
+- **`GET /api/firewall`** — `cipi firewall status --json`, typed: UFW (active, default policies, every rule with `kind`, `family`, `comment`, `managed_by`, `protected`, `removable`), `protected_ports`, the Zero Trust locks, fail2ban (threshold, timings, jails and banned addresses) and CrowdSec (engine, bouncer, allowlist, decisions, `enable_blockers`).
+- **`POST|DELETE /api/firewall/rules`** — open a port or a range (`port`, `from`, `proto`), remove what allow (or deny, `action: deny`) made.
+- **`POST|DELETE /api/firewall/blocks`** — every port refused to an `address`, ahead of every allow; refused for the address of the request and for ranges wider than /8 (IPv4) or /16 (IPv6).
+- **`PUT /api/firewall/attempts`** — failed SSH logins before a fail2ban ban (1–100, `null` for the default).
+- **`DELETE /api/firewall/bans`** — lift a ban, fail2ban's and CrowdSec's (`422` when the address is not banned).
+- **`POST|DELETE /api/firewall/crowdsec/allowlist`**, and **`POST /api/firewall/crowdsec/enable|disable`** as jobs (`crowdsec-enable`, `crowdsec-disable`). Enabling answers `422` with `blockers` when the server cannot take it, and allowlists the address of the request (`--allow`), so the server never bans the panel that manages it.
+- Every change answers with the firewall after it: `{data, message}`. The CLI's refusals — a protected port, a Zero Trust lock, a rule that is not there — are `422` with its words, without colours.
+- Abilities **`firewall-view`** and **`firewall-manage`**; job types `crowdsec-enable` and `crowdsec-disable` read back with `firewall-manage`.
+- MCP tool **`FirewallStatus`** (read-only). MCP server 1.8.0.
+- OpenAPI 1.44.0: tag *Firewall*, the routes, `FirewallStatus`, `FirewallRule`.
+- **`POST /api/packages/{package}`** and **`DELETE /api/packages/{package}`** — install and remove one entry of the server's optional packages as jobs (`package-install`, `package-remove`), ability **`packages-manage`**, read back with it. Cipi 5.14.0 widens the catalog to twenty entries (`browsershot`, `fonts-cjk`, `avif`, `pdftk`, `libreoffice`, `pandoc`, `tesseract` join `image-optimizers`, `ffmpeg`, `imagemagick`, `poppler-utils`; the `sec-*` scanners Hackly runs, seven of them upstream releases pinned by version and SHA-256) and lets the panel run `package install|remove`. Before any job: the id must be one of the server's own catalog (`404`), not already installed or not installed (`409`), on a core that allows it (`503`). The commands carry `--yes` and never `--force` or `--autoremove`. Job results: `binaries` and `missing` after an install, `apt` (what was purged) or `still_needed` after a removal; a refusal (a package that depends on the entry) fails the job with the CLI's words.
+- `GET /api/packages` returns `kind` (`tools` | `libraries`), `binaries`, `missing`, `source` (`ubuntu` | `upstream`), `version`, `installed_version` and `outdated` per entry; on an older core every entry reads as tools from Ubuntu with both lists empty. An outdated upstream entry may be installed (it updates) and removed. The `package-install` result names the `version` of an upstream entry; the `package-remove` result lists the apt packages only that entry needed. MCP `PackageList` says so; installing stays out of MCP, like the firewall's changes.
+- OpenAPI: `POST|DELETE /packages/{package}`, `kind`/`binaries`/`missing`/`source`/`version`/`installed_version`/`outdated`, `JobResultPackageInstall`, `JobResultPackageRemove`.
+
+### Fixed
+
+- **MCP `tools/list` left out the last twelve tools** — `ApiLogShow`, `ServerStatus`, `ServiceList`, `PhpList`, `FrankenPhpStatus`, `FrankenPhpUpgrade`, `IpWhitelistShow` among them: the page held 80 and there are 93. It holds 120; a check in `tests/standalone.php` keeps it above the count.
+
+### Notes
+
+- Needs Cipi 5.14.0 (`cipi self-update`): its `cipi firewall status --json`, `cipi package install|remove` from the panel, and the panel's whitelist. Tokens do not get `packages-manage` by themselves (full-access tokens do). The API never sends `--force`; the CLI ignores it from the panel anyway, so the SSH port, 80 and 443 stay open and Zero Trust locks stay in place whatever a token can do. Not here: `cipi firewall deny` (the panel opens ports and blocks addresses), CrowdSec's rescue listener.
+
 ## [1.43.0] - 2026-11-24
 
 What Cipi 5.13.0 adds, read by the panel — and the Access tab that showed raw output on every app.
