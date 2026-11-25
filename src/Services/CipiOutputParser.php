@@ -254,14 +254,19 @@ class CipiOutputParser
     /** `cipi package install <id> --yes` (Cipi 5.14.0): which entry, and whether it was already there. */
     protected function parsePackageInstall(string $text): ?array
     {
-        if (preg_match('/✓\s+([a-z0-9-]+) is already installed/u', $text, $m)) {
-            return ['package' => $m[1], 'installed' => true, 'already' => true];
+        // An upstream entry names its version: "✓ sec-nuclei 3.11.1 installed".
+        if (preg_match('/✓\s+([a-z0-9-]+)(?:\s+(\d[\w.+-]*))? is already installed/u', $text, $m)) {
+            return array_filter(['package' => $m[1], 'version' => $m[2] ?? null, 'installed' => true, 'already' => true], fn ($v) => $v !== null && $v !== '');
         }
-        if (preg_match('/✓\s+([a-z0-9-]+) installed(?:\s+—\s+(\S+) available)?/u', $text, $m)) {
+        if (preg_match('/✓\s+([a-z0-9-]+)(?:\s+(\d[\w.+-]*))? installed(?:\s+—\s+(\S+) available)?/u', $text, $m)) {
             $missing = preg_match('/Installed, but these are missing:\s*(.+)/u', $text, $mm) ? preg_split('/\s+/', trim($mm[1])) : [];
+            $result = ['package' => $m[1], 'installed' => true, 'already' => false,
+                'binaries' => isset($m[3]) && $m[3] !== '' ? explode(',', $m[3]) : [], 'missing' => $missing];
+            if (($m[2] ?? '') !== '') {
+                $result['version'] = $m[2];
+            }
 
-            return ['package' => $m[1], 'installed' => true, 'already' => false,
-                'binaries' => isset($m[2]) ? explode(',', $m[2]) : [], 'missing' => $missing];
+            return $result;
         }
         if (preg_match('/\[WARN\]\s+Installed, but these are missing:\s*(.+)/u', $text, $m)) {
             return ['installed' => true, 'already' => false, 'binaries' => [], 'missing' => preg_split('/\s+/', trim($m[1]))];
@@ -274,7 +279,8 @@ class CipiOutputParser
     protected function parsePackageRemove(string $text): ?array
     {
         if (preg_match('/✓\s+([a-z0-9-]+) removed/u', $text, $m)) {
-            $removed = preg_match('/Purging\s+(.+?)\.\.\./u', $text, $mm) ? preg_split('/\s+/', trim($mm[1])) : [];
+            $removed = preg_match('/Purging what only \S+ needed:\s+(.+?)\.\.\./u', $text, $mm) || preg_match('/Purging\s+(.+?)\.\.\./u', $text, $mm)
+                ? preg_split('/\s+/', trim($mm[1])) : [];
 
             return ['package' => $m[1], 'removed' => true, 'apt' => $removed];
         }

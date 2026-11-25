@@ -16,6 +16,8 @@ use Illuminate\Routing\Controller;
  * apt takes from seconds to a few minutes. Only ids of the server's own
  * catalog are accepted — it is closed, and the CLI refuses anything else too.
  * The removal takes nothing another package needs (the CLI computes it).
+ * An upstream entry (`sec-nuclei`, …) with an older pinned version installed
+ * is `outdated`: installing it updates it, removing it is allowed.
  */
 class PackageController extends Controller
 {
@@ -64,7 +66,7 @@ class PackageController extends Controller
         if ($type === 'package-install' && $entry['installed']) {
             return response()->json(['error' => "{$package} is already installed"], 409);
         }
-        if ($type === 'package-remove' && ! $entry['installed'] && ! $entry['partial']) {
+        if ($type === 'package-remove' && ! $entry['installed'] && ! $entry['partial'] && ! $entry['outdated']) {
             return response()->json(['error' => "{$package} is not installed"], 409);
         }
 

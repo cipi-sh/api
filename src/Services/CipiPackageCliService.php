@@ -6,7 +6,10 @@ namespace CipiApi\Services;
  * Optional host packages via `sudo cipi package …`.
  *
  * - `list()` — the catalog with its install state (`package list --json`,
- *   Cipi CLI ≥ 5.2.2; `kind`, `binaries` and `missing` from 5.14.0).
+ *   Cipi CLI ≥ 5.2.2; `kind`, `binaries`, `missing`, `source`, `version`,
+ *   `installed_version` and `outdated` from 5.14.0). Entries with source
+ *   `upstream` (the `sec-*` scanners Hackly runs) are pinned releases: an
+ *   outdated one has an older version installed, and installing it updates it.
  * - `installCommand()` / `removeCommand()` — what the install and remove jobs
  *   run (Cipi CLI ≥ 5.14.0, whose sudoers let the panel do it). The catalog is
  *   closed: an id outside it never reaches the command, and the CLI refuses it
@@ -24,7 +27,7 @@ class CipiPackageCliService
     ) {}
 
     /**
-     * @return list<array{id: string, packages: list<string>, description: string, kind: string, binaries: list<string>, missing: list<string>, installed: bool, partial: bool}>
+     * @return list<array{id: string, packages: list<string>, description: string, kind: string, binaries: list<string>, missing: list<string>, installed: bool, partial: bool, source: string, version: ?string, installed_version: ?string, outdated: bool}>
      */
     public function list(): array
     {
@@ -57,6 +60,11 @@ class CipiPackageCliService
                 'missing' => $strings($row['missing'] ?? null),
                 'installed' => (bool) ($row['installed'] ?? false),
                 'partial' => (bool) ($row['partial'] ?? false),
+                // Before 5.14.0 every entry came from Ubuntu.
+                'source' => ($row['source'] ?? null) === 'upstream' ? 'upstream' : 'ubuntu',
+                'version' => isset($row['version']) && is_string($row['version']) && $row['version'] !== '' ? $row['version'] : null,
+                'installed_version' => isset($row['installed_version']) && is_string($row['installed_version']) && $row['installed_version'] !== '' ? $row['installed_version'] : null,
+                'outdated' => (bool) ($row['outdated'] ?? false),
             ];
         }
 

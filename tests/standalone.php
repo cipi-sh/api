@@ -551,13 +551,22 @@ namespace {
     ok($pk->find('pdftk')['installed'] === true && $pk->find('chromium') === null, 'find: an entry of the catalog, null for anything else');
     $cli->next = ['output' => '{"packages":[{"id":"ffmpeg","packages":["ffmpeg"],"description":"Video","installed":true,"partial":false}]}', 'exit_code' => 0, 'success' => true];
     $l = $pk->list();
-    ok($l[0]['kind'] === 'tools' && $l[0]['binaries'] === [] && $l[0]['missing'] === [], 'list from an older core: tools, empty binaries and missing');
+    ok($l[0]['kind'] === 'tools' && $l[0]['binaries'] === [] && $l[0]['missing'] === [] && $l[0]['source'] === 'ubuntu' && $l[0]['version'] === null && $l[0]['outdated'] === false, 'list from an older core: tools from Ubuntu, empty binaries and missing');
+    $cli->next = ['output' => '{"packages":[{"id":"sec-nuclei","packages":[],"description":"nuclei","kind":"tools","binaries":["nuclei"],"missing":[],"installed":false,"partial":false,"source":"upstream","version":"3.11.1","installed_version":"3.10.0","outdated":true},{"id":"sec-zap","packages":["openjdk-21-jre-headless"],"description":"ZAP","kind":"tools","binaries":["zap.sh"],"missing":["zap.sh"],"installed":false,"partial":false,"source":"upstream","version":"2.17.0","installed_version":null,"outdated":false}]}', 'exit_code' => 0, 'success' => true];
+    $l = $pk->list();
+    ok($l[0]['source'] === 'upstream' && $l[0]['version'] === '3.11.1' && $l[0]['installed_version'] === '3.10.0' && $l[0]['outdated'] === true && $l[1]['installed_version'] === null && $l[1]['outdated'] === false, 'list: upstream entries with the pinned version, the installed one, outdated');
     ok(thrown(fn () => $pk->requireManage()) === null, 'Cipi 5.14.0 may install from the panel');
     ok(str_starts_with((string) thrown(fn () => (new $P(new FakeCli, new FakeVersion('5.13.1')))->requireManage()), 'RuntimeException: Installing and removing packages from the panel needs Cipi 5.14.0+ — this server runs Cipi 5.13.1'), 'an older core (its sudoers list only): 503');
     $parser = new CipiApi\Services\CipiOutputParser;
     $r = $parser->parse('package-install', "\e[0;36m→\e[0m Installing libreoffice-writer-nogui...\n\n\e[0;32m✓\e[0m libreoffice installed — soffice available\n");
     ok($r === ['package' => 'libreoffice', 'installed' => true, 'already' => false, 'binaries' => ['soffice'], 'missing' => []], 'parse install: the entry and its binaries');
     ok($parser->parse('package-install', "✓ browsershot installed\n")['binaries'] === [] && $parser->parse('package-install', "✓ ffmpeg is already installed\n")['already'] === true, 'parse install: libraries, already there');
+    $r = $parser->parse('package-install', "→ Downloading nuclei_3.11.1_linux_amd64.zip...\n[INFO] SHA-256 matches the pin\n\n✓ sec-nuclei 3.11.1 installed — nuclei available\n");
+    ok($r === ['package' => 'sec-nuclei', 'installed' => true, 'already' => false, 'binaries' => ['nuclei'], 'missing' => [], 'version' => '3.11.1'], 'parse install: an upstream entry and its version');
+    ok($parser->parse('package-install', "✓ sec-zap 2.17.0 is already installed\n") === ['package' => 'sec-zap', 'version' => '2.17.0', 'installed' => true, 'already' => true], 'parse install: upstream, already there');
+    ok(($parser->parse('package-install', "[ERROR] Checksum mismatch for nuclei_3.11.1_linux_amd64.zip — refused\n", false)['error'] ?? '') === 'Checksum mismatch for nuclei_3.11.1_linux_amd64.zip — refused', 'parse install refused on a checksum: the CLI\'s words');
+    $r = $parser->parse('package-remove', "→ Purging what only sec-zap needed: openjdk-21-jre-headless java-common...\n✓ sec-zap removed\n");
+    ok($r === ['package' => 'sec-zap', 'removed' => true, 'apt' => ['openjdk-21-jre-headless', 'java-common']], 'parse remove: an upstream entry and the apt packages only it needed');
     $r = $parser->parse('package-remove', "→ Purging pdftk-java default-jre-headless...\n✓ pdftk removed\n");
     ok($r === ['package' => 'pdftk', 'removed' => true, 'apt' => ['pdftk-java', 'default-jre-headless']], 'parse remove: what apt purged');
     ok($parser->parse('package-remove', "[INFO] browsershot: other packages still use these libraries — nothing to remove\n")['still_needed'] === true, 'parse remove: libraries still needed');
@@ -567,6 +576,7 @@ namespace {
     ok(str_contains(file_get_contents(dirname($src, 2) . '/config/cipi.php'), "'packages-manage' =>"), 'ability packages-manage');
     $ctl = file_get_contents(dirname($src, 2) . '/src/Http/Controllers/PackageController.php');
     ok(str_contains($ctl, 'validId($package)') && str_contains($ctl, '->find($package)') && str_contains($ctl, '->requireManage()'), 'controller: the id checked, found in the catalog, the core new enough — before any job');
+    ok(str_contains($ctl, "! \$entry['installed'] && ! \$entry['partial'] && ! \$entry['outdated']"), 'controller: an outdated upstream entry may be removed (and installed: it updates)');
     ok(isset($spec['paths']['/packages/{package}']['post'], $spec['paths']['/packages/{package}']['delete'], $sc['JobResultPackageInstall'], $sc['JobResultPackageRemove'], $sc['PackagesResponse']['properties']['data']['items']['properties']['kind']), 'OpenAPI: the package routes, kind, the job results');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
