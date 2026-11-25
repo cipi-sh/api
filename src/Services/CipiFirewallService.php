@@ -21,6 +21,9 @@ class CipiFirewallService
     /** The core whose `cipi firewall status --json` and panel sudoers this needs. */
     public const MIN_CIPI = '5.14.0';
 
+    /** The core that reports `real_ip` and lets the panel run `cipi nginx real-ip`. */
+    public const REAL_IP_MIN_CIPI = '5.15.0';
+
     public function __construct(
         protected CipiCliService $cli,
         protected CipiVersionService $version,
@@ -117,6 +120,8 @@ class CipiFirewallService
             }
         }
 
+        $rip = is_array($s['real_ip'] ?? null) ? $s['real_ip'] : null;
+
         return [
             'ufw' => [
                 'installed' => (bool) ($ufw['installed'] ?? false),
@@ -153,6 +158,18 @@ class CipiFirewallService
                 'ram_available_mb' => $int($cs['ram_available_mb'] ?? null),
                 'ram_required_mb' => $int($cs['ram_required_mb'] ?? null),
                 'enable_blockers' => $strings($cs['enable_blockers'] ?? []),
+            ],
+            // null: a core that does not report it (and does not let the panel change it).
+            'real_ip' => $rip === null ? null : [
+                'enabled' => (bool) ($rip['enabled'] ?? false),
+                'provider' => is_string($rip['provider'] ?? null) ? $rip['provider'] : null,
+                'header' => is_string($rip['header'] ?? null) ? $rip['header'] : null,
+                'kept_by' => in_array($rip['kept_by'] ?? null, ['real-ip', 'zero-trust', 'both', 'other'], true) ? $rip['kept_by'] : null,
+                'ranges' => (int) ($rip['ranges'] ?? 0),
+                'refreshed_at' => is_string($rip['refreshed_at'] ?? null) ? $rip['refreshed_at'] : null,
+                'nightly_refresh' => (bool) ($rip['nightly_refresh'] ?? false),
+                'can_disable' => (bool) ($rip['can_disable'] ?? false),
+                'bans_active' => (bool) ($rip['bans_active'] ?? false),
             ],
         ];
     }
@@ -279,6 +296,36 @@ class CipiFirewallService
         }
 
         return $out;
+    }
+
+    // ── the visitor's address behind Cloudflare (`cipi nginx real-ip`) ──
+
+    /** nginx takes the visitor's address from Cloudflare (CF-Connecting-IP); again: the ranges refreshed. */
+    public function realIpEnable(): string
+    {
+        $this->version->require(self::REAL_IP_MIN_CIPI, 'Cloudflare real IP from the panel');
+
+        return $this->change('nginx real-ip cloudflare', 'cipi nginx real-ip cloudflare failed');
+    }
+
+    /** Cloudflare's ranges fetched again (nginx, fail2ban, CrowdSec); the server does it every night too. */
+    public function realIpRefresh(): string
+    {
+        $this->version->require(self::REAL_IP_MIN_CIPI, 'Cloudflare real IP from the panel');
+
+        return $this->change('nginx real-ip refresh', 'cipi nginx real-ip refresh failed');
+    }
+
+    /**
+     * Back to the address of each connection. --yes: the panel asked first,
+     * with what the CLI warns of (fail2ban or CrowdSec could ban Cloudflare).
+     * Zero Trust keeps it on; the CLI says so and changes nothing.
+     */
+    public function realIpDisable(): string
+    {
+        $this->version->require(self::REAL_IP_MIN_CIPI, 'Cloudflare real IP from the panel');
+
+        return $this->change('nginx real-ip off --yes', 'cipi nginx real-ip off failed');
     }
 
     /** `crowdsec enable`, for a job: the caller's address goes on the allowlist. */

@@ -526,10 +526,11 @@ namespace {
     $cli2->next = ['output' => 'not json', 'exit_code' => 0, 'success' => true];
     ok(str_contains((string) thrown(fn () => (new $F($cli2, new FakeVersion('5.14.0'), new CipiApi\Services\CipiIpWhitelistService($cli2)))->status()), 'invalid JSON'), 'status: invalid JSON is an error, never an empty firewall');
     $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
-    ok(substr_count($routes, "FirewallController::class") === 11 && str_contains($routes, "Route::get('/firewall', [FirewallController::class, 'status'])->middleware('ability:firewall-view')") && substr_count($routes, "->middleware('ability:firewall-manage')") === 10, 'routes: GET with firewall-view, the ten changes with firewall-manage');
+    // 1.45.0 adds the three real-ip routes, firewall-manage too.
+    ok(substr_count($routes, "FirewallController::class") === 14 && str_contains($routes, "Route::get('/firewall', [FirewallController::class, 'status'])->middleware('ability:firewall-view')") && substr_count($routes, "->middleware('ability:firewall-manage')") === 13, 'routes: GET with firewall-view, the thirteen changes with firewall-manage');
     $cfg = file_get_contents(dirname($src, 2) . '/config/cipi.php');
     ok(str_contains($cfg, "'firewall-view' =>") && str_contains($cfg, "'firewall-manage' =>"), 'abilities firewall-view and firewall-manage');
-    ok(isset($spec['paths']['/firewall']['get'], $spec['paths']['/firewall/rules']['post'], $spec['paths']['/firewall/rules']['delete'], $spec['paths']['/firewall/blocks']['delete'], $spec['paths']['/firewall/attempts']['put'], $spec['paths']['/firewall/bans']['delete'], $spec['paths']['/firewall/crowdsec/enable']['post'], $spec['paths']['/firewall/crowdsec/allowlist']['delete'], $sc['FirewallStatus'], $sc['FirewallRule']) && $spec['info']['version'] === '1.44.0', 'OpenAPI 1.44.0: the firewall routes and schemas');
+    ok(isset($spec['paths']['/firewall']['get'], $spec['paths']['/firewall/rules']['post'], $spec['paths']['/firewall/rules']['delete'], $spec['paths']['/firewall/blocks']['delete'], $spec['paths']['/firewall/attempts']['put'], $spec['paths']['/firewall/bans']['delete'], $spec['paths']['/firewall/crowdsec/enable']['post'], $spec['paths']['/firewall/crowdsec/allowlist']['delete'], $sc['FirewallStatus'], $sc['FirewallRule']) && version_compare($spec['info']['version'], '1.44.0', '>='), 'OpenAPI 1.44.0+: the firewall routes and schemas');
     $mcp = file_get_contents(dirname($src, 2) . '/src/Mcp/Servers/CipiServer.php');
     preg_match('/defaultPaginationLength = (\d+)/', $mcp, $pg);
     ok(substr_count($mcp, '::class,') <= (int) ($pg[1] ?? 0) && str_contains($mcp, 'FirewallStatusTool::class'), 'MCP: FirewallStatus, and every tool fits in one tools/list page (' . substr_count($mcp, '::class,') . ' ≤ ' . ($pg[1] ?? '?') . ')');
@@ -647,6 +648,52 @@ namespace {
     ok($S::firstPublicIpv6($ipOut) === '2a01:4f8:c0c:1234::1', 'IPv6: the first global address — not a temporary one, lower case');
     ok($S::firstPublicIpv6('') === null && $S::firstPublicIpv6("3: docker0    inet6 fd00::1/48 scope global \n4: x inet6 2001:db8::5/64 scope global deprecated \n") === null && $S::firstPublicIpv6('2: eth0    inet6 2001:db8::7;id/64 scope global') === null, 'IPv6: none, only unique-local or deprecated ones, or not an address: null');
     ok(str_contains((string) file_get_contents($root . '/src/Services/CipiServerStatusService.php'), "'ipv6' => \$this->publicIpv6(),") && isset($spec['paths']) && str_contains((string) file_get_contents($root . '/public/api-docs/openapi.json'), '"ipv6": {'), 'status: system.ipv6, in the OpenAPI too');
+
+    echo "--- 1.45.0 (Cipi 5.15.0): Cloudflare real IP, events per channel, MySQL's warning\n";
+    $F = 'CipiApi\Services\CipiFirewallService';
+    $st = $F::normalizeStatus(['real_ip' => ['enabled' => true, 'provider' => 'cloudflare', 'header' => 'CF-Connecting-IP', 'kept_by' => 'real-ip', 'ranges' => '22', 'refreshed_at' => '2026-11-25T03:23:00Z', 'nightly_refresh' => true, 'can_disable' => true, 'bans_active' => true]]);
+    ok($st['real_ip'] === ['enabled' => true, 'provider' => 'cloudflare', 'header' => 'CF-Connecting-IP', 'kept_by' => 'real-ip', 'ranges' => 22, 'refreshed_at' => '2026-11-25T03:23:00Z', 'nightly_refresh' => true, 'can_disable' => true, 'bans_active' => true], 'status: real_ip, typed');
+    ok($F::normalizeStatus([])['real_ip'] === null && $F::normalizeStatus(['real_ip' => ['kept_by' => 'evil', 'ranges' => 'x']])['real_ip']['kept_by'] === null, 'status: real_ip null on an older core; an unknown kept_by is null');
+    $cli = new FakeCli;
+    $fw = new $F($cli, new FakeVersion('5.15.0'), new CipiApi\Services\CipiIpWhitelistService($cli));
+    $cli->next = ['output' => "\e[32m✓\e[0m nginx now takes the visitor's address from Cloudflare (22 ranges, refreshed every night)", 'exit_code' => 0, 'success' => true];
+    ok(str_starts_with($fw->realIpEnable(), "nginx now takes the visitor's address"), 'real-ip on: the CLI line, without colours');
+    $fw->realIpRefresh(); $fw->realIpDisable();
+    ok($cli->ran === ['nginx real-ip cloudflare', 'nginx real-ip refresh', 'nginx real-ip off --yes'], 'real-ip: on, refresh, off --yes — whitelisted: ' . json_encode($cli->ran));
+    $cli->next = ['output' => '[ERROR] nginx already has a real_ip configuration that Cipi did not write (set_real_ip_from in /etc/nginx)', 'exit_code' => 1, 'success' => false];
+    ok(str_starts_with((string) thrown(fn () => $fw->realIpEnable()), 'InvalidArgumentException: nginx already has a real_ip configuration'), "real-ip: the CLI's refusal is a 422 with its words");
+    $old = new $F(new FakeCli, new FakeVersion('5.14.0'), new CipiApi\Services\CipiIpWhitelistService(new FakeCli));
+    ok(str_starts_with((string) thrown(fn () => $old->realIpEnable()), 'RuntimeException: Cloudflare real IP from the panel needs Cipi 5.15.0+'), 'real-ip on an older core: 503 before anything runs');
+    $perm = new CipiApi\Services\CipiCliService;
+    foreach (['nginx real-ip status --json', 'nginx real-ip cloudflare', 'nginx real-ip refresh', 'nginx real-ip off --yes'] as $c) { ok($perm->commandIsPermitted($c), "whitelisted: {$c}"); }
+    foreach (['nginx real-ip off', 'nginx real-ip status', 'nginx upgrade', 'nginx default-server on'] as $c) { ok(! $perm->commandIsPermitted($c), "not whitelisted: {$c}"); }
+    $ctl = (string) file_get_contents($root . '/src/Http/Controllers/FirewallController.php');
+    ok(str_contains($ctl, "if (\$request->headers->has('CF-Connecting-IP')) {") && str_contains($ctl, '], 409);'), 'real-ip off: refused (409) when the request came through Cloudflare');
+    ok(str_contains($routes, "Route::put('/firewall/real-ip', [FirewallController::class, 'realIpEnable'])->middleware('ability:firewall-manage')") && str_contains($routes, "Route::delete('/firewall/real-ip', [FirewallController::class, 'realIpDisable'])->middleware('ability:firewall-manage')") && str_contains($routes, "Route::post('/firewall/real-ip/refresh', [FirewallController::class, 'realIpRefresh'])->middleware('ability:firewall-manage')"), 'routes: real-ip with firewall-manage');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    ok(isset($spec['paths']['/firewall/real-ip']['put'], $spec['paths']['/firewall/real-ip']['delete'], $spec['paths']['/firewall/real-ip/refresh']['post'], $spec['components']['schemas']['FirewallStatus']['properties']['real_ip']) && $spec['info']['version'] === '1.45.0', 'OpenAPI 1.45.0: real-ip routes and real_ip');
+
+    // Events per channel.
+    $N = 'CipiApi\Services\CipiNotificationsService';
+    $cli = new ScriptCli; $cli->by = ['notification status --json' => ['output' => json_encode(['channels' => [['id' => 'smtp', 'type' => 'smtp', 'enabled' => true, 'events' => null], ['id' => 'ops', 'type' => 'slack', 'enabled' => true, 'events' => ['security']]]]), 'exit_code' => 0, 'success' => true]];
+    $nt = new $N($cli, new FakeVersion('5.15.0'));
+    ok($N::eventsFlag(['security', 'deploy', 'security']) === '--events=security,deploy' && $N::eventsFlag(null) === '--events=all' && $N::eventsFlag([]) === '--events=all' && $N::eventsFlag(['deploy', 'all']) === '--events=all', 'events: one flag; null, [] or "all" — everything');
+    ok($nt->channelError(['events' => ['security', 'backup_fail', 'basic-auth', 'urgent']], ['id' => 'ops', 'type' => 'slack']) === null, 'events: categories, triggers, urgent');
+    ok(str_starts_with((string) $nt->channelError(['events' => ['Security;id']], ['id' => 'ops', 'type' => 'slack']), 'events:'), 'events: a selector out of shape is refused');
+    ok($nt->addCommand(['type' => 'slack', 'id' => 'sec', 'url' => 'https://hooks.slack.com/x', 'events' => ['security']]) === "notification add slack sec --url='https://hooks.slack.com/x' --events=security", 'add: --events with the channel');
+    ok($nt->updateCommand('smtp', 'smtp', ['events' => ['deploy']]) === 'notification update smtp --events=deploy', 'update smtp, events alone: no SMTP reconfigure, no test');
+    ok($nt->updateCommand('smtp', 'smtp', ['to' => 'a@x.it', 'events' => null]) === "notification update smtp --to='a@x.it' --events=all --no-test", 'update smtp with a field: --no-test as before');
+    $nt->update('ops', 'slack', ['events' => ['deploy', 'urgent']]);
+    ok(in_array('notification update ops --events=deploy,urgent', $cli->ran, true), 'update: events alone reach the CLI');
+    $older = new $N(new ScriptCli, new FakeVersion('5.14.0'));
+    ok(str_contains((string) thrown(fn () => $older->update('ops', 'slack', ['events' => ['security']])), 'needs Cipi 5.15.0+'), 'events on an older core: refused, not silently ignored');
+    ok(str_contains((string) thrown(fn () => $older->update('ops', 'slack', ['url' => 'https://hooks.slack.com/y'])), 'needs Cipi') === false, 'an older core still takes the other fields');
+
+    // A client's stderr is not a database.
+    require_once $src . 'CipiDatabaseListCliService.php';
+    $D = 'CipiApi\Services\CipiDatabaseListCliService';
+    $rows = [['name' => 'mysql: [Warning] Using a password on the command line interface can be insecure.', 'size_mb' => 0], ['name' => 'mozart'], ['name' => 'WARNING: database "shop" has a collation version mismatch'], ['name' => 'shop_tenant_1'], ['name' => 'mysql_archive'], 'junk'];
+    ok(array_column($D::withoutClientNoise($rows), 'name') === ['mozart', 'shop_tenant_1', 'mysql_archive'], 'db list: the MySQL warning and psql notices are not databases; a name like mysql_archive is');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);
