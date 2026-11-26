@@ -14,9 +14,11 @@ namespace CipiApi\Services;
  *
  * The cache respects what the app says (Cache-Control, Expires, Set-Cookie:
  * a response that sets a cookie or says private/no-store is never kept) and
- * skips signed-in visitors, carts, admin and API paths, POSTs. Cipi empties it
- * after every deploy and rollback; from a script or a custom deploy recipe:
- * `sudo /usr/local/bin/cipi-cache-clear <app>` (`clear_command` in the status).
+ * skips signed-in visitors, carts, admin and API paths, POSTs. An app adds the
+ * paths of its own that must never be kept (`exclude`: `/cart*`, `/feed`).
+ * Cipi empties the cache after every deploy and rollback; from a script or a
+ * custom deploy recipe: `sudo /usr/local/bin/cipi-cache-clear <app>`
+ * (`clear_command` in the status).
  */
 class CipiPageCacheService
 {
@@ -28,11 +30,28 @@ class CipiPageCacheService
     /** Megabytes or gigabytes, 16m to 100g. */
     public const SIZE_PATTERN = '/^[1-9][0-9]{0,5}(m|g)$/';
 
+    /**
+     * A path an app keeps out of its cache, as `cipi cache <app> exclude` takes
+     * it: letters, digits, `. _ ~ % - /` and `*` for anything — nothing a shell,
+     * nginx or a regular expression reads as its own. The leading / is optional.
+     */
+    public const EXCLUDE_PATTERN = '#^/?[A-Za-z0-9._~%/*-]{1,127}$#';
+
+    public const EXCLUDE_MAX = 50;
+
     public const RULES = [
         'enabled' => 'required|boolean',
         'ttl' => ['sometimes', 'nullable', 'string', 'max:8'],
         'size' => ['sometimes', 'nullable', 'string', 'max:7'],
         'clear_on_deploy' => 'sometimes|nullable|boolean',
+        'exclude' => ['sometimes', 'nullable', 'array', 'max:' . self::EXCLUDE_MAX],
+        'exclude.*' => ['string', 'max:128'],
+    ];
+
+    /** For the list alone: an empty one keeps none of the app's own. */
+    public const EXCLUDE_RULES = [
+        'exclude' => ['present', 'array', 'max:' . self::EXCLUDE_MAX],
+        'exclude.*' => ['string', 'max:128'],
     ];
 
     public function __construct(
@@ -58,8 +77,9 @@ class CipiPageCacheService
 
     /**
      * @return array{app: string, supported: bool, kind: ?string, enabled: bool, active: bool, ttl: string,
-     *               ttl_seconds: int, size: string, clear_on_deploy: bool, files: int, bytes: int,
-     *               path: string, suspended: bool, clear_command: string}
+     *               ttl_seconds: int, size: string, clear_on_deploy: bool, exclude: list<string>,
+     *               exclude_max: int, files: int, bytes: int, path: string, suspended: bool,
+     *               clear_command: string}
      */
     public function show(string $app): array
     {
@@ -79,8 +99,12 @@ class CipiPageCacheService
             ['ttl' => $input['ttl'] ?? null, 'size' => $input['size'] ?? null, 'clear_on_deploy' => $input['clear_on_deploy'] ?? null],
             fn ($v) => $v !== null && $v !== '',
         );
-        if (! $enabled && $given !== []) {
-            return 'ttl, size and clear_on_deploy apply when enabled is true';
+        $exclude = $input['exclude'] ?? null;
+        if (! $enabled && ($given !== [] || is_array($exclude))) {
+            return 'ttl, size, clear_on_deploy and exclude apply when enabled is true (the list alone: PUT /apps/{name}/cache/exclude)';
+        }
+        if (is_array($exclude) && ($error = self::excludeError($exclude)) !== null) {
+            return $error;
         }
         if (isset($given['ttl']) && self::ttlSeconds((string) $given['ttl']) === null) {
             return 'ttl: a number and s, m, h or d (30s, 10m, 1h, 7d), thirty days at most';
@@ -115,12 +139,79 @@ class CipiPageCacheService
             if (isset($input['clear_on_deploy'])) {
                 $command .= $input['clear_on_deploy'] ? ' --deploy-clear' : ' --no-deploy-clear';
             }
+            if (is_array($input['exclude'] ?? null)) {
+                // The whole list; an empty one is none (`--exclude=''`).
+                $command .= ' --exclude=' . escapeshellarg(implode(',', self::excludeList($input['exclude'])));
+            }
         } else {
             $command .= ' off';
         }
         $this->change($command, 'cipi cache failed');
 
         return $this->show($app);
+    }
+
+    /**
+     * The paths of its own the app keeps out of its cache — the whole list, on
+     * or off (off, it waits for the cache to be turned on). `/cart*` is
+     * everything that starts so; `/feed` the path itself.
+     *
+     * @param  list<string>  $paths
+     * @return array<string, mixed> the status after it
+     *
+     * @throws PageCacheRefusedException a path that is not one, a Node app, nginx's verdict
+     */
+    public function exclude(string $app, array $paths): array
+    {
+        $this->version->require(self::MIN_CIPI, 'The page cache');
+        if (($error = self::excludeError($paths)) !== null) {
+            throw new PageCacheRefusedException($error);
+        }
+
+        $paths = self::excludeList($paths);
+        $command = 'cache ' . escapeshellarg($app) . ' exclude '
+            . ($paths === [] ? 'remove --all' : 'set ' . escapeshellarg(implode(',', $paths)));
+        $this->change($command, 'cipi cache exclude failed');
+
+        return $this->show($app);
+    }
+
+    /** What is wrong with a list of paths, or null. */
+    public static function excludeError(array $paths): ?string
+    {
+        if (count($paths) > self::EXCLUDE_MAX) {
+            return 'exclude: ' . self::EXCLUDE_MAX . ' paths at most — one with a * covers many (/shop/*)';
+        }
+        foreach ($paths as $path) {
+            if (! is_string($path) || ! preg_match(self::EXCLUDE_PATTERN, $path)) {
+                return 'exclude: a path is letters, digits, . _ ~ % - / and * for anything (/cart*, /feed, /shop/*/reviews), 128 characters at most';
+            }
+            if (preg_match('#^/?\*+$#', $path)) {
+                return 'exclude: ' . $path . ' is every page — turn the cache off instead';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The paths as the CLI keeps them: each with its leading /, once.
+     *
+     * @param  list<string>  $paths
+     * @return list<string>
+     */
+    public static function excludeList(array $paths): array
+    {
+        $out = [];
+        foreach ($paths as $path) {
+            $path = '/' . ltrim((string) $path, '/');
+            $path = (string) preg_replace('#\*{2,}#', '*', $path);
+            if (! in_array($path, $out, true)) {
+                $out[] = $path;
+            }
+        }
+
+        return $out;
     }
 
     /**
@@ -172,7 +263,7 @@ class CipiPageCacheService
         }
         $message = $this->firstError($plain) ?? $fallback;
         // What the user can act on: the kind of app, a value, nginx's own verdict.
-        if (preg_match('/Node app|Invalid|nginx refused|nginx -t|not found|suspended/i', $plain)) {
+        if (preg_match('/Node app|Invalid|nginx refused|nginx -t|not found|suspended|not a path|Too many paths|every page|wants paths/i', $plain)) {
             throw new PageCacheRefusedException($message);
         }
 

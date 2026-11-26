@@ -9,8 +9,9 @@ For Cipi 5.17.0: the nginx page cache of an app, the PHP of an Octane app by its
 ### Added
 
 - **Page cache** (`cipi cache`, Cipi 5.17.0) — nginx keeps the page PHP made and answers the next visitors with it, without running PHP: `fastcgi_cache` for an app on PHP-FPM (Laravel, WordPress, any PHP app), `proxy_cache` for one on Octane. It is not OPcache, which is always on and keeps compiled PHP in memory.
-  - `GET /api/apps/{name}/cache` (`nginx-view`): `supported`, `kind`, `enabled`, `active`, `ttl`, `ttl_seconds`, `size`, `clear_on_deploy`, `files`, `bytes`, `path`, `suspended`, `clear_command`. `GET /api/cache` lists every app.
-  - `PUT /api/apps/{name}/cache` (`nginx-manage`): `{enabled, ttl?, size?, clear_on_deploy?}`. On: what is given changes, the rest stays (defaults `10m`, `256m`, emptied after a deploy). Off: the cached pages are deleted. `ttl`, `size` and `clear_on_deploy` with `enabled: false` are a `422`.
+  - `GET /api/apps/{name}/cache` (`nginx-view`): `supported`, `kind`, `enabled`, `active`, `ttl`, `ttl_seconds`, `size`, `clear_on_deploy`, `exclude`, `exclude_max`, `files`, `bytes`, `path`, `suspended`, `clear_command`. `GET /api/cache` lists every app.
+  - `PUT /api/apps/{name}/cache` (`nginx-manage`): `{enabled, ttl?, size?, clear_on_deploy?, exclude?}`. On: what is given changes, the rest stays (defaults `10m`, `256m`, emptied after a deploy). Off: the cached pages are deleted. `ttl`, `size`, `clear_on_deploy` and `exclude` with `enabled: false` are a `422`.
+  - `PUT /api/apps/{name}/cache/exclude` (`nginx-manage`): `{exclude: ["/cart*", "/feed"]}` — the whole list of the app's own paths that are never cached, on top of what is never cached for any app. `*` is anything, slashes included; without it, the path itself. A path is letters, digits, `. _ ~ % - /` and `*`, 128 characters and 50 paths at most, and is checked before anything runs; `/*` is refused (that is the cache off). Works with the cache off too: the list waits for it. An empty list keeps none.
   - `POST /api/apps/{name}/cache/clear` (`nginx-manage`): the status after it, with `cleared`.
   - Synchronous; `nginx -t` runs before the reload. A Node app, a value the CLI does not take and nginx's refusal are `422` with the CLI's words; an older core is `503` before anything runs.
   - `CipiPageCacheService`, `PageCacheController`, `PageCacheRefusedException`.
@@ -29,7 +30,7 @@ For Cipi 5.17.0: the nginx page cache of an app, the PHP of an Octane app by its
 - **`GET|PUT /api/notifications/settings`** (`notifications-view` / `notifications-manage`, or the `smtp-*` pair) — `timezone` (an IANA name; `null` for the server's own), `server_timezone`, `server_name` (`null` for the hostname), `hostname`, `now`. `PUT` takes one or both; each is checked before the CLI runs (a name is letters, digits, spaces, dots, dashes and underscores, 40 at most). `CipiNotificationsService::settings()`, `updateSettings()`, `settingsError()`.
 - **MCP**: `PageCacheShow`, `PageCacheUpdate`, `PageCacheClear`, `OctanePhpShow`, `OctanePhpSwitch`, `ValkeyList`.
 - Allowed commands: `cache `, `frankenphp php `, `frankenphp restart `, `notification timezone `, `notification server-name `, `valkey list --json`, `valkey isolate `, `valkey share `, `valkey restart `, `valkey flush-shared --yes`. Job types `octane-php`, `octane-restart` (`php-manage`), `valkey-isolate`, `valkey-share` (`services-manage`).
-- OpenAPI 1.47.0: the routes above, tags `Page cache`, `Octane`, `Valkey`, schemas `PageCache`, `PageCacheRequest`, `OctanePhp`, `ValkeyList`, `NotificationSettings`, `JobResultOctanePhp`, `JobResultValkeyMove`.
+- OpenAPI 1.47.0: the routes above, tags `Page cache`, `Octane`, `Valkey`, schemas `PageCache`, `PageCacheRequest`, `PageCacheExclude`, `OctanePhp`, `ValkeyList`, `NotificationSettings`, `JobResultOctanePhp`, `JobResultValkeyMove`.
 
 ### Notes
 

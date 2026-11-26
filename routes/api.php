@@ -124,6 +124,7 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::get('/cache', [PageCacheController::class, 'list'])->middleware('ability:nginx-view');
     Route::get('/apps/{name}/cache', [PageCacheController::class, 'show'])->middleware('ability:nginx-view');
     Route::put('/apps/{name}/cache', [PageCacheController::class, 'update'])->middleware('ability:nginx-manage');
+    Route::put('/apps/{name}/cache/exclude', [PageCacheController::class, 'exclude'])->middleware('ability:nginx-manage');
     Route::post('/apps/{name}/cache/clear', [PageCacheController::class, 'clear'])->middleware('ability:nginx-manage');
 
     // Node apps + runtimes (Cipi CLI ≥ 5.4.0 + API sudoers ≥ 5.4.1)

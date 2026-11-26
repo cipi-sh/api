@@ -754,6 +754,34 @@ namespace {
     ok(str_starts_with((string) thrown(fn () => $pc->update('blog', ['enabled' => true])), 'CipiApi\Services\PageCacheRefusedException: nginx refused the configuration'), 'nginx refusing the cache is a refusal (422), with the CLI\'s words');
     $cli->by = ["cache 'spa' on" => ['output' => "[ERROR] 'spa' is a Node app: its pages come from its own server", 'exit_code' => 1, 'success' => false]];
     ok(str_starts_with((string) thrown(fn () => $pc->update('spa', ['enabled' => true])), 'CipiApi\Services\PageCacheRefusedException'), 'a Node app is a refusal too');
+    // The paths an app keeps out of its cache.
+    $cli = new ScriptCli; $cli->by = ["cache 'blog' status --json" => $okJson($cstat + ['exclude' => ['/cart*'], 'exclude_max' => 50])];
+    $pc = new $P($cli, new FakeVersion('5.17.0'), $parser);
+    foreach (["cache 'blog' exclude set '/cart*,/feed'", "cache 'blog' exclude remove --all", "cache 'blog' on --exclude='/cart*,/feed'", "cache 'blog' on --exclude=''"] as $c) {
+        ok((new FakeCli)->commandIsPermitted($c), "allowed: cipi {$c}");
+    }
+    $pc->update('blog', ['enabled' => true, 'ttl' => '1h', 'exclude' => ['/cart*', 'feed', '/cart*', '/a**b']]);
+    ok(in_array("cache 'blog' on --ttl='1h' --exclude='/cart*,/feed,/a*b'", $cli->ran, true), 'page cache on with exclude: the whole list in one quoted value, each path with its /, once');
+    $pc->update('blog', ['enabled' => true, 'exclude' => []]);
+    ok(in_array("cache 'blog' on --exclude=''", $cli->ran, true), 'an empty exclude with on: none of its own');
+    $pc->update('blog', ['enabled' => true, 'exclude' => null]);
+    ok(end($cli->ran) === "cache 'blog' status --json" && in_array("cache 'blog' on", $cli->ran, true), 'exclude null or left out: the list stays');
+    ok($pc->exclude('blog', ['/my-account*', 'checkout'])['exclude'] === ['/cart*'] && in_array("cache 'blog' exclude set '/my-account*,/checkout'", $cli->ran, true), 'exclude alone: exclude set, and the status after it');
+    $pc->exclude('blog', []);
+    ok(in_array("cache 'blog' exclude remove --all", $cli->ran, true), 'an empty list alone: exclude remove --all');
+    $X = fn (array $paths) => $P::excludeError($paths);
+    ok($X(['/cart*', 'feed', '/shop/*/reviews', '/caff%C3%A8_1.0~x', '/']) === null, 'exclude: letters, digits, . _ ~ % - / and *');
+    $badPaths = ['/a b', "/x';id", '/a;b', '/a"b', '/a$b', '/a{b}', '/a|b', '/(a)', '/a\\b', '/a?b=1', '/a,b', "/a\nb", '', '/' . str_repeat('a', 128)];
+    ok(count(array_filter($badPaths, fn ($b) => $X([$b]) === null)) === 0 && $X([7]) !== null && $X([['/a']]) !== null, 'exclude: a space, a quote, ; $ { | ( \\ ? , a line break, an empty one, 129 characters, a number are refused');
+    ok(str_contains((string) $X(['/*']), 'every page') && str_contains((string) $X(['*']), 'every page') && str_contains((string) $X(['/**']), 'every page'), 'exclude: /* is every page — the cache off, not a path');
+    ok($X(array_map(fn ($i) => "/p{$i}", range(1, 50))) === null && str_contains((string) $X(array_map(fn ($i) => "/p{$i}", range(1, 51))), '50 paths at most'), 'exclude: 50 paths at most');
+    $before = count($cli->ran);
+    ok(str_starts_with((string) thrown(fn () => $pc->exclude('blog', ['/ok', '/a;rm -rf'])), 'CipiApi\Services\PageCacheRefusedException') && count($cli->ran) === $before, 'exclude: a path that is not one never reaches the CLI');
+    ok($pc->inputError(['enabled' => false, 'exclude' => []]) !== null && $pc->inputError(['enabled' => false, 'exclude' => null]) === null && $pc->inputError(['enabled' => true, 'exclude' => ['/a;b']]) !== null && $pc->inputError(['enabled' => true, 'exclude' => ['/a*']]) === null, 'exclude in PUT /cache: with enabled true only, and checked');
+    ok($P::excludeList(['a', '/a', '//b', '/c**d']) === ['/a', '/b', '/c*d'], 'excludeList: as the CLI keeps them');
+    $cli->by = ["cache 'blog' exclude set" => ['output' => "[ERROR] nginx refused the configuration — nothing changed", 'exit_code' => 1, 'success' => false]];
+    ok(str_starts_with((string) thrown(fn () => $pc->exclude('blog', ['/x'])), 'CipiApi\Services\PageCacheRefusedException: nginx refused'), 'exclude: nginx refusing is a 422 with its words');
+    ok(str_contains((string) thrown(fn () => (new $P(new FakeCli, new FakeVersion('5.16.0'), $parser))->exclude('blog', ['/x'])), 'needs Cipi 5.17.0+'), 'exclude on an older core: refused before anything runs');
     $cli->by = ["cache 'blog' status" => ['output' => 'sudo: a password is required', 'exit_code' => 1, 'success' => false]];
     ok(str_contains((string) thrown(fn () => $pc->show('blog')), 'cipi api update'), 'sudoers older than the core: the message says what to run');
     ok(str_contains((string) thrown(fn () => (new $P(new FakeCli, new FakeVersion('5.16.0'), $parser))->show('blog')), 'needs Cipi 5.17.0+') && str_contains((string) thrown(fn () => (new $P(new FakeCli, new FakeVersion('5.16.0'), $parser))->update('blog', ['enabled' => true])), 'needs Cipi 5.17.0+'), 'page cache on an older core: refused before anything runs');
@@ -820,6 +848,7 @@ namespace {
         "Route::get('/cache', [PageCacheController::class, 'list'])->middleware('ability:nginx-view')",
         "Route::get('/apps/{name}/cache', [PageCacheController::class, 'show'])->middleware('ability:nginx-view')",
         "Route::put('/apps/{name}/cache', [PageCacheController::class, 'update'])->middleware('ability:nginx-manage')",
+        "Route::put('/apps/{name}/cache/exclude', [PageCacheController::class, 'exclude'])->middleware('ability:nginx-manage')",
         "Route::post('/apps/{name}/cache/clear', [PageCacheController::class, 'clear'])->middleware('ability:nginx-manage')",
         "Route::get('/apps/{name}/octane', [FrankenPhpController::class, 'appPhp'])->middleware('ability:php-view')",
         "Route::put('/apps/{name}/octane/php', [FrankenPhpController::class, 'switchPhp'])->middleware('ability:php-manage')",
@@ -837,7 +866,7 @@ namespace {
     ok(strpos($routes, "'/valkey/flush-shared'") < strpos($routes, "'/valkey/{name}/restart'"), 'the fixed /valkey paths come before /valkey/{name}/restart');
     $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
     $sc = $spec['components']['schemas'];
-    ok($spec['info']['version'] === '1.47.0' && isset($spec['paths']['/cache']['get'], $spec['paths']['/apps/{name}/cache']['get'], $spec['paths']['/apps/{name}/cache']['put'], $spec['paths']['/apps/{name}/cache/clear']['post'], $spec['paths']['/apps/{name}/octane']['get'], $spec['paths']['/apps/{name}/octane/php']['put'], $spec['paths']['/apps/{name}/octane/restart']['post'], $spec['paths']['/valkey']['get'], $spec['paths']['/valkey/isolate']['post'], $spec['paths']['/valkey/share']['post'], $spec['paths']['/valkey/flush-shared']['post'], $spec['paths']['/valkey/{name}/restart']['post'], $spec['paths']['/notifications/settings']['get'], $spec['paths']['/notifications/settings']['put'], $sc['PageCache'], $sc['PageCacheRequest'], $sc['OctanePhp'], $sc['ValkeyList'], $sc['NotificationSettings'], $sc['JobResultOctanePhp'], $sc['JobResultValkeyMove']), 'OpenAPI 1.47.0: the new routes and schemas');
+    ok($spec['info']['version'] === '1.47.0' && isset($spec['paths']['/cache']['get'], $spec['paths']['/apps/{name}/cache']['get'], $spec['paths']['/apps/{name}/cache']['put'], $spec['paths']['/apps/{name}/cache/clear']['post'], $spec['paths']['/apps/{name}/cache/exclude']['put'], $sc['PageCacheExclude'], $sc['PageCache']['properties']['exclude'], $sc['PageCacheRequest']['properties']['exclude'], $spec['paths']['/apps/{name}/octane']['get'], $spec['paths']['/apps/{name}/octane/php']['put'], $spec['paths']['/apps/{name}/octane/restart']['post'], $spec['paths']['/valkey']['get'], $spec['paths']['/valkey/isolate']['post'], $spec['paths']['/valkey/share']['post'], $spec['paths']['/valkey/flush-shared']['post'], $spec['paths']['/valkey/{name}/restart']['post'], $spec['paths']['/notifications/settings']['get'], $spec['paths']['/notifications/settings']['put'], $sc['PageCache'], $sc['PageCacheRequest'], $sc['OctanePhp'], $sc['ValkeyList'], $sc['NotificationSettings'], $sc['JobResultOctanePhp'], $sc['JobResultValkeyMove']), 'OpenAPI 1.47.0: the new routes and schemas');
     $refs = []; array_walk_recursive($spec, function ($v, $k) use (&$refs) { if ($k === '$ref') { $refs[$v] = true; } });
     $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
     ok($missing === [], 'OpenAPI: every $ref points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));

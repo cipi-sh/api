@@ -12,7 +12,7 @@ use Laravel\Mcp\Response;
 use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Turn the nginx page cache of an app on or off (cipi cache <app> on|off, Cipi CLI ≥ 5.17.0). On: nginx keeps the pages PHP made and answers the next visitors without running PHP — what makes WordPress and content sites fast; it respects the app\'s Cache-Control and Set-Cookie and skips signed-in visitors, carts, admin and API paths. ttl, size and clear_on_deploy apply with enabled true; what is not given stays. nginx is tested first: a refusal changes nothing. Synchronous.')]
+#[Description('Turn the nginx page cache of an app on or off (cipi cache <app> on|off, Cipi CLI ≥ 5.17.0). On: nginx keeps the pages PHP made and answers the next visitors without running PHP — what makes WordPress and content sites fast; it respects the app\'s Cache-Control and Set-Cookie and skips signed-in visitors, carts, admin and API paths. ttl, size, clear_on_deploy and exclude apply with enabled true; what is not given stays. exclude is the whole list of the app\'s own paths that are never kept (/cart*, /feed — * is anything; an empty list for none). nginx is tested first: a refusal changes nothing. Synchronous.')]
 class PageCacheUpdateTool extends Tool
 {
     public function __construct(
@@ -30,7 +30,7 @@ class PageCacheUpdateTool extends Tool
             return Response::text("Error: App '{$name}' not found");
         }
 
-        $input = array_filter($request->all(['enabled', 'ttl', 'size', 'clear_on_deploy']), fn ($v) => $v !== null);
+        $input = array_filter($request->all(['enabled', 'ttl', 'size', 'clear_on_deploy', 'exclude']), fn ($v) => $v !== null);
         $validator = Validator::make($input, CipiPageCacheService::RULES);
         if ($validator->fails()) {
             return Response::text('Error: ' . $validator->errors()->first());
@@ -55,6 +55,7 @@ class PageCacheUpdateTool extends Tool
             'ttl' => $schema->string()->description('How long a page is kept when the app does not say: a number and s, m, h or d (default 10m)'),
             'size' => $schema->string()->description('The most the cache takes on disk, 16m to 100g (default 256m)'),
             'clear_on_deploy' => $schema->boolean()->description('Empty the cache after every deploy and rollback (default true)'),
+            'exclude' => $schema->array()->items($schema->string())->description('The whole list of the app\'s own paths never cached: /cart*, /feed, /shop/*/reviews (* is anything; without it, the path itself). An empty list for none; left out, the list stays.'),
         ];
     }
 }

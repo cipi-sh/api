@@ -2911,7 +2911,7 @@
                     "Page cache"
                 ],
                 "summary": "Turn an app's page cache on or off",
-                "description": "`cipi cache <app> on [--ttl=] [--size=] [--deploy-clear|--no-deploy-clear]` or `cipi cache <app> off`. With `enabled: true`, what is given changes and the rest stays as it is (defaults: pages kept `10m`, `256m` on disk, emptied after every deploy); on an app whose cache is on already it changes the settings. `enabled: false` turns it off and deletes the cached pages. The cache respects what the app answers (`Cache-Control`, `Expires`, `Set-Cookie`: a response that sets a cookie or says `private`/`no-store` is never kept) and skips signed-in visitors, carts, admin and API paths and everything that is not GET or HEAD. Synchronous: `nginx -t` runs before nginx reloads, and a refusal changes nothing. Requires `nginx-manage` ability and Cipi CLI >= 5.17.0.",
+                "description": "`cipi cache <app> on [--ttl=] [--size=] [--exclude=] [--deploy-clear|--no-deploy-clear]` or `cipi cache <app> off`. With `enabled: true`, what is given changes and the rest stays as it is (defaults: pages kept `10m`, `256m` on disk, emptied after every deploy); on an app whose cache is on already it changes the settings. `enabled: false` turns it off and deletes the cached pages. The cache respects what the app answers (`Cache-Control`, `Expires`, `Set-Cookie`: a response that sets a cookie or says `private`/`no-store` is never kept) and skips signed-in visitors, carts, admin and API paths and everything that is not GET or HEAD. Synchronous: `nginx -t` runs before nginx reloads, and a refusal changes nothing. Requires `nginx-manage` ability and Cipi CLI >= 5.17.0.",
                 "operationId": "pageCacheUpdate",
                 "parameters": [
                     {
@@ -2941,6 +2941,80 @@
                     },
                     "422": {
                         "description": "A value that is not accepted, a Node app, or nginx refusing the configuration. Nothing changed.",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.17.0 (the message names the version), or a failure of the CLI",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/cache/exclude": {
+            "put": {
+                "tags": [
+                    "Page cache"
+                ],
+                "summary": "Set the paths an app keeps out of its page cache",
+                "description": "`cipi cache <app> exclude set <paths>` (`exclude remove --all` for an empty list). The whole list of the app's own paths that are never cached — a page that is different for each visitor with no cookie or header saying so, a feed, a page with a counter. They come on top of what is never cached for any app (signed-in visitors and carts, `/wp-admin`, `/wp-json`, query strings, what the app marks private). `/cart*` is everything that starts so (`*` is anything, slashes included); `/feed` is the path itself, with or without its last slash and whatever its query string; case does not count. A path is letters, digits, `. _ ~ % - /` and `*`; the leading `/` is added when missing. Works with the cache on (nginx is tested and reloaded; a refusal changes nothing) and off (the list waits for it to be turned on). Synchronous. Requires `nginx-manage` ability and Cipi CLI >= 5.17.0.",
+                "operationId": "pageCacheExclude",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "exclude"
+                                ],
+                                "properties": {
+                                    "exclude": {
+                                        "$ref": "#/components/schemas/PageCacheExclude"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The app's page cache after the change",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PageCacheResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A path that is not one, more than 50, a Node app, or nginx refusing the configuration. Nothing changed.",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -12300,6 +12374,14 @@
                         "type": "boolean",
                         "description": "Emptied after every deploy and rollback"
                     },
+                    "exclude": {
+                        "$ref": "#/components/schemas/PageCacheExclude"
+                    },
+                    "exclude_max": {
+                        "type": "integer",
+                        "description": "How many paths of its own an app may have",
+                        "example": 50
+                    },
                     "files": {
                         "type": "integer",
                         "description": "Pages on disk now",
@@ -12374,8 +12456,32 @@
                         "type": "boolean",
                         "nullable": true,
                         "description": "Empty the cache after every deploy and rollback (the default). With `enabled: true` only"
+                    },
+                    "exclude": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/PageCacheExclude"
+                            }
+                        ],
+                        "nullable": true,
+                        "description": "The whole list of the app's own paths never cached; an empty list for none, left out and the list stays. With `enabled: true` only — the list alone: `PUT /apps/{name}/cache/exclude`"
                     }
                 }
+            },
+            "PageCacheExclude": {
+                "type": "array",
+                "maxItems": 50,
+                "description": "The app's own paths that are never cached. `*` is anything, slashes included; without it, the path itself",
+                "items": {
+                    "type": "string",
+                    "maxLength": 128,
+                    "pattern": "^/?[A-Za-z0-9._~%/*-]{1,127}$"
+                },
+                "example": [
+                    "/cart*",
+                    "/checkout*",
+                    "/feed"
+                ]
             },
             "OctanePhp": {
                 "type": "object",
