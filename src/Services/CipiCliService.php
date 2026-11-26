@@ -175,6 +175,21 @@ class CipiCliService
         'nginx real-ip cloudflare',
         'nginx real-ip refresh',
         'nginx real-ip off --yes',
+        // Cipi CLI ≥ 5.17.0 (API sudoers ≥ 5.17.0): the nginx page cache of an
+        // app; an Octane app's PHP by its number and its restart; how
+        // notifications read; Valkey per app. `valkey flush-shared` is spelled
+        // out, and what it prints (a password) is never returned.
+        'cache --json',
+        'cache ',
+        'frankenphp php ',
+        'frankenphp restart ',
+        'notification timezone ',
+        'notification server-name ',
+        'valkey list --json',
+        'valkey isolate ',
+        'valkey share ',
+        'valkey restart ',
+        'valkey flush-shared --yes',
     ];
 
     /**

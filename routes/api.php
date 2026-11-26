@@ -27,6 +27,7 @@ use CipiApi\Http\Controllers\NodeController;
 use CipiApi\Http\Controllers\PackageController;
 use CipiApi\Http\Controllers\PhpController;
 use CipiApi\Http\Controllers\NginxController;
+use CipiApi\Http\Controllers\PageCacheController;
 use CipiApi\Http\Controllers\ProxyController;
 use CipiApi\Http\Controllers\RedirectController;
 use CipiApi\Http\Controllers\SearchController;
@@ -34,6 +35,7 @@ use CipiApi\Http\Controllers\ServiceController;
 use CipiApi\Http\Controllers\SmtpController;
 use CipiApi\Http\Controllers\SshController;
 use CipiApi\Http\Controllers\SslController;
+use CipiApi\Http\Controllers\ValkeyController;
 use CipiApi\Http\Controllers\StatusController;
 use CipiApi\Http\Controllers\WwwController;
 use CipiApi\Http\Controllers\YmlController;
@@ -117,6 +119,13 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::put('/apps/{name}/nginx', [NginxController::class, 'update'])->middleware('ability:nginx-manage');
     Route::delete('/apps/{name}/nginx', [NginxController::class, 'destroy'])->middleware('ability:nginx-manage');
 
+    // The nginx page cache of an app (Cipi CLI ≥ 5.17.0): nginx answers with the page PHP
+    // made, without running PHP. Synchronous; each change answers with the cache after it.
+    Route::get('/cache', [PageCacheController::class, 'list'])->middleware('ability:nginx-view');
+    Route::get('/apps/{name}/cache', [PageCacheController::class, 'show'])->middleware('ability:nginx-view');
+    Route::put('/apps/{name}/cache', [PageCacheController::class, 'update'])->middleware('ability:nginx-manage');
+    Route::post('/apps/{name}/cache/clear', [PageCacheController::class, 'clear'])->middleware('ability:nginx-manage');
+
     // Node apps + runtimes (Cipi CLI ≥ 5.4.0 + API sudoers ≥ 5.4.1)
     Route::get('/node', [NodeController::class, 'runtimes'])->middleware('ability:node-view');
     // Node runtimes — install, upgrade, server default, remove (Cipi CLI ≥ 5.9.0 sudoers; 503 on an older core)
@@ -188,6 +197,11 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::get('/frankenphp', [FrankenPhpController::class, 'status'])->middleware('ability:php-view');
     Route::post('/frankenphp/upgrade', [FrankenPhpController::class, 'upgrade'])->middleware('ability:php-manage');
 
+    // The PHP of an Octane app (Cipi CLI ≥ 5.17.0): GET sync; the PHP by its number and a restart are jobs
+    Route::get('/apps/{name}/octane', [FrankenPhpController::class, 'appPhp'])->middleware('ability:php-view');
+    Route::put('/apps/{name}/octane/php', [FrankenPhpController::class, 'switchPhp'])->middleware('ability:php-manage');
+    Route::post('/apps/{name}/octane/restart', [FrankenPhpController::class, 'restart'])->middleware('ability:php-manage');
+
     // SSH keys — cipi user (Cipi CLI ≥ 5.0.6)
     Route::get('/ssh/keys', [SshController::class, 'list'])->middleware('ability:ssh-view');
     Route::post('/ssh/keys', [SshController::class, 'add'])->middleware('ability:ssh-manage');
@@ -199,6 +213,14 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/services/{name}/restart', [ServiceController::class, 'restart'])
         ->middleware('ability:services-manage')
         ->where('name', '[a-z0-9.-]+');
+
+    // Valkey per app, for the whole server (Cipi CLI ≥ 5.17.0). Giving an app its own
+    // instance and moving it back are jobs; no password is ever in an answer.
+    Route::get('/valkey', [ValkeyController::class, 'list'])->middleware('ability:services-view');
+    Route::post('/valkey/isolate', [ValkeyController::class, 'isolate'])->middleware('ability:services-manage');
+    Route::post('/valkey/share', [ValkeyController::class, 'share'])->middleware('ability:services-manage');
+    Route::post('/valkey/flush-shared', [ValkeyController::class, 'flushShared'])->middleware('ability:services-manage');
+    Route::post('/valkey/{name}/restart', [ValkeyController::class, 'restart'])->middleware('ability:services-manage');
 
     // SMTP notifications (Cipi CLI ≥ 5.0.7)
     Route::get('/smtp', [SmtpController::class, 'show'])->middleware('ability:smtp-view');
@@ -240,6 +262,9 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::get('/notifications/triggers', [NotificationController::class, 'triggers'])->middleware('ability:notifications-view,smtp-view');
     Route::put('/notifications/triggers', [NotificationController::class, 'updateTriggers'])->middleware('ability:notifications-manage,smtp-manage');
     Route::post('/notifications/triggers/reset', [NotificationController::class, 'resetTriggers'])->middleware('ability:notifications-manage,smtp-manage');
+    // How notifications read (Cipi CLI ≥ 5.17.0): the time zone of their Time line, the name they give the server
+    Route::get('/notifications/settings', [NotificationController::class, 'settings'])->middleware('ability:notifications-view,smtp-view');
+    Route::put('/notifications/settings', [NotificationController::class, 'updateSettings'])->middleware('ability:notifications-manage,smtp-manage');
 
     // Metrics & health history (Cipi CLI ≥ 5.11.0) — synchronous reads of the server's SQLite
     Route::get('/metrics', [MetricsController::class, 'overview'])->middleware('ability:metrics-view');

@@ -84,6 +84,12 @@ use CipiApi\Mcp\Tools\IpWhitelistShowTool;
 use CipiApi\Mcp\Tools\JobShowTool;
 use CipiApi\Mcp\Tools\FrankenPhpStatusTool;
 use CipiApi\Mcp\Tools\FrankenPhpUpgradeTool;
+use CipiApi\Mcp\Tools\OctanePhpShowTool;
+use CipiApi\Mcp\Tools\OctanePhpSwitchTool;
+use CipiApi\Mcp\Tools\PageCacheClearTool;
+use CipiApi\Mcp\Tools\PageCacheShowTool;
+use CipiApi\Mcp\Tools\PageCacheUpdateTool;
+use CipiApi\Mcp\Tools\ValkeyListTool;
 use CipiApi\Mcp\Tools\PhpListTool;
 use CipiApi\Mcp\Tools\ServerStatusTool;
 use CipiApi\Mcp\Tools\ServiceListTool;
@@ -102,7 +108,7 @@ use Laravel\Mcp\Server;
 
 #[Name('Cipi Server')]
 #[Version('1.8.0')]
-#[Instructions('Cipi server management: apps (Laravel, custom, Node) with an environment label each (production, staging, …), aliases, www redirects, app/path redirects, prefix proxies, databases (MariaDB/PostgreSQL), resource and soft disk limits, disk usage (server, apps, databases), cipi.yml (plan, apply, auto-apply after deploy; cipi-<env>.yml per environment), SSL (HTTP-01 or Cloudflare DNS-01 / wildcard), Meilisearch, deploy audit, monitor, the firewall (UFW, fail2ban, CrowdSec — read-only here), jobs, logs, and server status. Requires mcp-access token ability only.')]
+#[Instructions('Cipi server management: apps (Laravel, custom, Node) with an environment label each (production, staging, …), aliases, www redirects, app/path redirects, prefix proxies, databases (MariaDB/PostgreSQL), resource and soft disk limits, disk usage (server, apps, databases), cipi.yml (plan, apply, auto-apply after deploy; cipi-<env>.yml per environment), SSL (HTTP-01 or Cloudflare DNS-01 / wildcard), Meilisearch, deploy audit, monitor, the firewall (UFW, fail2ban, CrowdSec — read-only here), the nginx page cache of an app, the PHP of an Octane app, Valkey per app (read-only here), jobs, logs, and server status. Requires mcp-access token ability only.')]
 class CipiServer extends Server
 {
     /**
@@ -207,6 +213,12 @@ class CipiServer extends Server
         PhpListTool::class,
         FrankenPhpStatusTool::class,
         FrankenPhpUpgradeTool::class,
+        OctanePhpShowTool::class,
+        OctanePhpSwitchTool::class,
+        PageCacheShowTool::class,
+        PageCacheUpdateTool::class,
+        PageCacheClearTool::class,
+        ValkeyListTool::class,
         IpWhitelistShowTool::class,
     ];
 }

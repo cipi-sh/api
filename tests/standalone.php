@@ -716,7 +716,136 @@ namespace {
     $zs = $Z::fromJson(['enabled' => false, 'tunnel' => null]);
     ok($zs['enabled'] === false && $zs['cloudflared'] === null && $zs['details'] === ['enabled' => false, 'tunnel' => null], 'zt off in JSON');
     $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
-    ok($spec['info']['version'] === '1.46.0' && isset($spec['components']['schemas']['ZtStatusResponse']['properties']['data']['properties']['details']), 'OpenAPI 1.46.0: details on GET /zt');
+    ok(version_compare($spec['info']['version'], '1.46.0', '>=') && isset($spec['components']['schemas']['ZtStatusResponse']['properties']['data']['properties']['details']), 'OpenAPI ≥ 1.46.0: details on GET /zt');
+
+    echo "--- 1.47.0 (Cipi 5.17.0): page cache, Octane PHP, Valkey per app, notification settings\n";
+    foreach (['CipiPageCacheService', 'PageCacheRefusedException', 'CipiValkeyCliService', 'ValkeyRefusedException'] as $c) { require_once $src . $c . '.php'; }
+    $P = 'CipiApi\Services\CipiPageCacheService';
+    $parser = new CipiApi\Services\CipiOutputParser;
+    $cstat = ['app' => 'blog', 'supported' => true, 'kind' => 'fastcgi', 'enabled' => true, 'active' => true, 'ttl' => '10m', 'ttl_seconds' => 600, 'size' => '256m', 'clear_on_deploy' => true, 'files' => 12, 'bytes' => 4096, 'path' => '/var/cache/nginx/cipi/blog', 'suspended' => false, 'clear_command' => 'sudo /usr/local/bin/cipi-cache-clear blog'];
+    $okJson = fn (array $j) => ['output' => "sudo: unable to resolve host x\n" . json_encode($j, JSON_PRETTY_PRINT), 'exit_code' => 0, 'success' => true];
+    foreach (['cache --json', "cache 'blog' status --json", "cache 'blog' on --ttl='10m' --size='256m' --no-deploy-clear", "cache 'blog' off", "cache 'blog' clear", "frankenphp php 'shop' --json", "frankenphp php 'shop' '8.5' --yes", "frankenphp restart 'shop'", 'notification timezone --json', "notification timezone 'Europe/Rome' --json", "notification server-name 'production' --json", 'valkey list --json', "valkey isolate 'shop' --yes", 'valkey isolate --all --yes', "valkey share 'shop' --yes --no-copy", "valkey restart 'shop'", 'valkey flush-shared --yes'] as $c) {
+        ok((new FakeCli)->commandIsPermitted($c), "allowed: cipi {$c}");
+    }
+    ok(! (new FakeCli)->commandIsPermitted('valkey flush-shared --force --yes') && ! (new FakeCli)->commandIsPermitted('valkey list') && ! (new FakeCli)->commandIsPermitted("frankenphp use 'shop' x"), 'not allowed: flush-shared --force, a valkey list that is not JSON, frankenphp use');
+
+    $cli = new ScriptCli; $cli->by = ["cache 'blog' status --json" => $okJson($cstat), 'cache --json' => $okJson(['apps' => [$cstat, ['app' => 'spa', 'supported' => false] + $cstat]])];
+    $pc = new $P($cli, new FakeVersion('5.17.0'), $parser);
+    ok($pc->show('blog')['ttl_seconds'] === 600 && $pc->show('blog')['clear_command'] === 'sudo /usr/local/bin/cipi-cache-clear blog', 'page cache: the status, decoded past a sudo line');
+    ok(count($pc->list()['apps']) === 2 && end($cli->ran) === 'cache --json', 'page cache: the list of every app');
+    $pc->update('blog', ['enabled' => true, 'ttl' => '1h', 'size' => '2g', 'clear_on_deploy' => false]);
+    ok(in_array("cache 'blog' on --ttl='1h' --size='2g' --no-deploy-clear", $cli->ran, true), 'page cache on: ttl, size and --no-deploy-clear, each quoted');
+    $pc->update('blog', ['enabled' => true]);
+    ok(in_array("cache 'blog' on", $cli->ran, true), 'page cache on with nothing else: what is stored stays');
+    $pc->update('blog', ['enabled' => true, 'clear_on_deploy' => true]);
+    ok(in_array("cache 'blog' on --deploy-clear", $cli->ran, true), 'clear_on_deploy true is --deploy-clear');
+    $pc->update('blog', ['enabled' => false]);
+    ok(in_array("cache 'blog' off", $cli->ran, true), 'page cache off');
+    ok($pc->inputError(['enabled' => false, 'ttl' => '10m']) !== null && $pc->inputError(['enabled' => false]) === null && $pc->inputError(['enabled' => false, 'ttl' => null, 'size' => '']) === null, 'ttl, size and clear_on_deploy only with enabled: true (null and empty count as not given)');
+    ok($pc->inputError(['enabled' => true, 'ttl' => '10 minutes']) !== null && $pc->inputError(['enabled' => true, 'ttl' => '31d']) !== null && $pc->inputError(['enabled' => true, 'ttl' => '30d']) === null && $pc->inputError(['enabled' => true, 'ttl' => '0s']) !== null, 'ttl: s, m, h, d — one second to thirty days');
+    ok($pc->inputError(['enabled' => true, 'size' => '8m']) !== null && $pc->inputError(['enabled' => true, 'size' => '101g']) !== null && $pc->inputError(['enabled' => true, 'size' => '100g']) === null && $pc->inputError(['enabled' => true, 'size' => '1G']) !== null, 'size: 16m to 100g');
+    ok($P::ttlSeconds('90s') === 90 && $P::ttlSeconds('2h') === 7200 && $P::ttlSeconds('1d') === 86400 && $P::ttlSeconds('x') === null && $P::sizeValid('16m') && ! $P::sizeValid('15m'), 'ttlSeconds and sizeValid, as the CLI counts them');
+    $cli->by = ["cache 'blog' clear" => ['output' => "\e[0;32m✓\e[0m Page cache of 'blog' emptied — 128 page(s); the next visit to each page runs PHP and caches it again", 'exit_code' => 0, 'success' => true]] + $cli->by;
+    ok($pc->clear('blog')['cleared'] === 128 && $pc->clear('blog')['enabled'] === true, 'clear: the pages deleted, and the status after it');
+    $cli->by = ["cache 'blog' clear" => ['output' => "[INFO] The page cache of 'blog' is off — nothing to empty", 'exit_code' => 0, 'success' => true]] + $cli->by;
+    ok($pc->clear('blog')['cleared'] === 0, 'clear with the cache off: nothing deleted, no error');
+    $cli = new ScriptCli; $cli->by = ["cache 'blog' on" => ['output' => "\e[0;31m[ERROR]\e[0m nginx refused the configuration — nothing changed\n  [emerg] \"fastcgi_cache\" zone \"cipi_blog\" is unknown", 'exit_code' => 1, 'success' => false]];
+    $pc = new $P($cli, new FakeVersion('5.17.0'), $parser);
+    ok(str_starts_with((string) thrown(fn () => $pc->update('blog', ['enabled' => true])), 'CipiApi\Services\PageCacheRefusedException: nginx refused the configuration'), 'nginx refusing the cache is a refusal (422), with the CLI\'s words');
+    $cli->by = ["cache 'spa' on" => ['output' => "[ERROR] 'spa' is a Node app: its pages come from its own server", 'exit_code' => 1, 'success' => false]];
+    ok(str_starts_with((string) thrown(fn () => $pc->update('spa', ['enabled' => true])), 'CipiApi\Services\PageCacheRefusedException'), 'a Node app is a refusal too');
+    $cli->by = ["cache 'blog' status" => ['output' => 'sudo: a password is required', 'exit_code' => 1, 'success' => false]];
+    ok(str_contains((string) thrown(fn () => $pc->show('blog')), 'cipi api update'), 'sudoers older than the core: the message says what to run');
+    ok(str_contains((string) thrown(fn () => (new $P(new FakeCli, new FakeVersion('5.16.0'), $parser))->show('blog')), 'needs Cipi 5.17.0+') && str_contains((string) thrown(fn () => (new $P(new FakeCli, new FakeVersion('5.16.0'), $parser))->update('blog', ['enabled' => true])), 'needs Cipi 5.17.0+'), 'page cache on an older core: refused before anything runs');
+
+    $op = ['app' => 'shop', 'php' => '8.5', 'octane_php' => '8.6.0', 'build' => '1.14.0-php8.6.0-99137391', 'frankenphp' => '1.14.0', 'state' => 'mismatch', 'restart_pending' => false, 'available_php' => ['8.5', '8.6'], 'fix' => ['command' => 'cipi frankenphp php shop 8.5', 'why' => 'a build with PHP 8.5 is on this server']];
+    $cli = new ScriptCli; $cli->by = ["frankenphp php 'shop' --json" => $okJson($op)];
+    $fp = new CipiApi\Services\CipiFrankenPhpService($cli, new FakeVersion('5.17.0'));
+    ok($fp->appPhp('shop')['state'] === 'mismatch' && $fp->appPhp('shop')['fix']['command'] === 'cipi frankenphp php shop 8.5' && $fp->appPhp('shop')['available_php'] === ['8.5', '8.6'], 'Octane: what answers requests, what runs the rest, and the fix for a mismatch');
+    ok($fp->phpCommand('shop', '8.6') === "frankenphp php 'shop' '8.6' --yes" && $fp->restartCommand('shop') === "frankenphp restart 'shop'", 'Octane: the PHP by its number, and the restart');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiFrankenPhpService(new FakeCli, new FakeVersion('5.16.0')))->phpCommand('shop', '8.5')), 'needs Cipi 5.17.0+') && (new CipiApi\Services\CipiFrankenPhpService(new FakeCli, new FakeVersion('5.16.0')))->upgradeCommand('shop') !== '', 'Octane PHP on an older core: refused — the upgrade of 5.10.0 still goes');
+    $cli->by = ["frankenphp php 'shop' --json" => ['output' => "sudo: a password is required", 'exit_code' => 1, 'success' => false]];
+    ok(str_contains((string) thrown(fn () => $fp->appPhp('shop')), 'cipi api update'), 'Octane: sudoers older than the core');
+    $po = new ReflectionMethod($parser, 'parseOctanePhp'); $po->setAccessible(true);
+    ok($po->invoke($parser, "✓ 'shop' is on PHP 8.5: Octane on 1.14.0-php8.5.4-aa11bb22, Composer, artisan, cron and workers on /usr/bin/php8.5") === ['app' => 'shop', 'php' => '8.5', 'build' => '1.14.0-php8.5.4-aa11bb22', 'changed' => true], 'job octane-php: the app, its PHP and its build');
+    ok($po->invoke($parser, "[INFO] 'shop' is on PHP 8.5 already — Octane on 1.14.0-php8.5.4-aa11bb22, the rest on /usr/bin/php8.5")['changed'] === false, 'job octane-php: already there');
+    ok(($po->invoke($parser, "[ERROR] Octane did not come up\n[ERROR] 'shop' was not moved: it stays on PHP 8.5, Octane on x")['changed'] ?? null) === false, 'job octane-php: left where it was');
+    ok($parser->parse('octane-restart', '✓ shop-octane restarted and answering') === ['app' => 'shop', 'restarted' => true] && $parser->parse('octane-restart', '[INFO] shop-octane is stopped (supervisorctl start shop-octane) — left as it is')['stopped'] === true, 'job octane-restart');
+
+    $V = 'CipiApi\Services\CipiValkeyCliService';
+    $vl = ['shared_port' => 6379, 'apps' => [['app' => 'shop', 'uses' => 'own', 'port' => 6401, 'instance' => 'running', 'memory' => '2.31M', 'keys' => 412], ['app' => 'blog', 'uses' => 'shared', 'port' => null, 'instance' => null, 'memory' => null, 'keys' => null], ['app' => 'crm', 'uses' => 'external', 'port' => null, 'instance' => null, 'memory' => null, 'keys' => null]]];
+    $cli = new ScriptCli; $cli->by = ['valkey list --json' => $okJson($vl)];
+    $vk = new $V($cli, new FakeVersion('5.17.0'), $parser);
+    $l = $vk->list();
+    ok($l['shared'] === ['blog'] && $l['isolated'] === 1 && $l['shared_port'] === 6379 && count($l['apps']) === 3, 'valkey: the list, who is still on the shared instance, how many have their own');
+    ok($vk->app('shop')['port'] === 6401 && $vk->app('ghost') === null, 'valkey: one app of the list');
+    ok($vk->isolateCommand('blog') === "valkey isolate 'blog' --yes" && $vk->isolateCommand(null) === 'valkey isolate --all --yes' && $vk->isolateCommand('blog', false) === "valkey isolate 'blog' --yes --no-copy" && $vk->shareCommand('shop') === "valkey share 'shop' --yes", 'valkey: isolate one or --all, share — always --yes, --no-copy when asked');
+    $newPass = 'S3cretNewSharedPassw0rdThatMustNotLeak0000';
+    $cli->by = ['valkey flush-shared --yes' => ['output' => "✓ Shared Valkey emptied\n\n✓ New Valkey password: {$newPass}\n⚠ SAVE THIS PASSWORD — shown only once", 'exit_code' => 0, 'success' => true]] + $cli->by;
+    $fl = $vk->flushShared();
+    ok($fl['flushed'] === true && ! str_contains(json_encode($fl), $newPass), 'flush-shared: done, and the new password is nowhere in the answer');
+    $cli->by = ['valkey flush-shared --yes' => ['output' => "[ERROR] Still in use by: blog crm — move them first (cipi valkey isolate --all), or --force", 'exit_code' => 1, 'success' => false]] + $cli->by;
+    $e = (string) thrown(fn () => $vk->flushShared());
+    ok(str_starts_with($e, 'CipiApi\Services\ValkeyRefusedException') && str_contains($e, 'blog crm') && ! str_contains($e, '--force'), 'flush-shared while apps use it: refused, the apps named, --force not suggested');
+    $cli->by = ['valkey flush-shared --yes' => ['output' => "✓ Shared Valkey emptied\n✓ New Valkey password: {$newPass}\nsed: cannot write", 'exit_code' => 1, 'success' => false]] + $cli->by;
+    ok(! str_contains((string) thrown(fn () => $vk->flushShared()), $newPass), 'flush-shared failing half way: the output is not in the error either');
+    $cli->by = ["valkey restart 'blog'" => ['output' => '[ERROR] Usage: cipi valkey restart <app>  (an app with its own instance — cipi valkey list)', 'exit_code' => 1, 'success' => false]] + $cli->by;
+    ok(str_starts_with((string) thrown(fn () => $vk->restart('blog')), 'CipiApi\Services\ValkeyRefusedException'), 'restart of an app without its own instance: refused');
+    ok(str_contains((string) thrown(fn () => (new $V(new FakeCli, new FakeVersion('5.16.0'), $parser))->list()), 'needs Cipi 5.17.0+'), 'valkey from the API on an older core: refused');
+    $mv = $parser->parse('valkey-isolate', "✓ shop: own Valkey on 127.0.0.1:6401 — 412 key(s) copied\n✓ blog: own Valkey on 127.0.0.1:6402\n✓ 2 app(s) moved to their own instance\n[WARN] Left on the shared instance: crm old — see above");
+    ok($mv['moved'][0] === ['app' => 'shop', 'uses' => 'own', 'port' => 6401, 'keys_copied' => 412] && $mv['moved'][1]['keys_copied'] === null && $mv['left'] === ['crm', 'old'] && $mv['shared_can_be_flushed'] === false, 'job valkey-isolate: who moved, with port and keys, and who was left');
+    $mv = $parser->parse('valkey-isolate', "✓ blog: own Valkey on 127.0.0.1:6402 — 3 key(s) copied\n[INFO] No app uses the shared instance any more. It still holds the old keys");
+    ok($mv['shared_can_be_flushed'] === true, 'job valkey-isolate: nobody left on the shared instance');
+    ok($parser->parse('valkey-share', '✓ shop: back on the shared Valkey (127.0.0.1:6379)')['moved'][0] === ['app' => 'shop', 'uses' => 'shared', 'port' => 6379, 'keys_copied' => null], 'job valkey-share');
+
+    $ns = ['timezone' => null, 'server_timezone' => 'Etc/UTC', 'server_name' => null, 'hostname' => 'vmi12334', 'now' => '2026-11-26 10:00:00 UTC'];
+    $cli = new ScriptCli; $cli->by = ['notification timezone --json' => $okJson($ns), "notification timezone 'Europe/Rome' --json" => $okJson(['timezone' => 'Europe/Rome', 'now' => '2026-11-26 11:00:00 CET'] + $ns), "notification server-name 'production' --json" => $okJson(['timezone' => 'Europe/Rome', 'server_name' => 'production'] + $ns), 'notification timezone server --json' => $okJson($ns), 'notification server-name --clear --json' => $okJson($ns)];
+    $nt = new CipiApi\Services\CipiNotificationsService($cli, new FakeVersion('5.17.0'));
+    ok($nt->settings()['hostname'] === 'vmi12334' && $nt->settings()['timezone'] === null, 'notification settings: read');
+    $r = $nt->updateSettings(['timezone' => 'Europe/Rome', 'server_name' => 'production']);
+    ok($r['server_name'] === 'production' && $r['timezone'] === 'Europe/Rome' && in_array("notification timezone 'Europe/Rome' --json", $cli->ran, true) && in_array("notification server-name 'production' --json", $cli->ran, true), 'notification settings: time zone and name set, the answer is the settings after both');
+    $nt->updateSettings(['timezone' => null, 'server_name' => '']);
+    ok(in_array('notification timezone server --json', $cli->ran, true) && in_array('notification server-name --clear --json', $cli->ran, true), 'null or "" puts the server\'s own time zone and the hostname back');
+    $cli->by["notification server-name 'eu west 1' --json"] = $okJson(['server_name' => 'eu west 1'] + $ns);
+    $n = count($cli->ran); $nt->updateSettings(['server_name' => 'eu west 1']);
+    ok(count($cli->ran) === $n + 1 && end($cli->ran) === "notification server-name 'eu west 1' --json", 'only what is given is changed; a name with spaces is one argument');
+    ok($nt->settingsError([]) !== null && $nt->settingsError(['timezone' => 'Europe/Rome; rm -rf /']) !== null && $nt->settingsError(['timezone' => '../../etc/passwd']) !== null && $nt->settingsError(['timezone' => 'America/Argentina/Buenos_Aires']) === null && $nt->settingsError(['timezone' => 'UTC']) === null && $nt->settingsError(['timezone' => null]) === null, 'time zone: an IANA name, nothing a shell or a path reads');
+    ok($nt->settingsError(['server_name' => '--clear']) !== null && $nt->settingsError(['server_name' => str_repeat('a', 41)]) !== null && $nt->settingsError(['server_name' => "prod\nSubject: x"]) !== null && $nt->settingsError(['server_name' => 'prod $(id)']) !== null && $nt->settingsError(['server_name' => 'production']) === null && $nt->settingsError(['server_name' => 'EU West 1.a_b-c']) === null, 'server name: letters, digits, spaces, dots, dashes, underscores; not an option, not a header');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiNotificationsService(new ScriptCli, new FakeVersion('5.16.0')))->settings()), 'needs Cipi 5.17.0+') && count((new CipiApi\Services\CipiNotificationsService(new ScriptCli, new FakeVersion('5.16.0')))->flags([])) === 0, 'notification settings on an older core: refused; the channels of 5.12.0 are not');
+
+    $abil = (string) file_get_contents($src . 'CipiJobAbilities.php');
+    ok(str_contains($abil, "'octane-php' => 'php-manage'") && str_contains($abil, "'octane-restart' => 'php-manage'") && str_contains($abil, "'valkey-isolate' => 'services-manage'") && str_contains($abil, "'valkey-share' => 'services-manage'"), 'the new job types have their ability');
+    $routes = (string) file_get_contents($root . '/routes/api.php');
+    foreach ([
+        "Route::get('/cache', [PageCacheController::class, 'list'])->middleware('ability:nginx-view')",
+        "Route::get('/apps/{name}/cache', [PageCacheController::class, 'show'])->middleware('ability:nginx-view')",
+        "Route::put('/apps/{name}/cache', [PageCacheController::class, 'update'])->middleware('ability:nginx-manage')",
+        "Route::post('/apps/{name}/cache/clear', [PageCacheController::class, 'clear'])->middleware('ability:nginx-manage')",
+        "Route::get('/apps/{name}/octane', [FrankenPhpController::class, 'appPhp'])->middleware('ability:php-view')",
+        "Route::put('/apps/{name}/octane/php', [FrankenPhpController::class, 'switchPhp'])->middleware('ability:php-manage')",
+        "Route::post('/apps/{name}/octane/restart', [FrankenPhpController::class, 'restart'])->middleware('ability:php-manage')",
+        "Route::get('/valkey', [ValkeyController::class, 'list'])->middleware('ability:services-view')",
+        "Route::post('/valkey/isolate', [ValkeyController::class, 'isolate'])->middleware('ability:services-manage')",
+        "Route::post('/valkey/share', [ValkeyController::class, 'share'])->middleware('ability:services-manage')",
+        "Route::post('/valkey/flush-shared', [ValkeyController::class, 'flushShared'])->middleware('ability:services-manage')",
+        "Route::post('/valkey/{name}/restart', [ValkeyController::class, 'restart'])->middleware('ability:services-manage')",
+        "Route::get('/notifications/settings', [NotificationController::class, 'settings'])->middleware('ability:notifications-view,smtp-view')",
+        "Route::put('/notifications/settings', [NotificationController::class, 'updateSettings'])->middleware('ability:notifications-manage,smtp-manage')",
+    ] as $line) {
+        ok(str_contains($routes, $line), 'route: ' . substr($line, 7, strpos($line, ',') - 7));
+    }
+    ok(strpos($routes, "'/valkey/flush-shared'") < strpos($routes, "'/valkey/{name}/restart'"), 'the fixed /valkey paths come before /valkey/{name}/restart');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    $sc = $spec['components']['schemas'];
+    ok($spec['info']['version'] === '1.47.0' && isset($spec['paths']['/cache']['get'], $spec['paths']['/apps/{name}/cache']['get'], $spec['paths']['/apps/{name}/cache']['put'], $spec['paths']['/apps/{name}/cache/clear']['post'], $spec['paths']['/apps/{name}/octane']['get'], $spec['paths']['/apps/{name}/octane/php']['put'], $spec['paths']['/apps/{name}/octane/restart']['post'], $spec['paths']['/valkey']['get'], $spec['paths']['/valkey/isolate']['post'], $spec['paths']['/valkey/share']['post'], $spec['paths']['/valkey/flush-shared']['post'], $spec['paths']['/valkey/{name}/restart']['post'], $spec['paths']['/notifications/settings']['get'], $spec['paths']['/notifications/settings']['put'], $sc['PageCache'], $sc['PageCacheRequest'], $sc['OctanePhp'], $sc['ValkeyList'], $sc['NotificationSettings'], $sc['JobResultOctanePhp'], $sc['JobResultValkeyMove']), 'OpenAPI 1.47.0: the new routes and schemas');
+    $refs = []; array_walk_recursive($spec, function ($v, $k) use (&$refs) { if ($k === '$ref') { $refs[$v] = true; } });
+    $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
+    ok($missing === [], 'OpenAPI: every $ref points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));
+    $sud = '/home/claude/cipi/lib/cipi-api-sudoers.sh';
+    if (is_file(getenv('CIPI_CORE_SUDOERS') ?: $sud)) {
+        $sudoers = (string) file_get_contents(getenv('CIPI_CORE_SUDOERS') ?: $sud);
+        ok(str_contains($sudoers, 'cipi cache *') && str_contains($sudoers, 'cipi valkey flush-shared --yes,') && str_contains($sudoers, 'cipi frankenphp php *') && str_contains($sudoers, 'cipi notification server-name *') && ! str_contains($sudoers, 'cipi valkey flush-shared *'), 'the core\'s sudoers carry what the API runs (flush-shared spelled out)');
+    }
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);
