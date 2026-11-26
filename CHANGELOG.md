@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.46.0] - 2026-11-26
+
+For Cipi 5.16.0: the whole picture of Cloudflare Zero Trust on `GET /api/zt`.
+
+### Added
+
+- **`details` on `GET /api/zt`** — the API now runs `cipi zt status --json` (Cipi 5.16.0): the tunnel (running here, Cloudflare's status, every connector with its addresses and whether it is this server), the locks, every hostname with its Access `paths` and `allow` list, service tokens (names, targets and client ids — never a secret), webhook bypass, Origin CA and purge after deploy, the panel and the API, SSH and its short-lived certificates, TCP services, previews and what is not on the tunnel yet. The summary fields the endpoint always had (`enabled`, `cloudflared`, `tunnel`, `real_ip`, `lock_http`, `lock_ssh`, `ssh_hostname`) are read from it. An older Cipi prints its text status for the same command: `details` is `null` and the fields are read from `raw`, as before — one call either way. Still read-only (`zt-view`); every change stays on the host CLI.
+
 ## [1.45.0] - 2026-11-25
 
 For Cipi 5.15.0: what each notification channel takes, the visitor's address behind Cloudflare from the panel, and a database list that holds databases only.

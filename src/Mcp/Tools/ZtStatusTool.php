@@ -10,7 +10,7 @@ use Laravel\Mcp\Server\Attributes\Description;
 use Laravel\Mcp\Server\Tools\Annotations\IsReadOnly;
 use Laravel\Mcp\Server\Tool;
 
-#[Description('Cloudflare Zero Trust status (cipi zt status): cloudflared/tunnel state, real_ip, HTTP/SSH locks and hostnames. Read-only — enable, hostname, access and lock commands stay on the host CLI. Requires Cipi 5.3.0+.')]
+#[Description('Cloudflare Zero Trust status (cipi zt status): cloudflared/tunnel state, real_ip, HTTP/SSH locks and hostnames; with Cipi 5.16.0+ `details` adds Access paths and people, service tokens, TCP services, SSH certificates, previews and the connectors of the tunnel. Read-only — enable, hostname, access and lock commands stay on the host CLI. Requires Cipi 5.3.0+.')]
 #[IsReadOnly]
 class ZtStatusTool extends Tool
 {
