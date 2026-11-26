@@ -139,6 +139,25 @@ class NotificationController extends Controller
         return $this->respond(fn () => $this->notifications->setEnabled($id, $enabled), 422);
     }
 
+    /** How notifications read: time zone and server name (Cipi CLI ≥ 5.17.0). */
+    public function settings(): JsonResponse
+    {
+        return $this->respond(fn () => $this->notifications->settings());
+    }
+
+    public function updateSettings(Request $request): JsonResponse
+    {
+        $input = $request->validate([
+            'timezone' => 'sometimes|nullable|string|max:64',
+            'server_name' => 'sometimes|nullable|string|max:40',
+        ]);
+        if ($err = $this->notifications->settingsError($input)) {
+            return response()->json(['error' => $err], 422);
+        }
+
+        return $this->respond(fn () => $this->notifications->updateSettings($input), 422);
+    }
+
     protected function badId(string $id): ?JsonResponse
     {
         return preg_match(CipiNotificationsService::ID_PATTERN, $id) === 1

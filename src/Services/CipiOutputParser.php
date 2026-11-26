@@ -47,6 +47,9 @@ class CipiOutputParser
             'app-limits' => $this->parseAppLimits($plain),
             'app-jit' => $this->parseAppJit($plain),
             'frankenphp-upgrade' => $this->parseFrankenPhpUpgrade($plain),
+            'octane-php' => $this->parseOctanePhp($plain),
+            'octane-restart' => $this->parseOctaneRestart($plain),
+            'valkey-isolate', 'valkey-share' => $this->parseValkeyMove($plain),
             'package-install' => $this->parsePackageInstall($plain),
             'package-remove' => $this->parsePackageRemove($plain),
             'app-yml-apply' => $this->parseAppYmlApply($plain),
@@ -515,6 +518,71 @@ class CipiOutputParser
         }
 
         return ['apps' => $apps, 'rolled_back' => $rolledBack];
+    }
+
+    /**
+     * `cipi frankenphp php <app> X.Y`: the app on one PHP, with the build
+     * Octane runs — or already there, or left where it was.
+     */
+    protected function parseOctanePhp(string $text): ?array
+    {
+        if (preg_match("/'([a-z][a-z0-9]{2,31})' is on PHP ([0-9.]+): Octane on (\\S+?),/", $text, $m)) {
+            return ['app' => $m[1], 'php' => $m[2], 'build' => $m[3], 'changed' => true];
+        }
+        if (preg_match("/'([a-z][a-z0-9]{2,31})' is on PHP ([0-9.]+) already — Octane on (\\S+?),/u", $text, $m)) {
+            return ['app' => $m[1], 'php' => $m[2], 'build' => $m[3], 'changed' => false];
+        }
+        if (preg_match("/'([a-z][a-z0-9]{2,31})' was not moved: it stays on PHP ([0-9.]+)/", $text, $m)) {
+            return ['app' => $m[1], 'php' => $m[2], 'changed' => false, 'error' => $this->extractErrorMessage($text)];
+        }
+
+        return null;
+    }
+
+    protected function parseOctaneRestart(string $text): ?array
+    {
+        if (preg_match('/([a-z][a-z0-9]{2,31})-octane restarted and answering/', $text, $m)) {
+            return ['app' => $m[1], 'restarted' => true];
+        }
+        if (preg_match('/([a-z][a-z0-9]{2,31})-octane is stopped/', $text, $m)) {
+            return ['app' => $m[1], 'restarted' => false, 'stopped' => true];
+        }
+
+        return null;
+    }
+
+    /**
+     * `cipi valkey isolate <app>|--all` and `share <app>`: each app that moved
+     * (its port and the keys copied, never a password) and the ones left where
+     * they were.
+     */
+    protected function parseValkeyMove(string $text): ?array
+    {
+        $moved = [];
+        if (preg_match_all('/([a-z][a-z0-9]{2,31}): own Valkey on 127\\.0\\.0\\.1:([0-9]+)(?: — ([0-9]+) key\\(s\\) copied)?/u', $text, $all, PREG_SET_ORDER)) {
+            foreach ($all as $m) {
+                $moved[] = ['app' => $m[1], 'uses' => 'own', 'port' => (int) $m[2], 'keys_copied' => isset($m[3]) ? (int) $m[3] : null];
+            }
+        }
+        if (preg_match_all('/([a-z][a-z0-9]{2,31}): back on the shared Valkey \\(127\\.0\\.0\\.1:([0-9]+)\\)/', $text, $all, PREG_SET_ORDER)) {
+            foreach ($all as $m) {
+                $moved[] = ['app' => $m[1], 'uses' => 'shared', 'port' => (int) $m[2], 'keys_copied' => null];
+            }
+        }
+        $left = [];
+        if (preg_match('/Left on the shared instance:((?: [a-z][a-z0-9]{2,31})+)/', $text, $m)) {
+            $left = preg_split('/\\s+/', trim($m[1])) ?: [];
+        }
+        if ($moved === [] && $left === []) {
+            return null;
+        }
+
+        return [
+            'moved' => $moved,
+            'left' => array_values($left),
+            // Nobody left on it: its old keys and the password every app saw can go.
+            'shared_can_be_flushed' => str_contains($text, 'No app uses the shared instance any more'),
+        ];
     }
 
     protected function parseAppLimits(string $text): ?array

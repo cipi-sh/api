@@ -106,6 +106,15 @@ class CipiNotificationsService
         'all' => 'sometimes|boolean',
     ];
 
+    /** The core that writes notifications in a chosen time zone and under a chosen server name. */
+    public const SETTINGS_MIN_CIPI = '5.17.0';
+
+    /** What `cipi notification timezone` takes before it looks the zone up on the server. */
+    public const TIMEZONE_PATTERN = '/^[A-Za-z][A-Za-z0-9_+-]*(\/[A-Za-z0-9_+-]+){0,2}$/';
+
+    /** What `cipi notification server-name` takes. */
+    public const SERVER_NAME_PATTERN = '/^[A-Za-z0-9]([A-Za-z0-9 ._-]{0,38}[A-Za-z0-9._-])?$/';
+
     public function __construct(
         protected CipiCliService $cli,
         protected CipiVersionService $version,
@@ -373,6 +382,77 @@ class CipiNotificationsService
         $this->runOk('notification triggers reset');
 
         return $this->triggers();
+    }
+
+    /**
+     * How notifications read (Cipi 5.17.0): the time zone of their `Time:`
+     * line (`timezone`, null: the server's own, `server_timezone`) and the
+     * name they give the server (`server_name`, null: its `hostname`). `now`
+     * is the time as a notification would write it at this moment.
+     *
+     * @return array{timezone: ?string, server_timezone: string, server_name: ?string, hostname: string, now: string}
+     */
+    public function settings(): array
+    {
+        return $this->settingsJson('notification timezone --json');
+    }
+
+    /** Error for settings input, or null. */
+    public function settingsError(array $input): ?string
+    {
+        if (! array_key_exists('timezone', $input) && ! array_key_exists('server_name', $input)) {
+            return 'Give timezone, server_name or both (null puts the server\'s own back)';
+        }
+        $tz = $input['timezone'] ?? null;
+        if ($tz !== null && $tz !== '' && preg_match(self::TIMEZONE_PATTERN, $tz) !== 1) {
+            return 'timezone: an IANA name such as Europe/Rome, America/New_York or UTC — or null for the server\'s own';
+        }
+        $name = $input['server_name'] ?? null;
+        if ($name !== null && $name !== '' && preg_match(self::SERVER_NAME_PATTERN, $name) !== 1) {
+            return 'server_name: letters, digits, spaces, dots, dashes and underscores, 40 characters at most — or null for the hostname';
+        }
+
+        return null;
+    }
+
+    /**
+     * Set what is given; null (or "") puts the server's own time zone, or the
+     * hostname, back. Answers with the settings after the change.
+     */
+    public function updateSettings(array $input): array
+    {
+        $settings = null;
+        if (array_key_exists('timezone', $input)) {
+            $tz = (string) ($input['timezone'] ?? '');
+            $settings = $this->settingsJson('notification timezone ' . ($tz === '' ? 'server' : escapeshellarg($tz)) . ' --json');
+        }
+        if (array_key_exists('server_name', $input)) {
+            $name = (string) ($input['server_name'] ?? '');
+            $settings = $this->settingsJson('notification server-name ' . ($name === '' ? '--clear' : escapeshellarg($name)) . ' --json');
+        }
+
+        return $settings ?? $this->settings();
+    }
+
+    protected function settingsJson(string $command): array
+    {
+        $this->version->require(self::SETTINGS_MIN_CIPI, 'The time zone and the server name of notifications');
+        $result = $this->cli->run($command);
+        $output = (string) ($result['output'] ?? '');
+        if ($result['exit_code'] !== 0) {
+            $plain = trim((string) preg_replace('/\x1b\[[0-9;]*m/', '', $output));
+            if (preg_match('/sudo: .*(not allowed|a password is required|a terminal is required)/i', $plain)) {
+                throw new \RuntimeException('The time zone and the server name of notifications needs Cipi ' . self::SETTINGS_MIN_CIPI . '+ on this server and its API sudoers (cipi self-update, then cipi api update).');
+            }
+
+            throw new \RuntimeException($this->firstLine($output, 'cipi notification settings failed'));
+        }
+        $decoded = CipiMetricsService::decode($output);
+        if ($decoded === null || ! array_key_exists('server_timezone', $decoded)) {
+            throw new \RuntimeException('cipi notification returned no settings (the time zone and server name needs Cipi ' . self::SETTINGS_MIN_CIPI . '+)');
+        }
+
+        return $decoded;
     }
 
     protected function json(string $command): array
