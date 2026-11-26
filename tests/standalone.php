@@ -671,7 +671,7 @@ namespace {
     ok(str_contains($ctl, "if (\$request->headers->has('CF-Connecting-IP')) {") && str_contains($ctl, '], 409);'), 'real-ip off: refused (409) when the request came through Cloudflare');
     ok(str_contains($routes, "Route::put('/firewall/real-ip', [FirewallController::class, 'realIpEnable'])->middleware('ability:firewall-manage')") && str_contains($routes, "Route::delete('/firewall/real-ip', [FirewallController::class, 'realIpDisable'])->middleware('ability:firewall-manage')") && str_contains($routes, "Route::post('/firewall/real-ip/refresh', [FirewallController::class, 'realIpRefresh'])->middleware('ability:firewall-manage')"), 'routes: real-ip with firewall-manage');
     $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
-    ok(isset($spec['paths']['/firewall/real-ip']['put'], $spec['paths']['/firewall/real-ip']['delete'], $spec['paths']['/firewall/real-ip/refresh']['post'], $spec['components']['schemas']['FirewallStatus']['properties']['real_ip']) && $spec['info']['version'] === '1.45.0', 'OpenAPI 1.45.0: real-ip routes and real_ip');
+    ok(isset($spec['paths']['/firewall/real-ip']['put'], $spec['paths']['/firewall/real-ip']['delete'], $spec['paths']['/firewall/real-ip/refresh']['post'], $spec['components']['schemas']['FirewallStatus']['properties']['real_ip']) && version_compare($spec['info']['version'], '1.45.0', '>='), 'OpenAPI ≥ 1.45.0: real-ip routes and real_ip');
 
     // Events per channel.
     $N = 'CipiApi\Services\CipiNotificationsService';
@@ -694,6 +694,29 @@ namespace {
     $D = 'CipiApi\Services\CipiDatabaseListCliService';
     $rows = [['name' => 'mysql: [Warning] Using a password on the command line interface can be insecure.', 'size_mb' => 0], ['name' => 'mozart'], ['name' => 'WARNING: database "shop" has a collation version mismatch'], ['name' => 'shop_tenant_1'], ['name' => 'mysql_archive'], 'junk'];
     ok(array_column($D::withoutClientNoise($rows), 'name') === ['mozart', 'shop_tenant_1', 'mysql_archive'], 'db list: the MySQL warning and psql notices are not databases; a name like mysql_archive is');
+
+    echo "--- 1.46.0 (Cipi 5.16.0): Zero Trust details\n";
+    require_once $src . 'CipiZtCliService.php';
+    $Z = 'CipiApi\Services\CipiZtCliService';
+    $zjson = ['enabled' => true, 'token' => true, 'tunnel' => ['id' => 't1', 'name' => 'cipi-mozart', 'running' => true, 'status' => 'healthy', 'connectors' => [['id' => 'c1', 'this_server' => true]]],
+        'real_ip' => true, 'lock' => ['http' => true, 'http_mode' => 'dark', 'ssh' => false],
+        'hostnames' => [['app' => 'shop', 'domains' => ['shop.example.com'], 'access' => ['enabled' => true, 'paths' => ['/admin'], 'allow' => ['@acme.io']]]],
+        'ssh' => ['hostname' => 'ssh.example.com'], 'tcp' => [], 'service_tokens' => [['name' => 'panel', 'for' => 'api', 'client_id' => 'x.access']]];
+    $cli = new ScriptCli; $cli->by = ['zt status --json' => ['output' => "sudo: unable to resolve host mozart\n" . json_encode($zjson, JSON_PRETTY_PRINT), 'exit_code' => 0, 'success' => true]];
+    $zs = (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status();
+    ok($zs['enabled'] === true && $zs['cloudflared'] === 'running' && $zs['tunnel'] === 'cipi-mozart' && $zs['lock_http'] === 'true (dark)' && $zs['lock_ssh'] === 'false' && $zs['ssh_hostname'] === 'ssh.example.com' && $zs['real_ip'] === 'CF-Connecting-IP', 'zt: the summary fields, read from the JSON of Cipi 5.16.0');
+    ok(($zs['details']['hostnames'][0]['access']['paths'] ?? null) === ['/admin'] && $zs['raw'] === '' && in_array('zt status --json', $cli->ran, true), 'zt: details is the whole JSON; one call, zt status --json');
+    $text = "\n  Cloudflare Zero Trust\n━━━━\n  cloudflared      \e[0;36mrunning\e[0m\n  Tunnel           cipi-old\n  real_ip          CF-Connecting-IP\n  lock http        false\n  lock ssh         false\n  SSH hostname     not configured\n";
+    $cli = new ScriptCli; $cli->by = ['zt status --json' => ['output' => $text, 'exit_code' => 0, 'success' => true]];
+    $zs = (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status();
+    ok($zs['enabled'] === true && $zs['cloudflared'] === 'running' && $zs['tunnel'] === 'cipi-old' && $zs['details'] === null && str_contains($zs['raw'], 'Cloudflare Zero Trust'), 'zt on an older Cipi: the text it prints for the same command, as before');
+    $cli = new ScriptCli; $cli->by = ['zt status --json' => ['output' => "\n  Cloudflare Zero Trust\n  not enabled  —  cipi zt enable\n", 'exit_code' => 0, 'success' => true]];
+    $zs = (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status();
+    ok($zs['enabled'] === false && $zs['tunnel'] === null, 'zt off on an older Cipi');
+    $zs = $Z::fromJson(['enabled' => false, 'tunnel' => null]);
+    ok($zs['enabled'] === false && $zs['cloudflared'] === null && $zs['details'] === ['enabled' => false, 'tunnel' => null], 'zt off in JSON');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    ok($spec['info']['version'] === '1.46.0' && isset($spec['components']['schemas']['ZtStatusResponse']['properties']['data']['properties']['details']), 'OpenAPI 1.46.0: details on GET /zt');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);
