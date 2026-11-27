@@ -208,6 +208,14 @@ class CipiCliService
         'zt netbird lock http --yes',
         'zt netbird unlock ssh',
         'zt netbird unlock http',
+        // Cipi CLI ≥ 5.18.0: moving apps to another server from the panel. The
+        // transfer makes its own passphrase (--auto-passphrase): none goes
+        // through here. Not export, import or list: no archive at a path.
+        'sync pubkey --raw',
+        'sync check ',
+        'sync trust ',
+        'sync untrust ',
+        'sync push ',
     ];
 
     /**

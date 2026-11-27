@@ -4231,6 +4231,244 @@
                 }
             }
         },
+        "/sync/key": {
+            "get": {
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "This server's sync key",
+                "description": "The public key of this server's `cipi` user: what a target must trust before this server can push apps to it (`POST /sync/trust` on the target). Requires `sync-manage` and Cipi 5.18.0+ (`503` on an older core).",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/SyncKey"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            }
+        },
+        "/sync/check": {
+            "post": {
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "Can this server push to a target?",
+                "description": "Runs `cipi sync check`: is this server's sync key accepted by the target, and does Cipi answer there. Nothing is sent. A target that says no is a `200` with `ok: false` and a `reason` — `not-trusted` (the target has not been given the key), `unreachable`, `host-key-changed`, `no-cipi`, `no-key`. `auto_passphrase` is true when the target takes the passphrase of a transfer on standard input (Cipi 5.18.0+ there), which `POST /sync/push` needs. Requires `sync-manage`.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SyncTarget"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/SyncCheck"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            }
+        },
+        "/sync/trust": {
+            "post": {
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "Trust another server's sync key",
+                "description": "Adds the key to the authorized keys of this server's `cipi` user (`cipi sync trust --key=`): the server it belongs to can then push apps here — and sign in here as `cipi`, which is why `sync-manage` is as strong as `ssh-manage`. One line: a type, the key, at most a comment; anything else is a `422`.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SyncKeyRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/SyncKey"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "Stop trusting a key",
+                "description": "Removes the key again (`cipi sync untrust --key=`), matched by type and key whatever its comment. A key that is not there is not an error.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SyncKeyRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/SyncKey"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            }
+        },
+        "/sync/push": {
+            "post": {
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "Move apps to another server",
+                "description": "Queues `cipi sync push … --import --auto-passphrase` (job type `sync-push`, read with `sync-manage`, up to two hours): this server exports the apps — settings, `.env`, deploy recipe, and with `with_db` / `with_storage` their databases and `shared/storage` — into an archive, encrypts it, sends it over SSH and has the target import it. Apps that exist on the target are updated, the others created. **The archive's passphrase is made by the source for this one transfer and handed to the target's import over SSH; no field takes one and none is returned.** The target must trust this server's key (`GET /sync/key` here, `POST /sync/trust` there) and run Cipi 5.18.0+. `apps` left out or empty: every app. The apps stay on this server: nothing is deleted or stopped here.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SyncPushRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Queued",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "job_id": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "string",
+                                            "example": "pending"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            }
+        },
         "/zt/mesh": {
             "post": {
                 "tags": [
@@ -15672,6 +15910,152 @@
                     }
                 }
             },
+            "SyncKey": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "example": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI… cipi@fra1"
+                    },
+                    "type": {
+                        "type": "string",
+                        "example": "ssh-ed25519"
+                    },
+                    "fingerprint": {
+                        "type": "string",
+                        "example": "SHA256:Zk1…"
+                    },
+                    "comment": {
+                        "type": "string",
+                        "nullable": true,
+                        "example": "cipi@fra1"
+                    }
+                }
+            },
+            "SyncKeyRequest": {
+                "type": "object",
+                "required": [
+                    "key"
+                ],
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "description": "A public key, as `GET /sync/key` of the other server returns it."
+                    }
+                }
+            },
+            "SyncTarget": {
+                "type": "object",
+                "required": [
+                    "host"
+                ],
+                "properties": {
+                    "host": {
+                        "type": "string",
+                        "description": "The target: an IP address or a hostname.",
+                        "example": "203.0.113.9"
+                    },
+                    "port": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 65535,
+                        "default": 22
+                    },
+                    "user": {
+                        "type": "string",
+                        "default": "cipi",
+                        "description": "The SSH user on the target. `cipi` unless the target was set up otherwise."
+                    }
+                }
+            },
+            "SyncCheck": {
+                "type": "object",
+                "properties": {
+                    "ok": {
+                        "type": "boolean"
+                    },
+                    "host": {
+                        "type": "string"
+                    },
+                    "port": {
+                        "type": "integer"
+                    },
+                    "user": {
+                        "type": "string"
+                    },
+                    "cipi": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "The target's Cipi version, when it answers."
+                    },
+                    "auto_passphrase": {
+                        "type": "boolean",
+                        "description": "The target takes a transfer's passphrase on standard input (Cipi 5.18.0+)."
+                    },
+                    "reason": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                            "not-trusted",
+                            "unreachable",
+                            "host-key-changed",
+                            "no-cipi",
+                            "no-key",
+                            null
+                        ]
+                    },
+                    "message": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "SyncPushRequest": {
+                "type": "object",
+                "required": [
+                    "host"
+                ],
+                "properties": {
+                    "host": {
+                        "type": "string",
+                        "description": "The target: an IP address or a hostname.",
+                        "example": "203.0.113.9"
+                    },
+                    "port": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 65535,
+                        "default": 22
+                    },
+                    "user": {
+                        "type": "string",
+                        "default": "cipi",
+                        "description": "The SSH user on the target. `cipi` unless the target was set up otherwise."
+                    },
+                    "apps": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Apps to move. Left out or empty: every app of this server.",
+                        "example": [
+                            "shop",
+                            "blog"
+                        ]
+                    },
+                    "with_db": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Their databases too: dumped here, restored there."
+                    },
+                    "with_storage": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Their `shared/storage` too."
+                    }
+                }
+            },
             "ZtMeshJoinRequest": {
                 "type": "object",
                 "required": [
@@ -16042,6 +16426,10 @@
         {
             "name": "Zero Trust",
             "description": "Cloudflare Tunnel (read-only: `GET /zt`) and the mesh network — Tailscale or NetBird, Cipi 5.18.0+ — which is joined, left and locked from here. Abilities `zt-view` / `zt-manage`; `zt-manage` is as strong as `ssh-manage`: whoever holds it can put the server on a network of their own. A lock that would cut the caller off is refused. A panel that runs on the server itself may add `client` — the address of the person at it — to the body of any change: the status in the answer is read for them too."
+        },
+        {
+            "name": "Sync",
+            "description": "Moving apps to another server (`cipi sync`, Cipi 5.18.0+): this server's key, whether a target accepts it, trusting another server's key, and the transfer — export, send, import — as a job. Ability `sync-manage`, as strong as `ssh-manage`: whoever holds it can have the server send every app (code, `.env`, databases) to a host of their choosing, and can let another server's `cipi` user sign in here. No route takes or returns the passphrase of an archive."
         },
         {
             "name": "Firewall",

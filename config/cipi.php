@@ -69,6 +69,7 @@ return [
         'notifications-manage' => 'Add, change, test, enable/disable and remove notification channels; turn triggers on and off; set the time zone and the server name notifications use',
         'zt-view' => 'View Zero Trust status: Cloudflare Tunnel and the mesh network (Tailscale, NetBird)',
         'zt-manage' => 'Join and leave a mesh network (Tailscale, NetBird), close and reopen the SSH port and 80/443 to the world, Tailscale SSH — as strong as ssh-manage',
+        'sync-manage' => 'Move apps to another server (cipi sync): send them from here to a host of your choosing, and trust another server\'s key so that it can send here — as strong as ssh-manage',
         'firewall-view' => 'View the firewall: UFW rules, fail2ban threshold and bans, CrowdSec state, allowlist and decisions',
         'firewall-manage' => 'Open ports, block addresses, unban, set the fail2ban threshold, turn CrowdSec on/off and edit its allowlist',
         'disk-view' => 'View disk usage: server, apps, databases',

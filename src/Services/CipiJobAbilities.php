@@ -34,6 +34,7 @@ final class CipiJobAbilities
         'app-deploy-rollback' => 'deploy-manage',
         'app-deploy-unlock' => 'deploy-manage',
         'app-yml-apply' => 'yml-manage',
+        'sync-push' => 'sync-manage',
         'alias-create' => 'aliases-create',
         'alias-delete' => 'aliases-delete',
         'www-add' => 'www-manage',

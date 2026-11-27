@@ -40,6 +40,7 @@ use CipiApi\Http\Controllers\StatusController;
 use CipiApi\Http\Controllers\WwwController;
 use CipiApi\Http\Controllers\YmlController;
 use CipiApi\Http\Controllers\ZtController;
+use CipiApi\Http\Controllers\SyncController;
 use CipiApi\Http\Controllers\ZtMeshController;
 use Illuminate\Support\Facades\Route;
 
@@ -307,6 +308,13 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/zt/mesh/lock', [ZtMeshController::class, 'lock'])->middleware('ability:zt-manage');
     Route::delete('/zt/mesh/lock', [ZtMeshController::class, 'unlock'])->middleware('ability:zt-manage');
     Route::put('/zt/mesh/ssh', [ZtMeshController::class, 'ssh'])->middleware('ability:zt-manage');
+
+    // Moving apps to another server (cipi sync, Cipi ≥ 5.18.0). As strong as ssh-manage.
+    Route::get('/sync/key', [SyncController::class, 'key'])->middleware('ability:sync-manage');
+    Route::post('/sync/check', [SyncController::class, 'check'])->middleware('ability:sync-manage');
+    Route::post('/sync/trust', [SyncController::class, 'trust'])->middleware('ability:sync-manage');
+    Route::delete('/sync/trust', [SyncController::class, 'untrust'])->middleware('ability:sync-manage');
+    Route::post('/sync/push', [SyncController::class, 'push'])->middleware('ability:sync-manage');
 
     // Disk usage — the server, every app, every database (Cipi CLI ≥ 5.5.0 + API sudoers ≥ 5.5.2)
     Route::get('/disk', [DiskController::class, 'usage'])->middleware('ability:disk-view');

@@ -1120,6 +1120,78 @@ namespace {
     $parser = (string) file_get_contents($root . '/src/Services/CipiOutputParser.php');
     ok((bool) preg_match('/Database\s+(\S+)\s*\/\s*(\S+)/', "  Database    wpblog / s3cr3tPASS  (MariaDB)", $dbm) && $dbm[1] === 'wpblog' && $dbm[2] === 's3cr3tPASS' && str_contains($parser, "preg_match('/Database\\s+(\\S+)\\s*\\/\\s*(\\S+)/'"), "the job result carries the database's name and password: the CLI prints them on the line the parser reads");
 
+    echo "--- moving apps to another server (cipi sync, Cipi 5.18.0, ability sync-manage)\n";
+    require_once $root . '/src/Services/SyncUnsupportedException.php';
+    require_once $root . '/src/Services/CipiSyncService.php';
+    $SY = CipiApi\Services\CipiSyncService::class;
+    $mkKey = fn (string $type, string $comment = 'cipi@fra1') => $type . ' ' . base64_encode(pack('N', strlen($type)) . $type . pack('N', 32) . random_bytes(32)) . ($comment !== '' ? ' ' . $comment : '');
+    $kSrc = $mkKey('ssh-ed25519');
+    ok($SY::normalizeKey("  {$kSrc}\n") === $kSrc && $SY::normalizeKey($mkKey('ssh-ed25519', '')) !== null && $SY::normalizeKey($mkKey('ecdsa-sha2-nistp256', 'ops@laptop')) !== null, 'a public key: a type, the key, at most a comment');
+    $bad = ['', 'ssh-ed25519', 'ssh-ed25519 AAAA', "{$kSrc}\ncommand=\"id\" {$kSrc}", 'command="id" ' . $kSrc, 'from="*" ' . $kSrc, $kSrc . ' extra words', str_replace('ssh-ed25519 ', 'ssh-rsa ', $kSrc), 'ssh-ed25519 ' . base64_encode(random_bytes(51)) . ' x', $kSrc . ';id', $mkKey('ssh-dss')];
+    ok(array_filter($bad, fn ($k) => $SY::normalizeKey($k) !== null) === [], 'not a key: nothing, half of one, two lines, sshd options in front, words behind, a type that is not the key\'s own, a command');
+    $d = $SY::describeKey($kSrc);
+    ok($d['type'] === 'ssh-ed25519' && $d['comment'] === 'cipi@fra1' && (bool) preg_match('/^SHA256:[A-Za-z0-9+\/]{43}$/', $d['fingerprint']), 'its fingerprint, as ssh-keygen -l prints it');
+    $syApps = new class(new FakeVersion('5.18.0')) extends CipiApi\Services\CipiValidationService {
+        public function getApps(): array { return ['shop' => [], 'blog' => []]; }
+    };
+    $syCli = new FakeCli;
+    $sy = new $SY($syCli, $syApps, new FakeVersion('5.18.0'));
+    $syCli->next = ['output' => $kSrc . "\n", 'exit_code' => 0, 'success' => true];
+    ok($sy->key()['key'] === $kSrc && $syCli->ran === ['sync pubkey --raw'], 'GET /sync/key: this server\'s key, read with pubkey --raw');
+    $syCli->ran = [];
+    $syCli->next = ['output' => '{"ok":true,"host":"203.0.113.9","port":2222,"user":"cipi","cipi":"5.18.0","auto_passphrase":true,"reason":null,"message":null}', 'exit_code' => 0, 'success' => true];
+    $c = $sy->check('203.0.113.9', 2222);
+    ok($c['ok'] === true && $c['cipi'] === '5.18.0' && $c['auto_passphrase'] === true && $syCli->ran === ["sync check --host='203.0.113.9' --port='2222' --user='cipi' --json"], 'check: one CLI call, the target\'s answer');
+    $syCli->next = ['output' => "{\"ok\":false,\"host\":\"203.0.113.9\",\"port\":22,\"user\":\"cipi\",\"cipi\":null,\"auto_passphrase\":false,\"reason\":\"not-trusted\",\"message\":\"203.0.113.9 does not trust this server's sync key yet\"}", 'exit_code' => 1, 'success' => false];
+    $c = $sy->check('203.0.113.9');
+    ok($c['ok'] === false && $c['reason'] === 'not-trusted' && str_contains((string) $c['message'], 'does not trust'), 'check: a target that says no is an answer, not an error');
+    $refused = 0;
+    foreach ([['host;id', 22, 'cipi'], ['-oProxyCommand=x', 22, 'cipi'], ['a b', 22, 'cipi'], ['h.example', 0, 'cipi'], ['h.example', 70000, 'cipi'], ['h.example', 22, 'root;id'], ['h.example', 22, '-l']] as [$h, $po, $u]) {
+        try { $sy->check($h, $po, $u); } catch (InvalidArgumentException) { $refused++; }
+    }
+    ok($refused === 7 && count($syCli->ran) === 2, 'a host, a port or a user that is not one never reaches the command line');
+    $syCli->ran = []; $syCli->next = ['output' => '✓ Key added', 'exit_code' => 0, 'success' => true];
+    ok($sy->trust($kSrc)['fingerprint'] === $d['fingerprint'] && $sy->untrust(" {$kSrc} ")['key'] === $kSrc
+        && $syCli->ran === ['sync trust --key=' . escapeshellarg($kSrc), 'sync untrust --key=' . escapeshellarg($kSrc)], 'trust and untrust: the key as one quoted flag');
+    $refused = 0; foreach ($bad as $k) { try { $sy->trust($k); } catch (InvalidArgumentException) { $refused++; } }
+    ok($refused === count($bad) && count($syCli->ran) === 2, 'what is not a key is refused before the CLI is asked');
+    $cmd = $sy->pushCommand('203.0.113.9', 22, 'cipi', ['shop', 'blog', 'shop'], true, false);
+    ok($cmd === "sync push 'shop' 'blog' --host='203.0.113.9' --port='22' --user='cipi' --import --auto-passphrase --with-db", 'a transfer: the apps, the target, import on arrival, a passphrase the CLI makes — ' . $cmd);
+    ok($sy->pushCommand('fra2.example.com', 2222, 'cipi', [], false, true) === "sync push --host='fra2.example.com' --port='2222' --user='cipi' --import --auto-passphrase --with-storage", 'no app named: every app of the server');
+    ok(str_contains((string) thrown(fn () => $sy->pushCommand('203.0.113.9', 22, 'cipi', ['shop', 'nosuch'], false, false)), "App 'nosuch' not found"), 'an app that is not there is refused before the job');
+    $perm = new CipiApi\Services\CipiCliService;
+    ok($perm->commandIsPermitted($cmd) && $perm->commandIsPermitted('sync pubkey --raw') && $perm->commandIsPermitted("sync check --host='x' --json") && $perm->commandIsPermitted("sync trust --key='k'") && $perm->commandIsPermitted("sync untrust --key='k'"), 'whitelisted: the key, check, trust, untrust, push');
+    ok(! $perm->commandIsPermitted('sync export shop') && ! $perm->commandIsPermitted('sync import /tmp/x.tar.gz.enc --yes') && ! $perm->commandIsPermitted('sync list /tmp/x') && ! $perm->commandIsPermitted('sync pubkey') && ! $perm->commandIsPermitted('sync push'), 'not whitelisted: export, import, list — an archive at a path the caller names');
+    $oldSy = new $SY(new FakeCli, $syApps, new FakeVersion('5.17.0'));
+    $n = 0; foreach ([fn () => $oldSy->key(), fn () => $oldSy->check('h.example'), fn () => $oldSy->trust($kSrc), fn () => $oldSy->pushCommand('h.example', 22, 'cipi', [], false, false)] as $call) {
+        try { $call(); } catch (CipiApi\Services\SyncUnsupportedException $e) { $n += (int) str_contains($e->getMessage(), 'need Cipi 5.18.0+'); }
+    }
+    ok($n === 4, 'an older core: every call says what it needs (503)');
+    require_once $root . '/src/Services/CipiJobTimeout.php';
+    ok(CipiApi\Services\CipiJobTimeout::forCommand($cmd) === 7200 && CipiApi\Services\CipiJobTimeout::forCommand("sync check --host='x' --json") === 600, 'a transfer has two hours, like a deploy: databases and storage travel with the apps');
+    $routes = (string) file_get_contents($root . '/routes/api.php');
+    foreach (["Route::get('/sync/key', [SyncController::class, 'key'])", "Route::post('/sync/check', [SyncController::class, 'check'])", "Route::post('/sync/trust', [SyncController::class, 'trust'])", "Route::delete('/sync/trust', [SyncController::class, 'untrust'])", "Route::post('/sync/push', [SyncController::class, 'push'])"] as $line) {
+        ok(str_contains($routes, $line . "->middleware('ability:sync-manage');"), 'route: ' . substr($line, 7, strpos($line, ',') - 7));
+    }
+    $sctl = (string) file_get_contents($root . '/src/Http/Controllers/SyncController.php');
+    ok(! preg_match('/[\'"]passphrase[\'"]\s*=>/', $sctl) && str_contains($sctl, "\$this->jobs->dispatch('sync-push', \$command, [") && str_contains((string) file_get_contents($root . '/src/Services/CipiJobAbilities.php'), "'sync-push' => 'sync-manage'")
+        && str_contains((string) file_get_contents($root . '/config/cipi.php'), "'sync-manage' => "), 'no route takes a passphrase; the transfer is a job read with sync-manage; the ability is one');
+    $sud = getenv('CIPI_CORE_SUDOERS') ?: '/home/claude/cipi/lib/cipi-api-sudoers.sh';
+    if (is_file($sud)) {
+        $sudoers = (string) file_get_contents($sud); $missing = [];
+        foreach (CipiApi\Services\CipiCliService::ALLOWED_COMMANDS as $a) {
+            if (! str_starts_with($a, 'sync ')) { continue; }
+            if (! str_contains($sudoers, '/usr/local/bin/cipi ' . (str_ends_with($a, ' ') ? $a . '*' : $a) . ',')) { $missing[] = $a; }
+        }
+        ok($missing === [], 'every sync command of the whitelist is a line of the core\'s sudoers' . ($missing ? ': ' . implode(' | ', $missing) : ''));
+    }
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    ok(isset($spec['paths']['/sync/key']['get'], $spec['paths']['/sync/check']['post'], $spec['paths']['/sync/trust']['post'], $spec['paths']['/sync/trust']['delete'], $spec['paths']['/sync/push']['post'], $spec['components']['schemas']['SyncPushRequest'], $spec['components']['schemas']['SyncKey'])
+        && ! str_contains(json_encode($spec['components']['schemas']['SyncPushRequest']), '"passphrase"') && in_array('Sync', array_column($spec['tags'] ?? [], 'name'), true), 'OpenAPI: the five routes, their schemas, a Sync tag — and no passphrase field');
+    $refs = []; array_walk_recursive($spec, function ($v, $k) use (&$refs) { if ($k === '$ref') { $refs[$v] = true; } });
+    $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
+    ok($missing === [], 'OpenAPI: every $ref points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));
+
     echo "--- how long a job may run (a deploy: two hours)\n";
     require_once $root . '/src/Services/CipiJobTimeout.php';
     $JT = CipiApi\Services\CipiJobTimeout::class;

@@ -31,7 +31,13 @@ class CipiJobTimeout
      */
     public static function forCommand(string $command): int
     {
-        return self::isDeploy($command) ? self::DEPLOY_SECONDS : self::SECONDS;
+        return self::isDeploy($command) || self::isTransfer($command) ? self::DEPLOY_SECONDS : self::SECONDS;
+    }
+
+    /** `sync push …`: databases and storage travel with the apps — as long as a deploy may take. */
+    public static function isTransfer(string $command): bool
+    {
+        return str_starts_with(trim($command), 'sync push ');
     }
 
     /** `deploy <app>` and nothing after it: a rollback, an unlock or a status is quick. */
