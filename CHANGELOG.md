@@ -27,7 +27,7 @@ For Cipi 5.18.0: the mesh network of Zero Trust — Tailscale or NetBird. `GET /
 
 - **A click cannot lock the server out.** The API never sends `--force`, and the CLI ignores it when sudo comes from `www-data`. `lock ssh` is refused until sshd has accepted a login that came over the mesh, while the node key can expire, with UFW off or sshd not listening on the mesh address. `lock http` is refused while an app renews SSL over HTTP-01 and when the caller reaches the API on the public address it would close. Leaving the network is refused when the caller comes over it.
 - **The join key never rests anywhere**: validated (8–512 characters, no spaces, no quotes), quoted, passed as a flag of a synchronous command — never a job, so never in the jobs table — never returned, and replaced by `[key]` should the CLI repeat it in an error.
-- **`zt-manage` is as strong as `ssh-manage`**: whoever holds it can put the server on a network of their own. No existing token has it; it is given on purpose (`cipi api token create --abilities=…,zt-manage`).
+- **`zt-manage` is as strong as `ssh-manage`**: whoever holds it can put the server on a network of their own. A token made with a list of abilities does not have it until it is named there (`cipi api token create --abilities=…,zt-manage`); a `--full-access` token has it, as it has every ability the API adds.
 - The whitelist names each mesh command as the sudoers spell it; nothing of Cloudflare's side was added — `zt enable`, `hostname`, `access`, `lock` stay at the server's shell.
 
 ### Notes

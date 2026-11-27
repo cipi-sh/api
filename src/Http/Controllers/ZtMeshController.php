@@ -24,7 +24,8 @@ use Illuminate\Routing\Controller;
  * network, when that is the way this very request reached the server.
  *
  * `zt-manage` is as strong as `ssh-manage`: whoever holds it can put the
- * server on a network of their own. No token has it until it is asked for.
+ * server on a network of their own. A token made with a list of abilities
+ * has it only once it is named there; a full-access token has every ability.
  * Cloudflare's side stays read-only (`GET /api/zt`).
  */
 class ZtMeshController extends Controller
