@@ -264,16 +264,16 @@ Token abilities for `cipi api token create` are defined in `config/cipi.php` (`t
 |---|---|---|
 | `POST /api/zt/mesh` | Join a network (`cipi zt <provider> enable`): installs the client, signs in, lets the mesh interface through UFW. Closes nothing | `provider` `tailscale`\|`netbird`; `key` (auth key / setup key — left out to adopt a client already connected); `hostname`; `control_url` (Headscale, self-hosted NetBird); `direct`, `accept_dns`, `accept_routes`; Tailscale only: `tags`, `ssh`, `reauth` |
 | `DELETE /api/zt/mesh` | Leave it (`disable --yes`): reopens what its locks closed, removes the client | — |
-| `POST /api/zt/mesh/lock` | Close a port to the world, open on the mesh only (`lock ssh\|http --yes`) | `port` `ssh`\|`http` |
+| `POST /api/zt/mesh/lock` | Close a port to the world, open on the mesh only (`lock ssh\|http --yes`) | `port` `ssh`\|`http`; `client` (optional, see below) |
 | `DELETE /api/zt/mesh/lock` | Reopen it (`unlock ssh\|http`) | `port` `ssh`\|`http` |
 | `PUT /api/zt/mesh/ssh` | Tailscale SSH on or off (`ssh enable\|disable`) | `enabled` |
 
 What keeps a click from locking everyone out — enforced by the CLI when sudo comes from the API, which never sends `--force` (and the CLI ignores it from there):
 
 - **`lock ssh`** wants the mesh connected, UFW active, sshd listening on the mesh address, a node key that does not expire, and **a login sshd accepted over the mesh** (`details.mesh.ssh.seen`): sign in once with `ssh cipi@<mesh address>`, then close the port. With Tailscale SSH on it is done at the shell.
-- **`lock http`** is refused while an app renews its certificate over HTTP-01 (`details.mesh.http01_apps`), and when the caller reaches the API on the public address the lock would close. The address of the request goes to the CLI (`--via`), which finds the route it came by: `mesh`, `local` (the panel on the same server), `tunnel` (the API behind the Cloudflare tunnel) pass; `public` and `unknown` do not.
+- **`lock http`** is refused while an app renews its certificate over HTTP-01 (`details.mesh.http01_apps`), and when the caller reaches the API on the public address the lock would close. The address of the request goes to the CLI (`--via`), which finds the route it came by: `mesh`, `local` (the panel on the same server), `tunnel` (the API behind the Cloudflare tunnel) pass; `public` and `unknown` do not. A panel on the same server reaches the API locally, but its own pages are on 80/443: it sends `client` — the address of the person's browser — with the lock and as `GET /api/zt?client=`, and the lock is refused when they look at the panel on the public address (over the mesh, or with the panel's hostname on the tunnel, it goes ahead).
 - **`DELETE /api/zt/mesh`** is refused when the caller comes over the mesh itself.
-- `GET /api/zt` says all of it beforehand: `details.mesh.panel` = `{via, from, blocked: {lock_ssh, lock_http, disable}}`, each `null` or the reason — a client can grey the button out and show why.
+- `GET /api/zt` says all of it beforehand: `details.mesh.panel` = `{via, from, client, blocked: {lock_ssh, lock_http, disable}}`, each `null` or the reason — a client can grey the button out and show why.
 
 The join key is validated (8–512 characters, no spaces or quotes), passed to the CLI as a flag and never stored, queued or returned; if the CLI repeats it in an error it is replaced by `[key]`. `zt-manage` is as strong as `ssh-manage` — whoever holds it can put the server on a network of their own — so a token made with a list of abilities has it only once it is named there (`cipi api token create --abilities=…,zt-view,zt-manage`); a `--full-access` token has it, as it has every ability.
 

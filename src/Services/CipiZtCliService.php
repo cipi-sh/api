@@ -30,12 +30,16 @@ class CipiZtCliService
     /**
      * @return array{enabled: bool, cloudflared: ?string, tunnel: ?string, real_ip: ?string, lock_http: ?string, lock_ssh: ?string, ssh_hostname: ?string, mesh: ?string, mesh_state: ?string, mesh_ip: ?string, raw: string, details: ?array}
      */
-    public function status(?string $via = null): array
+    public function status(?string $via = null, ?string $client = null): array
     {
         // --via=<address of the caller> (Cipi ≥ 5.18.0): the mesh then says
-        // what the panel may do from where it is (`details.mesh.panel`). An
-        // older Cipi takes the flag and ignores it.
-        $result = $this->cli->run('zt status --json'.($via !== null && $via !== '' ? ' --via='.escapeshellarg($via) : ''));
+        // what the panel may do from where it is (`details.mesh.panel`).
+        // --client=<address of the person at a panel that runs on this
+        // server>: whether closing 80/443 would close the page they are on.
+        // An older Cipi takes the flags and ignores them.
+        $result = $this->cli->run('zt status --json'
+            .($via !== null && $via !== '' ? ' --via='.escapeshellarg($via) : '')
+            .($client !== null && $client !== '' ? ' --client='.escapeshellarg($client) : ''));
         if ($result['exit_code'] !== 0) {
             $detail = trim($result['output'] ?? '');
             throw new \RuntimeException($detail !== '' ? $detail : 'cipi zt status failed (Cipi CLI ≥ 5.3.0 required)');

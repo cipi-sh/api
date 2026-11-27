@@ -15,8 +15,10 @@ namespace CipiApi\Services;
  * passes it what it needs to: --force is ignored; `lock ssh` wants a login
  * sshd accepted over the mesh and a node key that cannot expire; `lock http`
  * and `disable` are refused when they would cut the caller's own way to this
- * server — the address of the request goes with them (`--via=`). A refusal
- * is a {@see ZtRefusedException} with the CLI's words.
+ * server — the address of the request goes with them (`--via=`) — and `lock
+ * http` when it would close the page of the person at a panel that runs on
+ * this server (`--client=`, the browser's address as that panel saw it). A
+ * refusal is a {@see ZtRefusedException} with the CLI's words.
  *
  * Cloudflare's side of Zero Trust is not here: its status alone
  * ({@see CipiZtCliService}).
@@ -61,9 +63,9 @@ class CipiZtMeshService
     }
 
     /** Zero Trust as it is now, the mesh with what the caller may do from where it is. */
-    public function status(string $client = ''): array
+    public function status(string $via = '', string $client = ''): array
     {
-        return $this->zt->status($client !== '' ? $client : null);
+        return $this->zt->status($via !== '' ? $via : null, $client !== '' ? $client : null);
     }
 
     /** The mesh this server is on: tailscale, netbird, or null. */
@@ -204,23 +206,28 @@ class CipiZtMeshService
     }
 
     /** Leave the network: what its locks closed is reopened first. Refused when the caller comes over it. */
-    public function leave(string $client): string
+    public function leave(string $via): string
     {
         $provider = $this->requireProvider();
 
-        return $this->change('zt '.$provider.' disable --yes'.self::via($client), 'cipi zt '.$provider.' disable failed');
+        return $this->change('zt '.$provider.' disable --yes'.self::via($via), 'cipi zt '.$provider.' disable failed');
     }
 
-    /** Close the SSH port, or 80/443, to the world: open on the mesh only. */
-    public function lock(string $port, string $client): string
+    /**
+     * Close the SSH port, or 80/443, to the world: open on the mesh only.
+     * $via is the address the request came from; $client the address of the
+     * person at a panel that runs on this server, when the panel gave one.
+     */
+    public function lock(string $port, string $via, string $client = ''): string
     {
         $provider = $this->requireProvider();
         if (! in_array($port, self::PORTS, true)) {
             throw new ZtRefusedException("'port' is ssh or http");
         }
         // lock ssh takes nothing more (the panel is not reached over SSH);
-        // lock http is told where the caller comes from, last.
-        $cmd = 'zt '.$provider.' lock '.$port.' --yes'.($port === 'http' ? self::via($client) : '');
+        // lock http is told where the caller comes from — and, for a panel
+        // on this server, where the person looking at it does — last.
+        $cmd = 'zt '.$provider.' lock '.$port.' --yes'.($port === 'http' ? self::via($via, $client) : '');
 
         return $this->change($cmd, 'cipi zt '.$provider.' lock '.$port.' failed');
     }
@@ -247,10 +254,10 @@ class CipiZtMeshService
         return $this->change('zt tailscale ssh '.($on ? 'enable' : 'disable'), 'cipi zt tailscale ssh failed');
     }
 
-    /** --via=<address>, the last argument, or nothing when there is no address to give. */
-    protected static function via(string $client): string
+    /** --via=<address> [--client=<address>], the last arguments, or nothing when there is no address to give. */
+    protected static function via(string $via, string $client = ''): string
     {
-        return $client !== '' ? ' --via='.escapeshellarg($client) : '';
+        return ($via !== '' ? ' --via='.escapeshellarg($via) : '').($client !== '' ? ' --client='.escapeshellarg($client) : '');
     }
 
     protected function requireProvider(): string

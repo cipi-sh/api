@@ -14,7 +14,9 @@ use Illuminate\Routing\Controller;
  * read-only by design; the mesh is changed by {@see ZtMeshController}.
  *
  * The address of the caller goes to the CLI: the mesh then says what the
- * panel may do from where it is (`details.mesh.panel`).
+ * panel may do from where it is (`details.mesh.panel`). `?client=<address>`
+ * is for a panel that runs on this server: the address of the person at it,
+ * so that the answer also says whether closing 80/443 would close their page.
  */
 class ZtController extends Controller
 {
@@ -25,11 +27,10 @@ class ZtController extends Controller
 
     public function status(Request $request): JsonResponse
     {
-        $client = $this->ips->normalizeClientIp((string) $request->ip());
-        $client = filter_var($client, FILTER_VALIDATE_IP) !== false ? $client : null;
+        $ip = fn (mixed $v): ?string => is_string($v) && filter_var($v = $this->ips->normalizeClientIp($v), FILTER_VALIDATE_IP) !== false ? $v : null;
 
         try {
-            return response()->json(['data' => $this->zt->status($client)], 200);
+            return response()->json(['data' => $this->zt->status($ip($request->ip()), $ip($request->query('client')))], 200);
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 503);
         }

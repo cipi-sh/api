@@ -4187,8 +4187,20 @@
                     "Zero Trust"
                 ],
                 "summary": "Zero Trust status (Cloudflare, Tailscale, NetBird)",
-                "description": "Zero Trust status (`cipi zt status`). Cloudflare: cloudflared/tunnel state, real_ip, HTTP/SSH locks and SSH hostname. Mesh network (Cipi 5.18.0+): `mesh` is `tailscale`, `netbird` or null, with `mesh_state` and `mesh_ip`; `details.mesh` has the rest. `enabled` and the Cloudflare fields say nothing of the mesh: a server may have either, both or none. From Cipi 5.16.0 `details` holds the whole of `cipi zt status --json` (and `raw` is empty); an older Cipi gives `details: null` and its text output in `raw`. Cloudflare's side is read-only by design; the mesh is changed with `/zt/mesh` (`zt-manage`). The address of the request goes to the CLI, and `details.mesh.panel` says what the caller may do from where it is: `via` (`mesh`, `local`, `tunnel`, `public`, `unknown`), `from`, and `blocked` {`lock_ssh`, `lock_http`, `disable`} \u2014 each null, or the reason it would be refused. Requires `zt-view` ability and Cipi 5.3.0+.",
+                "description": "Zero Trust status (`cipi zt status`). Cloudflare: cloudflared/tunnel state, real_ip, HTTP/SSH locks and SSH hostname. Mesh network (Cipi 5.18.0+): `mesh` is `tailscale`, `netbird` or null, with `mesh_state` and `mesh_ip`; `details.mesh` has the rest. `enabled` and the Cloudflare fields say nothing of the mesh: a server may have either, both or none. From Cipi 5.16.0 `details` holds the whole of `cipi zt status --json` (and `raw` is empty); an older Cipi gives `details: null` and its text output in `raw`. Cloudflare's side is read-only by design; the mesh is changed with `/zt/mesh` (`zt-manage`). The address of the request goes to the CLI, and `details.mesh.panel` says what the caller may do from where it is: `via` (`mesh`, `local`, `tunnel`, `public`, `unknown`), `from`, `client` (see the parameter), and `blocked` {`lock_ssh`, `lock_http`, `disable`} \u2014 each null, or the reason it would be refused. Requires `zt-view` ability and Cipi 5.3.0+.",
                 "operationId": "ztStatus",
+                "parameters": [
+                    {
+                        "name": "client",
+                        "in": "query",
+                        "required": false,
+                        "description": "For a panel that runs on this server: the address of the person at it (their browser, as the panel saw it). `details.mesh.panel.client` then says how they reach the panel (`mesh`, `local`, `tunnel`, `public`), and `blocked.lock_http` why 80/443 would not be closed under their own page.",
+                        "schema": {
+                            "type": "string",
+                            "example": "198.51.100.7"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "Zero Trust status",
@@ -4329,7 +4341,7 @@
                     "Zero Trust"
                 ],
                 "summary": "Close SSH or 80/443 to the world",
-                "description": "`cipi zt tailscale|netbird lock ssh|http --yes`: the port stays open on the mesh interface only. The CLI ignores `--force` from the API and refuses what a click must not do. `ssh`: the mesh must be connected, UFW active, sshd listening on the mesh address, the node key not due to expire, and sshd must have accepted a login that came over the mesh (the proof that the way in works); with Tailscale SSH on it is done at the shell. `http`: no app may renew its certificate over HTTP-01, and the caller must not reach the API on the public address it would close — the address of the request goes to the CLI. The reasons are in `GET /zt` beforehand: `details.mesh.panel.blocked`. Synchronous. Answers with Zero Trust as it is after the change (`data`, the same as `GET /zt`) and what the CLI said (`message`). Requires `zt-manage` and Cipi 5.18.0+.",
+                "description": "`cipi zt tailscale|netbird lock ssh|http --yes`: the port stays open on the mesh interface only. The CLI ignores `--force` from the API and refuses what a click must not do. `ssh`: the mesh must be connected, UFW active, sshd listening on the mesh address, the node key not due to expire, and sshd must have accepted a login that came over the mesh (the proof that the way in works); with Tailscale SSH on it is done at the shell. `http`: no app may renew its certificate over HTTP-01, and the caller must not reach the API on the public address it would close — the address of the request goes to the CLI; a panel that runs on this server also sends `client`, the address of the person at it, and the lock is refused when they look at the panel on the public address. The reasons are in `GET /zt` beforehand: `details.mesh.panel.blocked`. Synchronous. Answers with Zero Trust as it is after the change (`data`, the same as `GET /zt`) and what the CLI said (`message`). Requires `zt-manage` and Cipi 5.18.0+.",
                 "operationId": "ztMeshLock",
                 "requestBody": {
                     "required": true,
@@ -13840,7 +13852,7 @@
                             "details": {
                                 "type": "object",
                                 "nullable": true,
-                                "description": "`cipi zt status --json` (Cipi >= 5.16.0): `enabled`, `token`, `tunnel` (`id`, `name`, `running`, `status` as Cloudflare reports it, `replica`, `connectors` with `origin_ips`, `conns`, `this_server`), `real_ip`, `lock` (`http`, `http_mode`, `ssh`), `hostnames` (per app: `domains`, `access` {`enabled`, `paths`, `allow`}, `service_tokens`, `webhook_bypass`, `origin_cert`, `purge_on_deploy`, `preview`), `gui`, `api`, `ssh` (`hostname`, `access`, `certificates`), `tcp`, `service_tokens` (names, targets and client ids \u2014 never secrets), `previews`, `missing`. From Cipi 5.18.0 also `mesh`: `enabled`, `provider` (`tailscale`, `netbird`), `label`, `installed`, `installed_by_cipi`, `running`, `connected`, `state` as the client says it, `online`, `interface`, `ip`, `ip6`, `name`, `fqdn`, `network`, `control_url` (Headscale or a self-hosted NetBird; null for the vendor's own), `version`, `tags`, `key_expiry` and `key_expires_in_days` (Tailscale; null when the node key does not expire), `peers` {`total`, `online`}, `ssh` {`provider_ssh`, `ports`, `command`, `seen` — the last login sshd accepted over the mesh, {`at`, `from`} or null}, `lock` {`ssh`, `http`}, `direct` {`port`, `open`}, `accept_dns`, `accept_routes`, `firewall_active`, `http01_apps` (apps that renew SSL over HTTP-01, which `lock http` would break), `enabled_at`, `warnings`, and `panel` when the request came through the API: {`via`, `from`, `blocked` {`lock_ssh`, `lock_http`, `disable`}} \u2014 or {`enabled`: false, `provider`: null} while no mesh is on. Null on an older Cipi.",
+                                "description": "`cipi zt status --json` (Cipi >= 5.16.0): `enabled`, `token`, `tunnel` (`id`, `name`, `running`, `status` as Cloudflare reports it, `replica`, `connectors` with `origin_ips`, `conns`, `this_server`), `real_ip`, `lock` (`http`, `http_mode`, `ssh`), `hostnames` (per app: `domains`, `access` {`enabled`, `paths`, `allow`}, `service_tokens`, `webhook_bypass`, `origin_cert`, `purge_on_deploy`, `preview`), `gui`, `api`, `ssh` (`hostname`, `access`, `certificates`), `tcp`, `service_tokens` (names, targets and client ids \u2014 never secrets), `previews`, `missing`. From Cipi 5.18.0 also `mesh`: `enabled`, `provider` (`tailscale`, `netbird`), `label`, `installed`, `installed_by_cipi`, `running`, `connected`, `state` as the client says it, `online`, `interface`, `ip`, `ip6`, `name`, `fqdn`, `network`, `control_url` (Headscale or a self-hosted NetBird; null for the vendor's own), `version`, `tags`, `key_expiry` and `key_expires_in_days` (Tailscale; null when the node key does not expire), `peers` {`total`, `online`}, `ssh` {`provider_ssh`, `ports`, `command`, `seen` — the last login sshd accepted over the mesh, {`at`, `from`} or null}, `lock` {`ssh`, `http`}, `direct` {`port`, `open`}, `accept_dns`, `accept_routes`, `firewall_active`, `http01_apps` (apps that renew SSL over HTTP-01, which `lock http` would break), `enabled_at`, `warnings`, and `panel` when the request came through the API: {`via`, `from`, `client` {`via`, `from`} or null, `blocked` {`lock_ssh`, `lock_http`, `disable`}} \u2014 or {`enabled`: false, `provider`: null} while no mesh is on. Null on an older Cipi.",
                                 "additionalProperties": true
                             }
                         }
@@ -15728,6 +15740,12 @@
                             "http"
                         ],
                         "description": "`ssh` is the SSH port; `http` is 80 and 443"
+                    },
+                    "client": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "With `http`, for a panel that runs on this server: the address of the person at it. On the public address the lock is refused — the page they are on would close itself.",
+                        "example": "198.51.100.7"
                     }
                 }
             },

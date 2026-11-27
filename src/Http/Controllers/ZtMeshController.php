@@ -21,7 +21,10 @@ use Illuminate\Routing\Controller;
  * What a click must not do is refused by the CLI itself (it ignores --force
  * from the panel): closing the SSH port before anyone has signed in over the
  * mesh, or while the node key can expire; closing 80/443, or leaving the
- * network, when that is the way this very request reached the server.
+ * network, when that is the way this very request reached the server; and
+ * closing 80/443 when a panel that runs on this server says the person at it
+ * (`client`, their browser's address) is on the public address — the page
+ * would close itself.
  *
  * `zt-manage` is as strong as `ssh-manage`: whoever holds it can put the
  * server on a network of their own. A token made with a list of abilities
@@ -69,12 +72,16 @@ class ZtMeshController extends Controller
         return $this->change($request, fn () => $this->mesh->leave($this->mesh->clientIp($request->ip())));
     }
 
-    /** Close `port` (ssh | http) to the world: open on the mesh only. */
+    /**
+     * Close `port` (ssh | http) to the world: open on the mesh only. `client`
+     * is for a panel that runs on this server: the address of the person at
+     * it, so that 80/443 are not closed under their own page.
+     */
     public function lock(Request $request): JsonResponse
     {
-        $v = $request->validate(['port' => 'required|string|in:ssh,http']);
+        $v = $request->validate(['port' => 'required|string|in:ssh,http', 'client' => 'nullable|ip']);
 
-        return $this->change($request, fn () => $this->mesh->lock($v['port'], $this->mesh->clientIp($request->ip())));
+        return $this->change($request, fn () => $this->mesh->lock($v['port'], $this->mesh->clientIp($request->ip()), $this->mesh->clientIp($v['client'] ?? null)));
     }
 
     /** Reopen `port` (ssh | http) to the world. */
@@ -105,7 +112,8 @@ class ZtMeshController extends Controller
         }
 
         try {
-            $data = $this->mesh->status($this->mesh->clientIp($request->ip()));
+            $client = $request->input('client');
+            $data = $this->mesh->status($this->mesh->clientIp($request->ip()), $this->mesh->clientIp(is_string($client) ? $client : null));
         } catch (\RuntimeException) {
             $data = null;
         }

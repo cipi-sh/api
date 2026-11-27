@@ -989,6 +989,10 @@ namespace {
     ok(end($cli->ran) === "zt tailscale lock http --yes --via='203.0.113.9'", 'lock http: where the caller comes from goes with it, last');
     $ms->lock('http', '');
     ok(end($cli->ran) === 'zt tailscale lock http --yes', 'lock http with no address to give: the CLI then takes the caller for unknown, and refuses');
+    $ms->lock('http', '127.0.0.1', '198.51.100.7');
+    ok(end($cli->ran) === "zt tailscale lock http --yes --via='127.0.0.1' --client='198.51.100.7'", 'lock http from a panel on this server: the address of the person at it too');
+    $ms->lock('ssh', '127.0.0.1', '198.51.100.7');
+    ok(end($cli->ran) === 'zt tailscale lock ssh --yes', 'lock ssh never carries an address');
     $ms->unlock('ssh'); ok(end($cli->ran) === 'zt tailscale unlock ssh', 'unlock ssh');
     $ms->unlock('http'); ok(end($cli->ran) === 'zt tailscale unlock http', 'unlock http');
     $ms->leave('100.64.0.2'); ok(end($cli->ran) === "zt tailscale disable --yes --via='100.64.0.2'", 'leave: --yes and the caller\'s address');
@@ -1013,6 +1017,8 @@ namespace {
     ok($cli->ran === ["zt status --json --via='203.0.113.9'"] && ($zs['details']['mesh']['panel']['via'] ?? null) === 'public' && str_starts_with((string) $zs['details']['mesh']['panel']['blocked']['lock_http'], 'The panel reaches'), 'status with the caller\'s address: what the panel may do from there, as the CLI says it');
     $cli->ran = []; (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status(); (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status('');
     ok($cli->ran === ['zt status --json', 'zt status --json'], 'status without an address: the command as it always was');
+    $cli->ran = []; (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status('127.0.0.1', '198.51.100.7'); (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status(null, '198.51.100.7');
+    ok($cli->ran === ["zt status --json --via='127.0.0.1' --client='198.51.100.7'", "zt status --json --client='198.51.100.7'"] && $perm->commandIsPermitted($cli->ran[0]), 'status from a panel on this server: the browser\'s address goes too');
 
     $routes = (string) file_get_contents($root . '/routes/api.php');
     foreach ([
@@ -1030,10 +1036,11 @@ namespace {
     ok(str_contains($cfg, "'zt-manage' => ") && str_contains($cfg, "'zt-view' => 'View Zero Trust status"), 'abilities: zt-manage is one; zt-view reads both sides');
     $ctl = (string) file_get_contents($root . '/src/Http/Controllers/ZtMeshController.php');
     ok(! str_contains($ctl, 'dispatch(') && ! str_contains($ctl, 'CipiJob') && str_contains($ctl, "'key' => 'nullable|string|max:512'") && substr_count($ctl, '], 422)') === 2 && str_contains($ctl, '], 503)'), 'the controller: synchronous (a key never reaches the jobs table); 422 for a refusal, 503 for an older core');
+    ok(str_contains($ctl, "'client' => 'nullable|ip'") && str_contains((string) file_get_contents($root . '/src/Http/Controllers/ZtController.php'), "\$request->query('client')"), 'the browser\'s address is an IP or nothing, on the lock and on the status');
     $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
     $sc = $spec['components']['schemas'];
     ok(is_array($spec) && isset($spec['paths']['/zt/mesh']['post'], $spec['paths']['/zt/mesh']['delete'], $spec['paths']['/zt/mesh/lock']['post'], $spec['paths']['/zt/mesh/lock']['delete'], $spec['paths']['/zt/mesh/ssh']['put'], $sc['ZtMeshJoinRequest'], $sc['ZtMeshLockRequest'], $sc['ZtMeshSshRequest'], $sc['ZtMeshChangeResponse']), 'OpenAPI: the five routes of the mesh and their schemas');
-    ok(str_contains(json_encode($spec['paths']['/zt/mesh']['post']), 'zt-manage') && str_contains(json_encode($spec['paths']['/zt/mesh/lock']['post']), 'zt-manage') && in_array('Zero Trust', array_column($spec['tags'], 'name'), true) && isset($spec['paths']['/zt/mesh']['post']['responses']['422'], $spec['paths']['/zt/mesh']['post']['responses']['503']), 'OpenAPI: zt-manage, 422 and 503 on a change');
+    ok(str_contains(json_encode($spec['paths']['/zt/mesh']['post']), 'zt-manage') && str_contains(json_encode($spec['paths']['/zt/mesh/lock']['post']), 'zt-manage') && in_array('Zero Trust', array_column($spec['tags'], 'name'), true) && isset($spec['paths']['/zt/mesh']['post']['responses']['422'], $spec['paths']['/zt/mesh']['post']['responses']['503'], $sc['ZtMeshLockRequest']['properties']['client']) && ($spec['paths']['/zt']['get']['parameters'][0]['name'] ?? null) === 'client', 'OpenAPI: zt-manage, 422 and 503 on a change; client on the lock and on the status');
     $refs = []; array_walk_recursive($spec, function ($v, $k) use (&$refs) { if ($k === '$ref') { $refs[$v] = true; } });
     $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
     ok($missing === [], 'OpenAPI: every $ref still points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));
