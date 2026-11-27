@@ -19,7 +19,7 @@ class RunCipiCommand implements ShouldQueue
 
     /**
      * Seconds before the worker stops the job. Its own for each command
-     * ({@see CipiJobTimeout}): a deploy gets an hour, everything else ten
+     * ({@see CipiJobTimeout}): a deploy gets two hours, everything else ten
      * minutes. It travels with the job, and counts over the worker's --timeout.
      */
     public int $timeout = CipiJobTimeout::SECONDS;

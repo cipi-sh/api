@@ -961,7 +961,7 @@
                     "Apps"
                 ],
                 "summary": "Get deploy config",
-                "description": "Return structured Deployer recipe options for a Laravel app (stored in apps.json, applied to deploy.php). Requires `apps-deploy-config` and Cipi >= 5.0.3.",
+                "description": "Return structured Deployer recipe options for a Laravel app (stored in apps.json, applied to deploy.php). Requires `apps-deploy-config` and Cipi >= 5.0.3. With Cipi 5.18.0+ the answer carries `build_timeout` and `step_timeout`, and a Node app answers too: `app`, `runtime: \"node\"`, `keep_releases`, `predeploy_snapshot`, `build_timeout`, `step_timeout` (its recipe has no artisan hooks).",
                 "operationId": "appDeployConfigShow",
                 "parameters": [
                     {
@@ -1001,7 +1001,7 @@
                     "Apps"
                 ],
                 "summary": "Update deploy config",
-                "description": "Merge structured deploy options and regenerate deploy.php from the Cipi template. Safe alternative to editing PHP by hand. Requires `apps-deploy-config`.",
+                "description": "Merge structured deploy options and regenerate deploy.php from the Cipi template. Safe alternative to editing PHP by hand. Requires `apps-deploy-config`. `build_timeout` (60–3600 s, the frontend build) and `step_timeout` (60–1800 s, every other command) need Cipi 5.18.0+: an older core answers `503` instead of ignoring them. A Node app takes `keep_releases`, `predeploy_snapshot`, `build_timeout` and `step_timeout`; an artisan option sent to it is a `422`.",
                 "operationId": "appDeployConfigUpdate",
                 "parameters": [
                     {
@@ -2291,7 +2291,7 @@
                     "Deploy"
                 ],
                 "summary": "Deploy app",
-                "description": "Trigger a deploy for an app. Validates app exists synchronously. Dispatches CLI command as async job. Requires `deploy-manage` ability. The job may run for an hour — the frontend build of a release can take up to 30 minutes by itself — where every other job has ten minutes; one the worker stops ends as `failed` with `exit_code` 124, what it had printed, and a line that says so.",
+                "description": "Trigger a deploy for an app. Validates app exists synchronously. Dispatches CLI command as async job. Requires `deploy-manage` ability. The job may run for two hours — the frontend build of a release has 30 minutes by itself, up to an hour where the app's `build_timeout` says so — where every other job has ten minutes; one the worker stops ends as `failed` with `exit_code` 124, what it had printed, and a line that says so.",
                 "operationId": "appDeploy",
                 "parameters": [
                     {
@@ -2761,7 +2761,7 @@
                     "Jobs"
                 ],
                 "summary": "Get job status",
-                "description": "Poll a background job (typically after receiving a `job_id` from another endpoint). The token needs the ability the job was created under \u2014 the one of the endpoint that queued it: `apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, `apps-artisan` for `app-artisan`, \u2026 (since 1.36.1). A token without it gets the same `404` as an unknown id. Returns status (pending, running, completed, failed). A job the queue worker stops — after an hour for a deploy, ten minutes for any other — ends as `failed` with `exit_code` 124 and its output so far (before 1.48.0 it stayed `running`). When finished, includes `result` (parsed structured data from Cipi CLI) and `output` (raw CLI output).",
+                "description": "Poll a background job (typically after receiving a `job_id` from another endpoint). The token needs the ability the job was created under \u2014 the one of the endpoint that queued it: `apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, `apps-artisan` for `app-artisan`, \u2026 (since 1.36.1). A token without it gets the same `404` as an unknown id. Returns status (pending, running, completed, failed). A job the queue worker stops — after two hours for a deploy, ten minutes for any other — ends as `failed` with `exit_code` 124 and its output so far (before 1.48.0 it stayed `running`). When finished, includes `result` (parsed structured data from Cipi CLI) and `output` (raw CLI output).",
                 "operationId": "jobShow",
                 "parameters": [
                     {
@@ -12303,6 +12303,20 @@
                         "minimum": 1,
                         "maximum": 20,
                         "example": 5
+                    },
+                    "build_timeout": {
+                        "type": "integer",
+                        "minimum": 60,
+                        "maximum": 3600,
+                        "example": 1800,
+                        "description": "Seconds the frontend build of a deploy may run: the `node_build` of a Laravel app, the install and the build of a Node app. 1800 unless set (send 1800 to go back to it). Cipi 5.18.0+."
+                    },
+                    "step_timeout": {
+                        "type": "integer",
+                        "minimum": 60,
+                        "maximum": 1800,
+                        "example": 300,
+                        "description": "Seconds every other command of a deploy may run — the clone, Composer, the migrations. 300 unless set. Cipi 5.18.0+."
                     },
                     "migrate": {
                         "type": "boolean",

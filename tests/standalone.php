@@ -1064,15 +1064,53 @@ namespace {
     $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
     ok($missing === [], 'OpenAPI: every $ref still points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));
 
-    echo "--- how long a job may run (a deploy: an hour)\n";
+    echo "--- deploy config: the two clocks of a deploy, and a Node app's options (Cipi 5.18.0)\n";
+    require_once $root . '/src/Services/CipiAppDeployConfigService.php';
+    $DCS = CipiApi\Services\CipiAppDeployConfigService::class;
+    $dcApps = new class(new FakeVersion('5.18.0')) extends CipiApi\Services\CipiValidationService {
+        public function getApps(): array { return ['shop' => ['php' => '8.5'], 'front' => ['custom' => true, 'runtime' => 'node'], 'static' => ['custom' => true]]; }
+    };
+    $dcCli = new FakeCli;
+    $dcCli->next = ['output' => "\e[32m✓\e[0m Deploy config updated for shop (deploy.php regenerated)\n{\"app\":\"shop\",\"keep_releases\":5,\"build_timeout\":2700,\"step_timeout\":600}", 'exit_code' => 0, 'success' => true];
+    $dc = new $DCS($dcCli, $dcApps, new FakeVersion('5.18.0'));
+    ok($dc->buildFlags(['build_timeout' => 2700, 'step_timeout' => '600']) === ["--build-timeout='2700'", "--step-timeout='600'"] && $dc->buildFlags(['build_timeout' => null, 'keep_releases' => 3]) === ["--keep-releases='3'"],
+        'build_timeout and step_timeout become the CLI\'s flags, in seconds; null leaves one alone');
+    $refused = 0;
+    foreach ([['build_timeout' => 59], ['build_timeout' => 3601], ['build_timeout' => '1800; id'], ['build_timeout' => 12.5], ['build_timeout' => true], ['step_timeout' => 1801], ['step_timeout' => 'abc'], ['step_timeout' => [300]]] as $bad) {
+        try { $dc->buildFlags($bad); } catch (InvalidArgumentException $e) { $refused += (int) str_contains($e->getMessage(), 'must be a number of seconds between'); }
+    }
+    ok($refused === 8, 'out of bounds (60-3600, 60-1800), a fraction, a word, a command, a boolean, a list: each refused before the CLI is asked');
+    $data = $dc->update('shop', ['build_timeout' => 2700, 'step_timeout' => 600]);
+    ok($dcCli->ran === ["app deploy-config 'shop' --build-timeout='2700' --step-timeout='600' --json"] && $data['build_timeout'] === 2700 && $data['step_timeout'] === 600, 'update: one CLI call, and the answer is the config after it');
+    $dcCli->ran = [];
+    $dcCli->next = ['output' => '{"app":"front","runtime":"node","keep_releases":5,"predeploy_snapshot":false,"build_timeout":900,"step_timeout":300}', 'exit_code' => 0, 'success' => true];
+    ok($dc->show('front')['runtime'] === 'node' && $dc->update('front', ['build_timeout' => 900, 'keep_releases' => 5, 'migrate' => null])['build_timeout'] === 900
+        && $dcCli->ran === ["app deploy-config 'front' --json", "app deploy-config 'front' --keep-releases='5' --build-timeout='900' --json"], 'a Node app has deploy options too: keep_releases, predeploy_snapshot and the two clocks');
+    $msg = ''; try { $dc->update('front', ['migrate' => false, 'build_timeout' => 900]); } catch (InvalidArgumentException $e) { $msg = $e->getMessage(); }
+    ok(str_contains($msg, "'front' is a Node app") && str_contains($msg, 'not migrate') && count($dcCli->ran) === 2, 'an artisan option sent to a Node app is refused by name, and nothing runs');
+    $msg = ''; try { $dc->show('static'); } catch (RuntimeException $e) { $msg = $e->getMessage(); }
+    ok(str_contains($msg, 'custom app'), 'a classic custom app has no recipe, as before');
+    $oldCli = new FakeCli; $old = new $DCS($oldCli, $dcApps, new FakeVersion('5.17.0'));
+    $msgs = [];
+    foreach ([fn () => $old->update('shop', ['step_timeout' => 600]), fn () => $old->show('front')] as $call) { try { $call(); } catch (RuntimeException $e) { $msgs[] = $e->getMessage(); } }
+    ok(count($msgs) === 2 && str_contains($msgs[0], 'step_timeout needs Cipi 5.18.0+') && str_contains($msgs[1], 'Node app need Cipi 5.18.0+') && $oldCli->ran === [], 'an older core is told so (503) instead of taking a flag for nothing');
+    $oldCli->next = ['output' => '{"app":"shop","keep_releases":3}', 'exit_code' => 0, 'success' => true];
+    ok($old->update('shop', ['keep_releases' => 3])['keep_releases'] === 3, '…and what it always knew still goes through');
+    $dctl = (string) file_get_contents($root . '/src/Http/Controllers/DeployConfigController.php');
+    ok(str_contains($dctl, "'build_timeout' => 'nullable|integer|min:60|max:3600'") && str_contains($dctl, "'step_timeout' => 'nullable|integer|min:60|max:1800'"), 'the controller validates both');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    $dcProps = $spec['components']['schemas']['DeployConfigUpdateRequest']['properties'];
+    ok(($dcProps['build_timeout']['maximum'] ?? 0) === 3600 && ($dcProps['step_timeout']['maximum'] ?? 0) === 1800 && str_contains($spec['paths']['/apps/{name}/deploy-config']['put']['description'], 'Node app'), 'OpenAPI: the two fields, their bounds, the Node app');
+
+    echo "--- how long a job may run (a deploy: two hours)\n";
     require_once $root . '/src/Services/CipiJobTimeout.php';
     $JT = CipiApi\Services\CipiJobTimeout::class;
-    ok($JT::forCommand("deploy 'shop'") === 3600 && $JT::DEPLOY_SECONDS === 3600, "a deploy has an hour: the build alone may take 30 minutes of it");
+    ok($JT::forCommand("deploy 'shop'") === 7200 && $JT::DEPLOY_SECONDS === 7200, "a deploy has two hours: the build alone may be given one of them");
     ok($JT::forCommand("deploy 'shop' --rollback") === 600 && $JT::forCommand("deploy 'shop' --unlock") === 600 && $JT::forCommand("deploy 'shop' --status --json") === 600, 'a rollback, an unlock, a status: ten minutes, as before');
     ok($JT::forCommand("app create --user='shop' --domain='shop.test'") === 600 && $JT::forCommand("backup run 'shop'") === 600 && $JT::forCommand('deploy') === 600 && $JT::forCommand('') === 600 && $JT::SECONDS === 600, 'every other command: ten minutes');
     ok($JT::isDeploy(" deploy 'shop' ") && ! $JT::isDeploy("app deploy-config 'shop' --json") && ! $JT::isDeploy("redeploy 'shop'"), 'a deploy is `deploy <app>` and nothing after it');
-    $stopped = $JT::stoppedOutput("task deploy:vendors\ntask cipi:node_build\n", "deploy 'shop'", 3600);
-    ok(str_starts_with($stopped, "task deploy:vendors\ntask cipi:node_build\n\n[cipi-api] Stopped after 60 minutes") && str_contains($stopped, '`cipi deploy shop --status`'), 'a deploy the worker stopped: what it had printed, then why and where to look');
+    $stopped = $JT::stoppedOutput("task deploy:vendors\ntask cipi:node_build\n", "deploy 'shop'", 7200);
+    ok(str_starts_with($stopped, "task deploy:vendors\ntask cipi:node_build\n\n[cipi-api] Stopped after 120 minutes") && str_contains($stopped, '`cipi deploy shop --status`'), 'a deploy the worker stopped: what it had printed, then why and where to look');
     $stopped = $JT::stoppedOutput(null, "db restore 'shop' --file='/x.sql'", 600);
     ok($stopped === '[cipi-api] Stopped after 10 minutes: the time the API gives a job of this kind. The command had not ended.', 'another job stopped with nothing printed: the one line');
     $jobSrc = (string) file_get_contents($root . '/src/Jobs/RunCipiCommand.php');
@@ -1087,12 +1125,12 @@ namespace {
     }
     require_once $root . '/src/Jobs/RunCipiCommand.php';
     $J = CipiApi\Jobs\RunCipiCommand::class; $M = CipiApi\Models\CipiJob::class;
-    ok((new $J('a', "deploy 'shop'"))->timeout === 3600 && (new $J('a', "deploy 'shop' --rollback"))->timeout === 600 && (new $J('a', "ssl install 'shop'"))->timeout === 600 && (new $J('a', "deploy 'shop'"))->tries === 1,
-        'a job is made with its limit: 3600 for a deploy, 600 for the rest, one try');
+    ok((new $J('a', "deploy 'shop'"))->timeout === 7200 && (new $J('a', "deploy 'shop' --rollback"))->timeout === 600 && (new $J('a', "ssl install 'shop'"))->timeout === 600 && (new $J('a', "deploy 'shop'"))->tries === 1,
+        'a job is made with its limit: 7200 for a deploy, 600 for the rest, one try');
     $M::$rows = ['d1' => new $M('running', "task deploy:vendors\ntask cipi:node_build")];
     (new $J('d1', "deploy 'shop'"))->failed(new Illuminate\Queue\TimeoutExceededException('App\Jobs has timed out.'));
-    ok($M::$rows['d1']->status === 'failed' && $M::$rows['d1']->exit_code === 124 && str_starts_with($M::$rows['d1']->output, "task deploy:vendors\ntask cipi:node_build\n\n[cipi-api] Stopped after 60 minutes")
-        && ! str_contains($M::$rows['d1']->output, 'timed out'), 'a deploy stopped at its hour: failed, 124, its output kept, the reason under it');
+    ok($M::$rows['d1']->status === 'failed' && $M::$rows['d1']->exit_code === 124 && str_starts_with($M::$rows['d1']->output, "task deploy:vendors\ntask cipi:node_build\n\n[cipi-api] Stopped after 120 minutes")
+        && ! str_contains($M::$rows['d1']->output, 'timed out'), 'a deploy stopped at its two hours: failed, 124, its output kept, the reason under it');
     $M::$rows = ['r1' => new $M('running', 'Restoring…', 'db-restore', ['upload_id' => 'abc'])];
     (new $J('r1', "db restore 'shop'"))->failed(new RuntimeException('SQLSTATE[HY000]: database is locked (password=hunter2)'));
     ok($M::$rows['r1']->status === 'failed' && $M::$rows['r1']->exit_code === 1 && $M::$rows['r1']->output === "Restoring…\n\n[cipi-api] The job ended with an error before the result of the command was saved."
@@ -1102,7 +1140,7 @@ namespace {
     ok($M::$rows['c1']->status === 'completed' && $M::$rows['c1']->output === 'successfully deployed!' && $M::$rows['c1']->exit_code === 0, 'a job that had ended keeps its result, whatever the queue says afterwards');
     (new $J('gone', "deploy 'shop'"))->failed(null);
     ok(true, 'a job that is not in the table any more: nothing to close, nothing thrown');
-    ok(str_contains((string) file_get_contents($root . '/CHANGELOG.md'), 'CipiJobTimeout') && str_contains((string) file_get_contents($root . '/README.md'), 'a deploy gets an hour'), 'CHANGELOG and README say it');
+    ok(str_contains((string) file_get_contents($root . '/CHANGELOG.md'), 'CipiJobTimeout') && str_contains((string) file_get_contents($root . '/README.md'), 'a deploy gets two hours'), 'CHANGELOG and README say it');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);

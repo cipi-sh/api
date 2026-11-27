@@ -7,10 +7,13 @@ namespace CipiApi\Services;
  *
  * Ten minutes for every command but a deploy. A deploy is long by nature:
  * after the clone and Composer comes the frontend build, and Cipi's recipes
- * give that step alone up to 30 minutes (Cipi 5.18.0; before, Deployer stopped
- * it after 300 seconds). With ten minutes for the whole job, a deploy started
- * from the panel was stopped half way through a build that the same deploy,
- * started from the server's shell or by a Git push, would have finished.
+ * give that step alone 30 minutes — up to an hour where the app asks for it
+ * (Cipi 5.18.0, `cipi app deploy-config --build-timeout`; before, Deployer
+ * stopped it after 300 seconds). With ten minutes for the whole job, a deploy
+ * started from the panel was stopped half way through a build that the same
+ * deploy, started from the server's shell or by a Git push, would have
+ * finished. Two hours hold the longest build an app can be given and the
+ * steps around it.
  */
 class CipiJobTimeout
 {
@@ -18,7 +21,7 @@ class CipiJobTimeout
     public const SECONDS = 600;
 
     /** Seconds for a deploy. */
-    public const DEPLOY_SECONDS = 3600;
+    public const DEPLOY_SECONDS = 7200;
 
     /** Exit code of a job the worker stopped: the one timeout(1) uses. */
     public const EXIT_CODE = 124;

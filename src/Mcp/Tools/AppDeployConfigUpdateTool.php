@@ -51,7 +51,7 @@ class AppDeployConfigUpdateTool extends Tool
         return [
             'name' => $schema->string()->description('App name')->required(),
             'options' => $schema->string()
-                ->description('JSON object: keep_releases, migrate, optimize, storage_link, queue_restart, horizon_terminate, predeploy_snapshot, node_build, extra_artisan')
+                ->description('JSON object: keep_releases, migrate, optimize, storage_link, queue_restart, horizon_terminate, predeploy_snapshot, node_build, extra_artisan, build_timeout (seconds the frontend build may run, 60-3600, default 1800), step_timeout (seconds every other command of the deploy may run, 60-1800, default 300; both Cipi 5.18.0+). A Node app takes keep_releases, predeploy_snapshot, build_timeout and step_timeout.')
                 ->required(),
         ];
     }
