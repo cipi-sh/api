@@ -7,8 +7,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
 
 /**
- * Cloudflare Zero Trust status (Cipi CLI ≥ 5.3.0). Read-only by design:
- * the API sudoers allow `zt status` only.
+ * Zero Trust status (Cipi CLI ≥ 5.3.0): Cloudflare Tunnel and, from Cipi
+ * 5.18.0, the mesh network (Tailscale, NetBird). Read-only by design: the
+ * API sudoers allow `zt status` only.
  */
 class ZtController extends Controller
 {

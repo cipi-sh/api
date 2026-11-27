@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.48.0] - 2026-11-27
+
+For Cipi 5.18.0: the mesh network a server is on — Tailscale or NetBird — in the Zero Trust status. Still read-only: no new route, no new ability, no new line in the sudoers.
+
+### Added
+
+- **`GET /api/zt`: the mesh** (`cipi zt tailscale|netbird`, Cipi 5.18.0). Zero Trust has two sides: Cloudflare Tunnel publishes the sites, a mesh network is how the people who run the server reach it. The same call answers for both.
+  - `mesh` — `tailscale`, `netbird`, or `null` while the server is on none (and on an older Cipi); `mesh_state` — `connected` / `disconnected`; `mesh_ip` — the server's address on the network.
+  - `details.mesh` — what `cipi zt status --json` says of it: `provider`, `label`, `connected`, `state` (the client's own word: `Running`, `NeedsLogin`…), `ip`, `ip6`, `name`, `fqdn`, `network`, `control_url` (Headscale, a self-hosted NetBird), `version`, `tags`, `key_expiry` and `key_expires_in_days`, `peers` (`total`, `online`), `ssh` (`provider_ssh`, `ports`, `command`), `lock` (`ssh`, `http`), `direct`, `warnings`.
+  - `enabled`, `cloudflared`, `tunnel`, `lock_http`, `lock_ssh` and `ssh_hostname` are Cloudflare's, as they were: a server with a mesh and no tunnel answers `enabled: false` and `mesh: "tailscale"`.
+- **`GET /api/firewall`: `zero_trust.by`** — who holds each lock: `{http: ["cloudflare"], ssh: ["tailscale"]}`. A port closed by `cipi zt tailscale|netbird lock` is refused to `POST /api/firewall/rules` like one closed by Cloudflare's lock, and the CLI's message names the command that reopens it. Empty lists on an older Cipi, where a lock is Cloudflare's.
+- MCP `ZtStatus`: the same fields, described. OpenAPI 1.48.0: `mesh`, `mesh_state`, `mesh_ip` and `details.mesh` on `ZtStatusResponse`, `by` on `FirewallStatus.zero_trust`.
+
+### Notes
+
+- **Joining a network and closing ports are not in the API**: `cipi zt tailscale|netbird enable|disable|lock|unlock|ssh` stay at the server's shell, like every other Zero Trust change. The API runs `zt status --json`, which the sudoers already allowed.
+- On a Cipi older than 5.18.0 the three `mesh*` fields are `null` and `details` has no `mesh`.
+
 ## [1.47.0] - 2026-11-26
 
 For Cipi 5.17.0: the nginx page cache of an app, the PHP of an Octane app by its number, Valkey per app for the whole server, and how notifications read. No new ability: each route sits under one a panel's token already has.

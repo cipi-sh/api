@@ -520,7 +520,7 @@ namespace {
     $st = (new $F($cli2, new FakeVersion('5.14.0'), new CipiApi\Services\CipiIpWhitelistService($cli2)))->status();
     ok($cli2->ran === ['firewall status --json'], 'status: one command');
     ok(count($st['ufw']['rules']) === 2 && $st['ufw']['rules'][0]['protected'] === true && $st['ufw']['rules'][1]['kind'] === 'block' && $st['ufw']['rules'][1]['to'] === 'any' && $st['ufw']['rules'][1]['managed_by'] === '', 'status: rules typed, every key present, junk dropped');
-    ok($st['protected_ports'] === [22, 80, 443] && $st['zero_trust'] === ['lock_http' => true, 'lock_ssh' => false], 'status: protected ports and Zero Trust locks');
+    ok($st['protected_ports'] === [22, 80, 443] && $st['zero_trust'] === ['lock_http' => true, 'lock_ssh' => false, 'by' => ['http' => [], 'ssh' => []]], 'status: protected ports and Zero Trust locks (an older core does not say who holds them)');
     ok($st['fail2ban']['attempts'] === 3 && $st['fail2ban']['attempts_custom'] === null && count($st['fail2ban']['jails']) === 1 && $st['fail2ban']['jails'][0]['banned'] === ['11.2.3.45'], 'status: fail2ban');
     ok($st['crowdsec']['installed'] === false && $st['crowdsec']['decisions'] === [] && $st['crowdsec']['enable_blockers'] === ['Only 300 MB of RAM free'] && $st['crowdsec']['allowlist'] === [], 'status: CrowdSec, a decision without an address dropped');
     $cli2->next = ['output' => 'not json', 'exit_code' => 0, 'success' => true];
@@ -866,7 +866,7 @@ namespace {
     ok(strpos($routes, "'/valkey/flush-shared'") < strpos($routes, "'/valkey/{name}/restart'"), 'the fixed /valkey paths come before /valkey/{name}/restart');
     $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
     $sc = $spec['components']['schemas'];
-    ok($spec['info']['version'] === '1.47.0' && isset($spec['paths']['/cache']['get'], $spec['paths']['/apps/{name}/cache']['get'], $spec['paths']['/apps/{name}/cache']['put'], $spec['paths']['/apps/{name}/cache/clear']['post'], $spec['paths']['/apps/{name}/cache/exclude']['put'], $sc['PageCacheExclude'], $sc['PageCache']['properties']['exclude'], $sc['PageCacheRequest']['properties']['exclude'], $spec['paths']['/apps/{name}/octane']['get'], $spec['paths']['/apps/{name}/octane/php']['put'], $spec['paths']['/apps/{name}/octane/restart']['post'], $spec['paths']['/valkey']['get'], $spec['paths']['/valkey/isolate']['post'], $spec['paths']['/valkey/share']['post'], $spec['paths']['/valkey/flush-shared']['post'], $spec['paths']['/valkey/{name}/restart']['post'], $spec['paths']['/notifications/settings']['get'], $spec['paths']['/notifications/settings']['put'], $sc['PageCache'], $sc['PageCacheRequest'], $sc['OctanePhp'], $sc['ValkeyList'], $sc['NotificationSettings'], $sc['JobResultOctanePhp'], $sc['JobResultValkeyMove']), 'OpenAPI 1.47.0: the new routes and schemas');
+    ok(version_compare($spec['info']['version'], '1.47.0', '>=') && isset($spec['paths']['/cache']['get'], $spec['paths']['/apps/{name}/cache']['get'], $spec['paths']['/apps/{name}/cache']['put'], $spec['paths']['/apps/{name}/cache/clear']['post'], $spec['paths']['/apps/{name}/cache/exclude']['put'], $sc['PageCacheExclude'], $sc['PageCache']['properties']['exclude'], $sc['PageCacheRequest']['properties']['exclude'], $spec['paths']['/apps/{name}/octane']['get'], $spec['paths']['/apps/{name}/octane/php']['put'], $spec['paths']['/apps/{name}/octane/restart']['post'], $spec['paths']['/valkey']['get'], $spec['paths']['/valkey/isolate']['post'], $spec['paths']['/valkey/share']['post'], $spec['paths']['/valkey/flush-shared']['post'], $spec['paths']['/valkey/{name}/restart']['post'], $spec['paths']['/notifications/settings']['get'], $spec['paths']['/notifications/settings']['put'], $sc['PageCache'], $sc['PageCacheRequest'], $sc['OctanePhp'], $sc['ValkeyList'], $sc['NotificationSettings'], $sc['JobResultOctanePhp'], $sc['JobResultValkeyMove']), 'OpenAPI 1.47.0: the new routes and schemas');
     $refs = []; array_walk_recursive($spec, function ($v, $k) use (&$refs) { if ($k === '$ref') { $refs[$v] = true; } });
     $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
     ok($missing === [], 'OpenAPI: every $ref points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));
@@ -875,6 +875,38 @@ namespace {
         $sudoers = (string) file_get_contents(getenv('CIPI_CORE_SUDOERS') ?: $sud);
         ok(str_contains($sudoers, 'cipi cache *') && str_contains($sudoers, 'cipi valkey flush-shared --yes,') && str_contains($sudoers, 'cipi frankenphp php *') && str_contains($sudoers, 'cipi notification server-name *') && ! str_contains($sudoers, 'cipi valkey flush-shared *'), 'the core\'s sudoers carry what the API runs (flush-shared spelled out)');
     }
+
+    echo "--- 1.48.0 (Cipi 5.18.0): the mesh network in GET /zt, who holds a firewall lock\n";
+    $mesh = ['enabled' => true, 'provider' => 'tailscale', 'label' => 'Tailscale', 'connected' => true, 'state' => 'Running', 'ip' => '100.101.102.103',
+        'fqdn' => 'web1.tail1234.ts.net', 'peers' => ['total' => 3, 'online' => 2], 'key_expiry' => null, 'lock' => ['ssh' => true, 'http' => false], 'warnings' => []];
+    $zs = $Z::fromJson(['enabled' => false, 'tunnel' => null, 'mesh' => $mesh]);
+    ok($zs['enabled'] === false && $zs['tunnel'] === null && $zs['lock_ssh'] === null && $zs['mesh'] === 'tailscale' && $zs['mesh_state'] === 'connected' && $zs['mesh_ip'] === '100.101.102.103',
+        'zt: a mesh without Cloudflare — enabled stays Cloudflare\'s, mesh says tailscale, connected, its address');
+    ok(($zs['details']['mesh']['lock'] ?? null) === ['ssh' => true, 'http' => false] && ($zs['details']['mesh']['peers']['online'] ?? null) === 2, 'zt: details.mesh is what the CLI says, whole');
+    $zs = $Z::fromJson($zjson + ['mesh' => ['enabled' => true, 'provider' => 'netbird', 'connected' => false, 'state' => 'NeedsLogin', 'ip' => null]]);
+    ok($zs['enabled'] === true && $zs['tunnel'] === 'cipi-mozart' && $zs['mesh'] === 'netbird' && $zs['mesh_state'] === 'disconnected' && $zs['mesh_ip'] === null, 'zt: Cloudflare and a mesh side by side; a mesh that is down has no address');
+    $zs = $Z::fromJson(['enabled' => true, 'tunnel' => ['name' => 't'], 'mesh' => ['enabled' => false, 'provider' => null, 'active' => null]]);
+    ok($zs['mesh'] === null && $zs['mesh_state'] === null && $zs['mesh_ip'] === null, 'zt: no mesh on');
+    $zs = $Z::fromJson($zjson);
+    ok(array_key_exists('mesh', $zs) && $zs['mesh'] === null && $zs['mesh_state'] === null, 'zt on Cipi 5.16/5.17 (no mesh in the JSON): the keys are there, null');
+    $zs = $Z::fromJson(['enabled' => false, 'mesh' => ['enabled' => true, 'provider' => '', 'ip' => '']]);
+    ok($zs['mesh'] === null && $zs['mesh_ip'] === null, 'zt: a mesh with no provider name is no mesh');
+    $cli = new ScriptCli; $cli->by = ['zt status --json' => ['output' => $text, 'exit_code' => 0, 'success' => true]];
+    $zs = (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status();
+    ok(array_key_exists('mesh', $zs) && $zs['mesh'] === null && $zs['mesh_ip'] === null && $zs['tunnel'] === 'cipi-old', 'zt on a Cipi that prints text: mesh null, the rest as before');
+    $raw2 = json_decode($raw, true); $raw2['zero_trust'] = ['lock_http' => true, 'lock_ssh' => true, 'by' => ['http' => ['cloudflare', 'tailscale'], 'ssh' => ['tailscale', ['x']]]];
+    $cli2 = new FakeCli; $cli2->next = ['output' => json_encode($raw2), 'exit_code' => 0, 'success' => true];
+    $st = (new $F($cli2, new FakeVersion('5.18.0'), new CipiApi\Services\CipiIpWhitelistService($cli2)))->status();
+    ok($st['zero_trust'] === ['lock_http' => true, 'lock_ssh' => true, 'by' => ['http' => ['cloudflare', 'tailscale'], 'ssh' => ['tailscale']]], 'firewall status: who holds each lock, strings only');
+    $perm = new CipiApi\Services\CipiCliService;
+    foreach (['zt tailscale enable --auth-key=k', 'zt netbird enable --setup-key=k', 'zt tailscale lock ssh --yes', 'zt netbird lock http --yes', 'zt tailscale disable --yes', 'zt tailscale ssh enable'] as $c) {
+        ok(! $perm->commandIsPermitted($c), "not whitelisted: {$c}");
+    }
+    ok($perm->commandIsPermitted('zt status --json'), 'zt status --json is what the API may run');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    $zp = $spec['components']['schemas']['ZtStatusResponse']['properties']['data']['properties'];
+    ok(version_compare($spec['info']['version'], '1.48.0', '>=') && isset($zp['mesh'], $zp['mesh_state'], $zp['mesh_ip']) && str_contains($zp['details']['description'], '`mesh`')
+        && isset($spec['components']['schemas']['FirewallStatus']['properties']['zero_trust']['properties']['by']['properties']['ssh']), 'OpenAPI ≥ 1.48.0: mesh on GET /zt, by on the firewall locks');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);
