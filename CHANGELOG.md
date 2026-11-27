@@ -14,7 +14,7 @@ For Cipi 5.18.0: the mesh network of Zero Trust — Tailscale or NetBird. `GET /
   - `details.mesh.panel` — the address of the request goes to the CLI (`--via`), which answers what this caller may do from where it is: `via` (`mesh`, `local`, `tunnel`, `public`, `unknown`), `from`, and `blocked` `{lock_ssh, lock_http, disable}`, each `null` or the reason it would be refused. `GET /api/zt?client=<address>` and `client` on the lock are for a panel on the same server: the address of the person at it (`--client`), answered in `details.mesh.panel.client`.
   - `enabled`, `cloudflared`, `tunnel`, `lock_http`, `lock_ssh` and `ssh_hostname` are Cloudflare's, as they were: a server with a mesh and no tunnel answers `enabled: false` and `mesh: "tailscale"`.
 - **The mesh from the panel** — ability **`zt-manage`**, synchronous, each answering `{data, message}` with Zero Trust as it is after the change:
-  - `POST /api/zt/mesh` — join: `provider` (`tailscale` | `netbird`), `key` (left out to adopt a client that is already connected), `hostname`, `control_url`, `direct`, `accept_dns`, `accept_routes`, and for Tailscale `tags`, `ssh`, `reauth`. Nothing is closed by joining.
+  - `POST /api/zt/mesh` — join: `provider` (`tailscale` | `netbird`), `key` (left out to adopt a client that is already connected: the CLI gets `--adopt` and never waits for one), `hostname`, `control_url`, `direct`, `accept_dns`, `accept_routes`, and for Tailscale `tags`, `ssh`, `reauth`. Nothing is closed by joining.
   - `DELETE /api/zt/mesh` — leave: what its locks closed is reopened first.
   - `POST /api/zt/mesh/lock` and `DELETE /api/zt/mesh/lock` — `{port: "ssh" | "http"}`: close the SSH port, or 80/443, to the world and reopen it.
   - `PUT /api/zt/mesh/ssh` — `{enabled}`: Tailscale SSH.

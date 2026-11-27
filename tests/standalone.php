@@ -952,7 +952,8 @@ namespace {
         === "zt tailscale enable --auth-key='tskey-auth-k1' --hostname='web1' --login-server='https://hs.example.com' --tags='tag:cipi,tag:prod' --direct --accept-dns --accept-routes --ssh --reauth", 'join Tailscale: every flag, values quoted');
     ok($M::joinCommand(['provider' => 'netbird', 'key' => 'A1B2C3D4-E5F6', 'hostname' => 'web1', 'control_url' => 'https://nb.example.com', 'direct' => false, 'accept_dns' => '0', 'ssh' => true, 'tags' => 'x'])
         === "zt netbird enable --setup-key='A1B2C3D4-E5F6' --hostname='web1' --management-url='https://nb.example.com'", 'join NetBird: its own flag names; nothing of Tailscale\'s, nothing that is off');
-    ok($M::joinCommand(['provider' => 'tailscale']) === 'zt tailscale enable' && ! $perm->commandIsPermitted('zt tailscale enable'), 'join with nothing at all is a command the whitelist does not have (it would prompt)');
+    ok($M::joinCommand(['provider' => 'tailscale']) === 'zt tailscale enable --adopt' && $perm->commandIsPermitted('zt tailscale enable --adopt') && ! $perm->commandIsPermitted('zt tailscale enable')
+        && $M::joinCommand(['provider' => 'netbird', 'key' => '', 'hostname' => 'web1']) === "zt netbird enable --adopt --hostname='web1'", 'join without a key: --adopt, so the CLI takes a connected client and never waits for a key; the bare command is not one the API runs');
 
     $meshOn = fn (string $p, array $more = []) => ['zt status' => ['output' => json_encode(['enabled' => false, 'tunnel' => null, 'mesh' => ['enabled' => true, 'provider' => $p, 'connected' => true, 'ip' => '100.64.0.7'] + $more]), 'exit_code' => 0, 'success' => true]];
     $meshOff = ['zt status' => ['output' => json_encode(['enabled' => false, 'tunnel' => null, 'mesh' => ['enabled' => false, 'provider' => null]]), 'exit_code' => 0, 'success' => true]];

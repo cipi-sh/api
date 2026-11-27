@@ -158,9 +158,11 @@ class CipiZtMeshService
         $provider = (string) $input['provider'];
         $cmd = 'zt '.$provider.' enable';
         $key = (string) ($input['key'] ?? '');
-        if ($key !== '') {
-            $cmd .= ' --'.($provider === 'tailscale' ? 'auth-key' : 'setup-key').'='.escapeshellarg($key);
-        }
+        // No key: a client that is already connected is taken as it is, and
+        // the CLI must not wait for one to be typed.
+        $cmd .= $key !== ''
+            ? ' --'.($provider === 'tailscale' ? 'auth-key' : 'setup-key').'='.escapeshellarg($key)
+            : ' --adopt';
         if (($input['hostname'] ?? '') !== '' && $input['hostname'] !== null) {
             $cmd .= ' --hostname='.escapeshellarg((string) $input['hostname']);
         }
