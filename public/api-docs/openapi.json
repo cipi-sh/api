@@ -16021,7 +16021,7 @@
         },
         {
             "name": "Zero Trust",
-            "description": "Cloudflare Tunnel (read-only: `GET /zt`) and the mesh network — Tailscale or NetBird, Cipi 5.18.0+ — which is joined, left and locked from here. Abilities `zt-view` / `zt-manage`; `zt-manage` is as strong as `ssh-manage`: whoever holds it can put the server on a network of their own. A lock that would cut the caller off is refused."
+            "description": "Cloudflare Tunnel (read-only: `GET /zt`) and the mesh network — Tailscale or NetBird, Cipi 5.18.0+ — which is joined, left and locked from here. Abilities `zt-view` / `zt-manage`; `zt-manage` is as strong as `ssh-manage`: whoever holds it can put the server on a network of their own. A lock that would cut the caller off is refused. A panel that runs on the server itself may add `client` — the address of the person at it — to the body of any change: the status in the answer is read for them too."
         },
         {
             "name": "Firewall",
