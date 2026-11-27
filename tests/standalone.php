@@ -1153,6 +1153,13 @@ namespace {
     $syCli->ran = []; $syCli->next = ['output' => '✓ Key added', 'exit_code' => 0, 'success' => true];
     ok($sy->trust($kSrc)['fingerprint'] === $d['fingerprint'] && $sy->untrust(" {$kSrc} ")['key'] === $kSrc
         && $syCli->ran === ['sync trust --key=' . escapeshellarg($kSrc), 'sync untrust --key=' . escapeshellarg($kSrc)], 'trust and untrust: the key as one quoted flag');
+    $syCli->next = ['output' => '[WARN] Key already trusted', 'exit_code' => 0, 'success' => true];
+    $again = $sy->trust($kSrc)['changed'];
+    $syCli->next = ['output' => '✓ Key added to cipi\'s authorized_keys', 'exit_code' => 0, 'success' => true];
+    $first = $sy->trust($kSrc)['changed'];
+    $syCli->next = ['output' => 'That key is not trusted here: nothing to remove', 'exit_code' => 0, 'success' => true];
+    ok($again === false && $first === true && $sy->untrust($kSrc)['changed'] === false, 'changed: whether this call added (or removed) the key — a wizard takes back only the trust it added');
+    $syCli->ran = array_slice($syCli->ran, 0, 2);
     $refused = 0; foreach ($bad as $k) { try { $sy->trust($k); } catch (InvalidArgumentException) { $refused++; } }
     ok($refused === count($bad) && count($syCli->ran) === 2, 'what is not a key is refused before the CLI is asked');
     $cmd = $sy->pushCommand('203.0.113.9', 22, 'cipi', ['shop', 'blog', 'shop'], true, false);

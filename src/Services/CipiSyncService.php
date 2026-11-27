@@ -89,7 +89,7 @@ class CipiSyncService
      * Let the server whose key this is sign in here as `cipi`, which is what
      * its `cipi sync push` needs.
      *
-     * @return array{key: string, type: string, fingerprint: string, comment: ?string}
+     * @return array{key: string, type: string, fingerprint: string, comment: ?string, changed: bool}
      */
     public function trust(string $key): array
     {
@@ -99,7 +99,7 @@ class CipiSyncService
     /**
      * Take that key back out.
      *
-     * @return array{key: string, type: string, fingerprint: string, comment: ?string}
+     * @return array{key: string, type: string, fingerprint: string, comment: ?string, changed: bool}
      */
     public function untrust(string $key): array
     {
@@ -176,7 +176,13 @@ class CipiSyncService
             throw new \RuntimeException($detail !== '' ? $detail : "cipi sync {$verb} failed");
         }
 
-        return self::describeKey($clean);
+        // Whether this call changed anything: a caller that added a trust for one
+        // transfer takes back only what it added.
+        $said = strtolower($this->plain($result['output'] ?? ''));
+
+        return self::describeKey($clean) + [
+            'changed' => $verb === 'trust' ? ! str_contains($said, 'already trusted') : ! str_contains($said, 'nothing to remove'),
+        ];
     }
 
     protected function assertTarget(string $host, int $port, string $user): void

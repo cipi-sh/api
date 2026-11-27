@@ -4323,7 +4323,7 @@
                     "Sync"
                 ],
                 "summary": "Trust another server's sync key",
-                "description": "Adds the key to the authorized keys of this server's `cipi` user (`cipi sync trust --key=`): the server it belongs to can then push apps here — and sign in here as `cipi`, which is why `sync-manage` is as strong as `ssh-manage`. One line: a type, the key, at most a comment; anything else is a `422`.",
+                "description": "`data.changed` says whether this call added the key (false: it was trusted already). Adds the key to the authorized keys of this server's `cipi` user (`cipi sync trust --key=`): the server it belongs to can then push apps here — and sign in here as `cipi`, which is why `sync-manage` is as strong as `ssh-manage`. One line: a type, the key, at most a comment; anything else is a `422`.",
                 "requestBody": {
                     "required": true,
                     "content": {
