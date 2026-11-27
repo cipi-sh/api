@@ -767,6 +767,20 @@ namespace {
     ok($pc->clear('blog')['cleared'] === 128 && $pc->clear('blog')['enabled'] === true, 'clear: the pages deleted, and the status after it');
     $cli->by = ["cache 'blog' clear" => ['output' => "[INFO] The page cache of 'blog' is off — nothing to empty", 'exit_code' => 0, 'success' => true]] + $cli->by;
     ok($pc->clear('blog')['cleared'] === 0, 'clear with the cache off: nothing deleted, no error');
+    $pj = ['output' => "sudo: unable to resolve host x\n" . json_encode(['app' => 'blog', 'enabled' => true, 'purged' => 3, 'targets' => ['/hello/', '/news/*']]), 'exit_code' => 0, 'success' => true];
+    $cli = new ScriptCli; $cli->by = ["cache 'blog' purge --json '/hello/' '/news/*'" => $pj];
+    $pc18 = new $P($cli, new FakeVersion('5.18.0'), $parser);
+    ok($pc18->purge('blog', ['/hello/', '/news/*', '/hello/']) === ['app' => 'blog', 'enabled' => true, 'purged' => 3, 'targets' => ['/hello/', '/news/*']] && end($cli->ran) === "cache 'blog' purge --json '/hello/' '/news/*'", 'purge: some pages, each quoted, once, and the files deleted');
+    ok((new FakeCli)->commandIsPermitted("cache 'blog' purge --json '/hello/'"), 'allowed: cipi cache <app> purge');
+    foreach (['hello', '/a b', "/x'", '/a*b', '/a?b=1', 'https://x.test', 'ftp://x.test/a', '/$(id)', "/a\n/b"] as $bad) {
+        ok($P::purgeError([$bad]) !== null, 'purge refuses ' . json_encode($bad));
+    }
+    ok($P::purgeError(['/', '/blog/*', 'https://www.example.com/blog/post/', 'http://example.com:8080/x/', '/caff%C3%A8/']) === null && $P::purgeError([]) !== null && $P::purgeError(array_fill(0, 501, '/x')) !== null, 'purge takes a path, a prefix and a URL; not none, not 501');
+    $before = count($cli->ran);
+    ok(str_starts_with((string) thrown(fn () => $pc18->purge('blog', ['/ok', '/a id'])), 'CipiApi\Services\PageCacheRefusedException') && count($cli->ran) === $before, 'purge: a bad page is a 422 before anything runs');
+    ok(str_contains((string) thrown(fn () => (new $P(new FakeCli, new FakeVersion('5.17.0'), $parser))->purge('blog', ['/x'])), 'needs Cipi 5.18.0+'), 'purge on an older core: refused, with the version it needs');
+    $cli->by = ["cache 'blog' purge --json 'https://evil.test/x'" => ['output' => "[ERROR] Not a page of 'blog': https://evil.test/x — a path …", 'exit_code' => 1, 'success' => false]];
+    ok(str_starts_with((string) thrown(fn () => $pc18->purge('blog', ['https://evil.test/x'])), "CipiApi\\Services\\PageCacheRefusedException: Not a page of 'blog'"), 'purge: a host that is not the app\'s is the server\'s 422');
     $cli = new ScriptCli; $cli->by = ["cache 'blog' on" => ['output' => "\e[0;31m[ERROR]\e[0m nginx refused the configuration — nothing changed\n  [emerg] \"fastcgi_cache\" zone \"cipi_blog\" is unknown", 'exit_code' => 1, 'success' => false]];
     $pc = new $P($cli, new FakeVersion('5.17.0'), $parser);
     ok(str_starts_with((string) thrown(fn () => $pc->update('blog', ['enabled' => true])), 'CipiApi\Services\PageCacheRefusedException: nginx refused the configuration'), 'nginx refusing the cache is a refusal (422), with the CLI\'s words');
@@ -868,6 +882,7 @@ namespace {
         "Route::put('/apps/{name}/cache', [PageCacheController::class, 'update'])->middleware('ability:nginx-manage')",
         "Route::put('/apps/{name}/cache/exclude', [PageCacheController::class, 'exclude'])->middleware('ability:nginx-manage')",
         "Route::post('/apps/{name}/cache/clear', [PageCacheController::class, 'clear'])->middleware('ability:nginx-manage')",
+        "Route::post('/apps/{name}/cache/purge', [PageCacheController::class, 'purge'])->middleware('ability:nginx-manage')",
         "Route::get('/apps/{name}/octane', [FrankenPhpController::class, 'appPhp'])->middleware('ability:php-view')",
         "Route::put('/apps/{name}/octane/php', [FrankenPhpController::class, 'switchPhp'])->middleware('ability:php-manage')",
         "Route::post('/apps/{name}/octane/restart', [FrankenPhpController::class, 'restart'])->middleware('ability:php-manage')",

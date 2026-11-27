@@ -8,6 +8,8 @@ For Cipi 5.18.0: the mesh network of Zero Trust — Tailscale or NetBird. `GET /
 
 ### Added
 
+- **Page cache — purge some pages** (Cipi 5.18.0+, ability `nginx-manage`): `POST /api/apps/{name}/cache/purge` with `{"paths": ["/blog/hello-world/", "/category/news/*", "https://www.example.com/x/"]}`. A path is that page on every domain and alias of the app, http and https, with its query-string variants; a trailing `*` is a prefix; a URL is that host only. At most 500 pages; answers `purged`, the cached files deleted, and the rest of the cache stays warm. MCP tool `PageCachePurge`.
+
 - **`GET /api/zt`: the mesh** (`cipi zt tailscale|netbird`, Cipi 5.18.0). Zero Trust has two sides: Cloudflare Tunnel publishes the sites, a mesh network is how the people who run the server reach it. The same call answers for both.
   - `mesh` — `tailscale`, `netbird`, or `null` while the server is on none (and on an older Cipi); `mesh_state` — `connected` / `disconnected`; `mesh_ip` — the server's address on the network.
   - `details.mesh` — what `cipi zt status --json` says of it: `provider`, `label`, `connected`, `state` (the client's own word: `Running`, `NeedsLogin`…), `ip`, `ip6`, `name`, `fqdn`, `network`, `control_url` (Headscale, a self-hosted NetBird), `version`, `tags`, `key_expiry` and `key_expires_in_days`, `peers` (`total`, `online`), `ssh` (`provider_ssh`, `ports`, `command`, `seen` — the last login sshd accepted over the mesh), `lock` (`ssh`, `http`), `direct`, `firewall_active`, `http01_apps`, `warnings`.

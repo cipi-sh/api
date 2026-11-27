@@ -84,6 +84,17 @@ class PageCacheController extends Controller
         return $this->respond(fn () => $this->cache->clear($name));
     }
 
+    /** POST /apps/{name}/cache/purge — some pages: {"paths": ["/blog/post/", "/blog/*"]}. */
+    public function purge(Request $request, string $name): JsonResponse
+    {
+        if (! $this->validator->appExists($name)) {
+            return response()->json(['error' => "App '{$name}' not found"], 404);
+        }
+        $input = $request->validate(CipiPageCacheService::PURGE_RULES);
+
+        return $this->respond(fn () => $this->cache->purge($name, array_values($input['paths'])));
+    }
+
     /** @param  callable(): array  $action */
     protected function respond(callable $action): JsonResponse
     {

@@ -3110,6 +3110,95 @@
                 }
             }
         },
+        "/apps/{name}/cache/purge": {
+            "post": {
+                "tags": [
+                    "Page cache"
+                ],
+                "summary": "Purge some pages of an app's page cache",
+                "description": "`cipi cache <app> purge <page>…`: the pages named are deleted from the cache and the rest stays warm. A page is a path (`/blog/hello-world/`): that page on every domain and alias of the app, http and https, GET and HEAD, with its query-string variants (`?utm_source=…`). A trailing `*` is every page whose path starts so (`/category/news/*`). A full URL (`https://www.example.com/blog/hello-world/`) is that page on that host only, and the host must be one of the app's. At most 500 pages per call; for all of them, `POST /apps/{name}/cache/clear`. The app's own code does the same without the API: `sudo /usr/local/bin/cipi-cache-clear <app> <page>…` (the WordPress plugin cipi-sh/cache-wp and the PHP package cipi-sh/cache-php call it). With the cache off it answers `purged: 0`. Synchronous. Requires `nginx-manage` ability and Cipi CLI >= 5.18.0.",
+                "operationId": "pageCachePurge",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "paths"
+                                ],
+                                "properties": {
+                                    "paths": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "maxItems": 500,
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "example": [
+                                            "/blog/hello-world/",
+                                            "/category/news/*",
+                                            "/"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "How many cached files were deleted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "app": {
+                                                    "type": "string",
+                                                    "example": "blog"
+                                                },
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                },
+                                                "purged": {
+                                                    "type": "integer",
+                                                    "description": "Cached files deleted (a page can be several: http and https, GET and HEAD, each host)",
+                                                    "example": 6
+                                                },
+                                                "targets": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "App not found"
+                    },
+                    "422": {
+                        "description": "A page that is not one: no leading /, a query string, a * inside, a host that is not the app's, more than 500"
+                    },
+                    "503": {
+                        "description": "Cipi CLI older than 5.18.0"
+                    }
+                }
+            }
+        },
         "/apps/{name}/octane": {
             "get": {
                 "tags": [
