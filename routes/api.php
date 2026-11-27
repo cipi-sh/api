@@ -40,6 +40,7 @@ use CipiApi\Http\Controllers\StatusController;
 use CipiApi\Http\Controllers\WwwController;
 use CipiApi\Http\Controllers\YmlController;
 use CipiApi\Http\Controllers\ZtController;
+use CipiApi\Http\Controllers\ZtMeshController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function () {
@@ -297,8 +298,15 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/firewall/real-ip/refresh', [FirewallController::class, 'realIpRefresh'])->middleware('ability:firewall-manage');
     Route::delete('/firewall/real-ip', [FirewallController::class, 'realIpDisable'])->middleware('ability:firewall-manage');
 
-    // Cloudflare Zero Trust — read-only status (Cipi CLI ≥ 5.3.0)
+    // Zero Trust — Cloudflare's side is read-only (Cipi CLI ≥ 5.3.0); the mesh
+    // network (Tailscale, NetBird; Cipi CLI ≥ 5.18.0) is joined, left and locked
+    // from here too. Synchronous: a join carries a key.
     Route::get('/zt', [ZtController::class, 'status'])->middleware('ability:zt-view');
+    Route::post('/zt/mesh', [ZtMeshController::class, 'join'])->middleware('ability:zt-manage');
+    Route::delete('/zt/mesh', [ZtMeshController::class, 'leave'])->middleware('ability:zt-manage');
+    Route::post('/zt/mesh/lock', [ZtMeshController::class, 'lock'])->middleware('ability:zt-manage');
+    Route::delete('/zt/mesh/lock', [ZtMeshController::class, 'unlock'])->middleware('ability:zt-manage');
+    Route::put('/zt/mesh/ssh', [ZtMeshController::class, 'ssh'])->middleware('ability:zt-manage');
 
     // Disk usage — the server, every app, every database (Cipi CLI ≥ 5.5.0 + API sudoers ≥ 5.5.2)
     Route::get('/disk', [DiskController::class, 'usage'])->middleware('ability:disk-view');

@@ -5,9 +5,8 @@ namespace CipiApi\Services;
 /**
  * Zero Trust status via `sudo cipi zt status` (Cipi CLI ≥ 5.3.0): Cloudflare
  * Tunnel and, from Cipi 5.18.0, the mesh network the server is on (Tailscale
- * or NetBird). Read-only by design: the API sudoers allow `zt status` only —
- * enable, hostname, access, lock and every `zt tailscale|netbird` command
- * stay with the operator on the CLI.
+ * or NetBird). Cloudflare's side is read-only by design: enable, hostname,
+ * access and lock stay with the operator on the CLI.
  *
  * Cipi ≥ 5.16.0 answers `zt status --json` with the whole picture (the
  * tunnel and its connectors, every hostname with its Access paths and
@@ -18,6 +17,8 @@ namespace CipiApi\Services;
  * Cipi ≥ 5.18.0 adds `details.mesh` (provider, connected, address, peers,
  * node key expiry, locks, warnings) and the summary gets `mesh`,
  * `mesh_state` and `mesh_ip`: null while no mesh is on, and on an older Cipi.
+ * The mesh is changed from the panel by {@see CipiZtMeshService}; this class
+ * reads, and Cloudflare's side is read only.
  */
 class CipiZtCliService
 {
@@ -29,9 +30,12 @@ class CipiZtCliService
     /**
      * @return array{enabled: bool, cloudflared: ?string, tunnel: ?string, real_ip: ?string, lock_http: ?string, lock_ssh: ?string, ssh_hostname: ?string, mesh: ?string, mesh_state: ?string, mesh_ip: ?string, raw: string, details: ?array}
      */
-    public function status(): array
+    public function status(?string $via = null): array
     {
-        $result = $this->cli->run('zt status --json');
+        // --via=<address of the caller> (Cipi ≥ 5.18.0): the mesh then says
+        // what the panel may do from where it is (`details.mesh.panel`). An
+        // older Cipi takes the flag and ignores it.
+        $result = $this->cli->run('zt status --json'.($via !== null && $via !== '' ? ' --via='.escapeshellarg($via) : ''));
         if ($result['exit_code'] !== 0) {
             $detail = trim($result['output'] ?? '');
             throw new \RuntimeException($detail !== '' ? $detail : 'cipi zt status failed (Cipi CLI ≥ 5.3.0 required)');

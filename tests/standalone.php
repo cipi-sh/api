@@ -899,7 +899,9 @@ namespace {
     $st = (new $F($cli2, new FakeVersion('5.18.0'), new CipiApi\Services\CipiIpWhitelistService($cli2)))->status();
     ok($st['zero_trust'] === ['lock_http' => true, 'lock_ssh' => true, 'by' => ['http' => ['cloudflare', 'tailscale'], 'ssh' => ['tailscale']]], 'firewall status: who holds each lock, strings only');
     $perm = new CipiApi\Services\CipiCliService;
-    foreach (['zt tailscale enable --auth-key=k', 'zt netbird enable --setup-key=k', 'zt tailscale lock ssh --yes', 'zt netbird lock http --yes', 'zt tailscale disable --yes', 'zt tailscale ssh enable'] as $c) {
+    // Cloudflare's side stays with the operator; of the mesh, only what the sudoers spell out.
+    foreach (['zt enable --token=k', 'zt disable --yes', 'zt lock http --yes', 'zt lock ssh --yes', 'zt unlock http', 'zt hostname add shop', 'zt access set shop', 'zt reset',
+        'zt tailscale disable', 'zt tailscale lock ssh', 'zt tailscale lock http', 'zt netbird ssh enable', 'zt tailscale up', 'zt headscale enable --auth-key=k'] as $c) {
         ok(! $perm->commandIsPermitted($c), "not whitelisted: {$c}");
     }
     ok($perm->commandIsPermitted('zt status --json'), 'zt status --json is what the API may run');
@@ -907,6 +909,134 @@ namespace {
     $zp = $spec['components']['schemas']['ZtStatusResponse']['properties']['data']['properties'];
     ok(version_compare($spec['info']['version'], '1.48.0', '>=') && isset($zp['mesh'], $zp['mesh_state'], $zp['mesh_ip']) && str_contains($zp['details']['description'], '`mesh`')
         && isset($spec['components']['schemas']['FirewallStatus']['properties']['zero_trust']['properties']['by']['properties']['ssh']), 'OpenAPI ≥ 1.48.0: mesh on GET /zt, by on the firewall locks');
+
+    echo "--- the mesh from the panel (Cipi 5.18.0, ability zt-manage)\n";
+    require_once $src . 'ZtRefusedException.php';
+    require_once $src . 'CipiZtMeshService.php';
+    $M = 'CipiApi\Services\CipiZtMeshService';
+    $R = 'CipiApi\Services\ZtRefusedException';
+    foreach (['zt tailscale enable --auth-key=k', 'zt netbird enable --setup-key=k', 'zt tailscale disable --yes', "zt tailscale disable --yes --via='100.64.0.2'", 'zt tailscale lock ssh --yes', "zt netbird lock http --yes --via='203.0.113.9'",
+        'zt tailscale unlock ssh', 'zt netbird unlock http', 'zt tailscale ssh enable', 'zt tailscale ssh disable', "zt status --json --via='203.0.113.9'"] as $c) {
+        ok($perm->commandIsPermitted($c), "whitelisted: {$c}");
+    }
+    $sud = getenv('CIPI_CORE_SUDOERS') ?: '/home/claude/cipi/lib/cipi-api-sudoers.sh';
+    if (is_file($sud)) {
+        $sudoers = (string) file_get_contents($sud);
+        $missing = [];
+        foreach (CipiApi\Services\CipiCliService::ALLOWED_COMMANDS as $a) {
+            if (! str_starts_with($a, 'zt tailscale') && ! str_starts_with($a, 'zt netbird')) { continue; }
+            $line = '/usr/local/bin/cipi ' . (str_ends_with($a, ' ') ? $a . '*' : $a) . ',';
+            if (! str_contains($sudoers, $line)) { $missing[] = $a; }
+        }
+        ok($missing === [], 'every mesh command of the whitelist is a line of the core\'s sudoers' . ($missing ? ': ' . implode(' | ', $missing) : ''));
+        ok(str_contains($sudoers, 'cipi zt tailscale disable --yes *,') && str_contains($sudoers, 'cipi zt netbird lock http --yes *,') && ! str_contains($sudoers, 'cipi zt tailscale lock ssh --yes *') && ! str_contains($sudoers, 'cipi zt tailscale *') && ! str_contains($sudoers, 'cipi zt netbird ssh'),
+            'sudoers: --via only where it is read (leave, lock http); lock ssh takes nothing more; no wildcard over the mesh; no NetBird SSH');
+    }
+    $J = fn (array $i) => $M::joinError($i);
+    ok($J(['provider' => 'tailscale', 'key' => 'tskey-auth-kABC123CNTRL-xyz']) === null && $J(['provider' => 'netbird', 'key' => 'A1B2C3D4-E5F6-7890-ABCD-EF1234567890']) === null, 'join: an auth key, a setup key');
+    ok($J(['provider' => 'tailscale']) === null && $J(['provider' => 'netbird', 'key' => '']) === null, 'join without a key: a client already connected is taken as it is');
+    ok(str_contains((string) $J(['provider' => 'zerotier', 'key' => 'abcdefgh']), 'tailscale or netbird') && str_contains((string) $J([]), 'tailscale or netbird'), 'join: tailscale or netbird, nothing else');
+    foreach (["tskey'; id", 'short', 'has space key', 'a"b"cdefgh', "tskey-\nx-abcdef", 'tskey$(id)x', 'tskey`id`xx'] as $bad) {
+        ok(str_contains((string) $J(['provider' => 'tailscale', 'key' => $bad]), 'does not look like a key'), 'join: not a key ' . json_encode($bad));
+    }
+    ok(str_contains((string) $J(['provider' => 'tailscale', 'key' => 'tskey-abcdef', 'hostname' => 'web_1']), 'Not a hostname') && $J(['provider' => 'tailscale', 'key' => 'tskey-abcdef', 'hostname' => 'web-1']) === null, 'join: a hostname is letters, digits and -');
+    ok(str_contains((string) $J(['provider' => 'tailscale', 'key' => 'tskey-abcdef', 'control_url' => 'ftp://x']), 'coordination server') && str_contains((string) $J(['provider' => 'netbird', 'key' => 'abcdefgh', 'control_url' => "https://nb.test'; id"]), 'coordination server')
+        && $J(['provider' => 'tailscale', 'key' => 'tskey-abcdef', 'control_url' => 'https://headscale.example.com:8443']) === null && $J(['provider' => 'netbird', 'key' => 'abcdefgh', 'control_url' => 'https://netbird.example.com/']) === null, 'join: a control URL is http(s)://host[:port]');
+    ok($M::tags('cipi, tag:prod ,cipi') === ['tag:cipi', 'tag:prod'] && $M::tags(['a', 'tag:b']) === ['tag:a', 'tag:b'] && $M::tags(null) === [] && $M::tags('') === [] && $M::tags('ok,no way') === null && $M::tags([['x']]) === null && $M::tags("a';id") === null, 'tags: a list or a,b — tag: added, doubles dropped; a bad one is refused');
+    ok(str_contains((string) $J(['provider' => 'tailscale', 'key' => 'tskey-abcdef', 'tags' => 'no way']), 'Not a tag'), 'join: a tag that is not one');
+    foreach (['tags' => 'cipi', 'ssh' => true, 'reauth' => true] as $f => $v) {
+        ok(str_contains((string) $J(['provider' => 'netbird', 'key' => 'abcdefgh', $f => $v]), "'{$f}' is Tailscale's"), "join NetBird: {$f} is Tailscale's");
+    }
+    ok(str_contains((string) $J(['provider' => 'tailscale', 'reauth' => true]), 'needs a key') && $J(['provider' => 'tailscale', 'reauth' => true, 'key' => 'tskey-abcdef']) === null, 'join: reauth needs a key');
+    ok($M::joinCommand(['provider' => 'tailscale', 'key' => 'tskey-auth-k1', 'hostname' => 'web1', 'control_url' => 'https://hs.example.com', 'tags' => ['cipi', 'tag:prod'], 'direct' => true, 'accept_dns' => true, 'accept_routes' => true, 'ssh' => true, 'reauth' => true])
+        === "zt tailscale enable --auth-key='tskey-auth-k1' --hostname='web1' --login-server='https://hs.example.com' --tags='tag:cipi,tag:prod' --direct --accept-dns --accept-routes --ssh --reauth", 'join Tailscale: every flag, values quoted');
+    ok($M::joinCommand(['provider' => 'netbird', 'key' => 'A1B2C3D4-E5F6', 'hostname' => 'web1', 'control_url' => 'https://nb.example.com', 'direct' => false, 'accept_dns' => '0', 'ssh' => true, 'tags' => 'x'])
+        === "zt netbird enable --setup-key='A1B2C3D4-E5F6' --hostname='web1' --management-url='https://nb.example.com'", 'join NetBird: its own flag names; nothing of Tailscale\'s, nothing that is off');
+    ok($M::joinCommand(['provider' => 'tailscale']) === 'zt tailscale enable' && ! $perm->commandIsPermitted('zt tailscale enable'), 'join with nothing at all is a command the whitelist does not have (it would prompt)');
+
+    $meshOn = fn (string $p, array $more = []) => ['zt status' => ['output' => json_encode(['enabled' => false, 'tunnel' => null, 'mesh' => ['enabled' => true, 'provider' => $p, 'connected' => true, 'ip' => '100.64.0.7'] + $more]), 'exit_code' => 0, 'success' => true]];
+    $meshOff = ['zt status' => ['output' => json_encode(['enabled' => false, 'tunnel' => null, 'mesh' => ['enabled' => false, 'provider' => null]]), 'exit_code' => 0, 'success' => true]];
+    $mk = function (array $by, string $v = '5.18.0') use ($M, $Z) {
+        $cli = new ScriptCli; $cli->by = $by;
+        return [new $M($cli, new FakeVersion($v), new $Z($cli, new CipiApi\Services\CipiOutputParser), new CipiApi\Services\CipiIpWhitelistService($cli)), $cli];
+    };
+    [$ms, $cli] = $mk($meshOff, '5.17.2');
+    foreach (['join' => fn () => $ms->join(['provider' => 'tailscale', 'key' => 'tskey-abcdef']), 'leave' => fn () => $ms->leave(''), 'lock' => fn () => $ms->lock('ssh', ''), 'unlock' => fn () => $ms->unlock('ssh'), 'ssh' => fn () => $ms->providerSsh(true)] as $what => $f) {
+        $e = (string) thrown($f);
+        ok(str_starts_with($e, 'RuntimeException: The mesh network from the panel needs Cipi 5.18.0+'), "an older core: {$what} is refused before anything runs");
+    }
+    ok($cli->ran === [], 'an older core: nothing ran');
+    [$ms, $cli] = $mk($meshOff);
+    ok($ms->clientIp('::ffff:203.0.113.9') === '203.0.113.9' && $ms->clientIp('100.64.0.2') === '100.64.0.2' && $ms->clientIp('fd7a:115c:a1e0::1') === 'fd7a:115c:a1e0::1' && $ms->clientIp("1.2.3.4'; id") === '' && $ms->clientIp(null) === '' && $ms->clientIp('unix:') === '', 'the caller\'s address: an IP as it is, anything else nothing');
+    ok($ms->provider() === null, 'no mesh: provider is null');
+    foreach (['leave' => fn () => $ms->leave('1.2.3.4'), 'lock' => fn () => $ms->lock('http', '1.2.3.4'), 'unlock' => fn () => $ms->unlock('http'), 'ssh' => fn () => $ms->providerSsh(true)] as $what => $f) {
+        ok(thrown($f) === $R . ': This server is on no mesh network', "no mesh: {$what} has nothing to work on");
+    }
+    $cli->ran = [];
+    $cli->by = ['zt tailscale enable' => ['output' => "\e[0;36m→\e[0m Installing Tailscale...\n\e[0;32m✓\e[0m Tailscale: web1 is on the network as 100.64.0.7", 'exit_code' => 0, 'success' => true]] + $meshOff;
+    $out = $ms->join(['provider' => 'tailscale', 'key' => 'tskey-auth-k1', 'hostname' => 'web1']);
+    ok($cli->ran === ["zt tailscale enable --auth-key='tskey-auth-k1' --hostname='web1'"] && $out === "Installing Tailscale...\nTailscale: web1 is on the network as 100.64.0.7", 'join: one command; what the CLI said, without colours');
+    $cli->by = ['zt netbird enable' => ['output' => "\e[0;31m[ERROR]\e[0m The setup key A1B2C3D4-E5F6-7890 was refused by the management server", 'exit_code' => 1, 'success' => false]] + $meshOff;
+    $e = (string) thrown(fn () => $ms->join(['provider' => 'netbird', 'key' => 'A1B2C3D4-E5F6-7890']));
+    ok($e === $R . ': The setup key [key] was refused by the management server', 'a refused join: the CLI\'s words — and never the key, even if it repeats it');
+    ok(str_contains((string) thrown(fn () => $ms->join(['provider' => 'netbird', 'key' => 'abcdefgh', 'ssh' => true])), "'ssh' is Tailscale's"), 'join validates again by itself: nothing runs on a bad request');
+
+    [$ms, $cli] = $mk($meshOn('tailscale'));
+    ok($ms->provider() === 'tailscale', 'provider: the mesh the server is on');
+    $cli->ran = []; $ms->lock('ssh', '203.0.113.9');
+    ok(end($cli->ran) === 'zt tailscale lock ssh --yes', 'lock ssh: nothing more than --yes (it is not the panel\'s way in)');
+    $ms->lock('http', '203.0.113.9');
+    ok(end($cli->ran) === "zt tailscale lock http --yes --via='203.0.113.9'", 'lock http: where the caller comes from goes with it, last');
+    $ms->lock('http', '');
+    ok(end($cli->ran) === 'zt tailscale lock http --yes', 'lock http with no address to give: the CLI then takes the caller for unknown, and refuses');
+    $ms->unlock('ssh'); ok(end($cli->ran) === 'zt tailscale unlock ssh', 'unlock ssh');
+    $ms->unlock('http'); ok(end($cli->ran) === 'zt tailscale unlock http', 'unlock http');
+    $ms->leave('100.64.0.2'); ok(end($cli->ran) === "zt tailscale disable --yes --via='100.64.0.2'", 'leave: --yes and the caller\'s address');
+    $ms->providerSsh(true); ok(end($cli->ran) === 'zt tailscale ssh enable', 'Tailscale SSH on');
+    $ms->providerSsh(false); ok(end($cli->ran) === 'zt tailscale ssh disable', 'Tailscale SSH off');
+    ok(thrown(fn () => $ms->lock('rdp', '')) === $R . ": 'port' is ssh or http" && thrown(fn () => $ms->unlock('22')) === $R . ": 'port' is ssh or http", 'a port that is neither ssh nor http');
+    ok(! array_filter($cli->ran, fn ($c) => str_contains($c, '--force')), 'nothing the API runs carries --force');
+    $cli->by = ['zt tailscale lock ssh' => ['output' => "\e[0;31m[ERROR]\e[0m Nobody has signed in over SSH through Tailscale yet. Do it once from a device of the network (ssh cipi@100.64.0.7): that login is the proof that it works, and then the port can be closed.", 'exit_code' => 1, 'success' => false]] + $meshOn('tailscale');
+    $e = (string) thrown(fn () => $ms->lock('ssh', '203.0.113.9'));
+    ok(str_starts_with($e, $R . ': Nobody has signed in over SSH through Tailscale yet.') && str_contains($e, 'ssh cipi@100.64.0.7'), 'a refused lock: the CLI\'s reason, whole');
+    $cli->by = ['zt tailscale disable' => ['output' => '', 'exit_code' => 1, 'success' => false]] + $meshOn('tailscale');
+    ok(thrown(fn () => $ms->leave('')) === $R . ': cipi zt tailscale disable failed', 'a failure that says nothing still says what failed');
+
+    [$ms, $cli] = $mk($meshOn('netbird'));
+    $cli->ran = []; $ms->lock('http', '100.64.0.2'); $ms->leave('::1');
+    ok($cli->ran[1] === "zt netbird lock http --yes --via='100.64.0.2'" && $cli->ran[3] === "zt netbird disable --yes --via='::1'", 'NetBird: the same commands under its own name');
+    $n = count($cli->ran);
+    ok(str_contains((string) thrown(fn () => $ms->providerSsh(true)), "NetBird's own SSH server is not turned on by Cipi") && ! array_filter(array_slice($cli->ran, $n), fn ($c) => ! str_starts_with($c, 'zt status')), 'NetBird: its SSH server is not Cipi\'s to turn on — nothing runs');
+
+    $cli = new ScriptCli; $cli->by = $meshOn('tailscale', ['panel' => ['via' => 'public', 'from' => '203.0.113.9', 'blocked' => ['lock_ssh' => null, 'lock_http' => 'The panel reaches this server\'s API on its public address', 'disable' => null]]]);
+    $zs = (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status('203.0.113.9');
+    ok($cli->ran === ["zt status --json --via='203.0.113.9'"] && ($zs['details']['mesh']['panel']['via'] ?? null) === 'public' && str_starts_with((string) $zs['details']['mesh']['panel']['blocked']['lock_http'], 'The panel reaches'), 'status with the caller\'s address: what the panel may do from there, as the CLI says it');
+    $cli->ran = []; (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status(); (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status('');
+    ok($cli->ran === ['zt status --json', 'zt status --json'], 'status without an address: the command as it always was');
+
+    $routes = (string) file_get_contents($root . '/routes/api.php');
+    foreach ([
+        "Route::get('/zt', [ZtController::class, 'status'])->middleware('ability:zt-view')",
+        "Route::post('/zt/mesh', [ZtMeshController::class, 'join'])->middleware('ability:zt-manage')",
+        "Route::delete('/zt/mesh', [ZtMeshController::class, 'leave'])->middleware('ability:zt-manage')",
+        "Route::post('/zt/mesh/lock', [ZtMeshController::class, 'lock'])->middleware('ability:zt-manage')",
+        "Route::delete('/zt/mesh/lock', [ZtMeshController::class, 'unlock'])->middleware('ability:zt-manage')",
+        "Route::put('/zt/mesh/ssh', [ZtMeshController::class, 'ssh'])->middleware('ability:zt-manage')",
+    ] as $line) {
+        ok(str_contains($routes, $line), 'route: ' . substr($line, 7, strpos($line, ',') - 7));
+    }
+    ok(substr_count($routes, 'ability:zt-manage') === 5 && ! preg_match('/zt\/mesh.*ability:zt-view/', $routes), 'every change of the mesh needs zt-manage; zt-view only reads');
+    $cfg = (string) file_get_contents($root . '/config/cipi.php');
+    ok(str_contains($cfg, "'zt-manage' => ") && str_contains($cfg, "'zt-view' => 'View Zero Trust status"), 'abilities: zt-manage is one; zt-view reads both sides');
+    $ctl = (string) file_get_contents($root . '/src/Http/Controllers/ZtMeshController.php');
+    ok(! str_contains($ctl, 'dispatch(') && ! str_contains($ctl, 'CipiJob') && str_contains($ctl, "'key' => 'nullable|string|max:512'") && substr_count($ctl, '], 422)') === 2 && str_contains($ctl, '], 503)'), 'the controller: synchronous (a key never reaches the jobs table); 422 for a refusal, 503 for an older core');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    $sc = $spec['components']['schemas'];
+    ok(is_array($spec) && isset($spec['paths']['/zt/mesh']['post'], $spec['paths']['/zt/mesh']['delete'], $spec['paths']['/zt/mesh/lock']['post'], $spec['paths']['/zt/mesh/lock']['delete'], $spec['paths']['/zt/mesh/ssh']['put'], $sc['ZtMeshJoinRequest'], $sc['ZtMeshLockRequest'], $sc['ZtMeshSshRequest'], $sc['ZtMeshChangeResponse']), 'OpenAPI: the five routes of the mesh and their schemas');
+    ok(str_contains(json_encode($spec['paths']['/zt/mesh']['post']), 'zt-manage') && str_contains(json_encode($spec['paths']['/zt/mesh/lock']['post']), 'zt-manage') && in_array('Zero Trust', array_column($spec['tags'], 'name'), true) && isset($spec['paths']['/zt/mesh']['post']['responses']['422'], $spec['paths']['/zt/mesh']['post']['responses']['503']), 'OpenAPI: zt-manage, 422 and 503 on a change');
+    $refs = []; array_walk_recursive($spec, function ($v, $k) use (&$refs) { if ($k === '$ref') { $refs[$v] = true; } });
+    $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
+    ok($missing === [], 'OpenAPI: every $ref still points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);

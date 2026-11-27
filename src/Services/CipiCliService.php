@@ -190,6 +190,24 @@ class CipiCliService
         'valkey share ',
         'valkey restart ',
         'valkey flush-shared --yes',
+        // Cipi CLI ≥ 5.18.0 (API sudoers ≥ 5.18.0): the mesh network of Zero
+        // Trust, each command spelled out as the sudoers have it. From the
+        // panel the CLI ignores --force, and refuses a lock or a leave that
+        // would cut the caller off. Nothing of Cloudflare's side: `zt status`.
+        'zt tailscale enable ',
+        'zt tailscale disable --yes',
+        'zt tailscale lock ssh --yes',
+        'zt tailscale lock http --yes',
+        'zt tailscale unlock ssh',
+        'zt tailscale unlock http',
+        'zt tailscale ssh enable',
+        'zt tailscale ssh disable',
+        'zt netbird enable ',
+        'zt netbird disable --yes',
+        'zt netbird lock ssh --yes',
+        'zt netbird lock http --yes',
+        'zt netbird unlock ssh',
+        'zt netbird unlock http',
     ];
 
     /**

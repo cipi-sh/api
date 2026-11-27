@@ -4,21 +4,37 @@ All notable changes to this project will be documented in this file.
 
 ## [1.48.0] - 2026-11-27
 
-For Cipi 5.18.0: the mesh network a server is on — Tailscale or NetBird — in the Zero Trust status. Still read-only: no new route, no new ability, no new line in the sudoers.
+For Cipi 5.18.0: the mesh network of Zero Trust — Tailscale or NetBird. `GET /api/zt` reads it, and five routes under `/api/zt/mesh` join it, leave it and lock the server behind it, so a panel can do everything the CLI does. One new ability, `zt-manage`.
 
 ### Added
 
 - **`GET /api/zt`: the mesh** (`cipi zt tailscale|netbird`, Cipi 5.18.0). Zero Trust has two sides: Cloudflare Tunnel publishes the sites, a mesh network is how the people who run the server reach it. The same call answers for both.
   - `mesh` — `tailscale`, `netbird`, or `null` while the server is on none (and on an older Cipi); `mesh_state` — `connected` / `disconnected`; `mesh_ip` — the server's address on the network.
-  - `details.mesh` — what `cipi zt status --json` says of it: `provider`, `label`, `connected`, `state` (the client's own word: `Running`, `NeedsLogin`…), `ip`, `ip6`, `name`, `fqdn`, `network`, `control_url` (Headscale, a self-hosted NetBird), `version`, `tags`, `key_expiry` and `key_expires_in_days`, `peers` (`total`, `online`), `ssh` (`provider_ssh`, `ports`, `command`), `lock` (`ssh`, `http`), `direct`, `warnings`.
+  - `details.mesh` — what `cipi zt status --json` says of it: `provider`, `label`, `connected`, `state` (the client's own word: `Running`, `NeedsLogin`…), `ip`, `ip6`, `name`, `fqdn`, `network`, `control_url` (Headscale, a self-hosted NetBird), `version`, `tags`, `key_expiry` and `key_expires_in_days`, `peers` (`total`, `online`), `ssh` (`provider_ssh`, `ports`, `command`, `seen` — the last login sshd accepted over the mesh), `lock` (`ssh`, `http`), `direct`, `firewall_active`, `http01_apps`, `warnings`.
+  - `details.mesh.panel` — the address of the request goes to the CLI (`--via`), which answers what this caller may do from where it is: `via` (`mesh`, `local`, `tunnel`, `public`, `unknown`), `from`, and `blocked` `{lock_ssh, lock_http, disable}`, each `null` or the reason it would be refused.
   - `enabled`, `cloudflared`, `tunnel`, `lock_http`, `lock_ssh` and `ssh_hostname` are Cloudflare's, as they were: a server with a mesh and no tunnel answers `enabled: false` and `mesh: "tailscale"`.
+- **The mesh from the panel** — ability **`zt-manage`**, synchronous, each answering `{data, message}` with Zero Trust as it is after the change:
+  - `POST /api/zt/mesh` — join: `provider` (`tailscale` | `netbird`), `key` (left out to adopt a client that is already connected), `hostname`, `control_url`, `direct`, `accept_dns`, `accept_routes`, and for Tailscale `tags`, `ssh`, `reauth`. Nothing is closed by joining.
+  - `DELETE /api/zt/mesh` — leave: what its locks closed is reopened first.
+  - `POST /api/zt/mesh/lock` and `DELETE /api/zt/mesh/lock` — `{port: "ssh" | "http"}`: close the SSH port, or 80/443, to the world and reopen it.
+  - `PUT /api/zt/mesh/ssh` — `{enabled}`: Tailscale SSH.
+  - A refusal is a `422` with the CLI's words; a Cipi older than 5.18.0 a `503` before anything runs.
+  - `CipiZtMeshService`, `ZtMeshController`, `ZtRefusedException`.
 - **`GET /api/firewall`: `zero_trust.by`** — who holds each lock: `{http: ["cloudflare"], ssh: ["tailscale"]}`. A port closed by `cipi zt tailscale|netbird lock` is refused to `POST /api/firewall/rules` like one closed by Cloudflare's lock, and the CLI's message names the command that reopens it. Empty lists on an older Cipi, where a lock is Cloudflare's.
-- MCP `ZtStatus`: the same fields, described. OpenAPI 1.48.0: `mesh`, `mesh_state`, `mesh_ip` and `details.mesh` on `ZtStatusResponse`, `by` on `FirewallStatus.zero_trust`.
+- MCP `ZtStatus`: the same fields, described. OpenAPI 1.48.0: a `Zero Trust` tag with `GET /zt` and the five mesh routes; `ZtMeshJoinRequest`, `ZtMeshLockRequest`, `ZtMeshSshRequest`, `ZtMeshChangeResponse`; `mesh`, `mesh_state`, `mesh_ip` and `details.mesh` on `ZtStatusResponse`; `by` on `FirewallStatus.zero_trust`.
+
+### Security
+
+- **A click cannot lock the server out.** The API never sends `--force`, and the CLI ignores it when sudo comes from `www-data`. `lock ssh` is refused until sshd has accepted a login that came over the mesh, while the node key can expire, with UFW off or sshd not listening on the mesh address. `lock http` is refused while an app renews SSL over HTTP-01 and when the caller reaches the API on the public address it would close. Leaving the network is refused when the caller comes over it.
+- **The join key never rests anywhere**: validated (8–512 characters, no spaces, no quotes), quoted, passed as a flag of a synchronous command — never a job, so never in the jobs table — never returned, and replaced by `[key]` should the CLI repeat it in an error.
+- **`zt-manage` is as strong as `ssh-manage`**: whoever holds it can put the server on a network of their own. No existing token has it; it is given on purpose (`cipi api token create --abilities=…,zt-manage`).
+- The whitelist names each mesh command as the sudoers spell it; nothing of Cloudflare's side was added — `zt enable`, `hostname`, `access`, `lock` stay at the server's shell.
 
 ### Notes
 
-- **Joining a network and closing ports are not in the API**: `cipi zt tailscale|netbird enable|disable|lock|unlock|ssh` stay at the server's shell, like every other Zero Trust change. The API runs `zt status --json`, which the sudoers already allowed.
-- On a Cipi older than 5.18.0 the three `mesh*` fields are `null` and `details` has no `mesh`.
+- MCP stays read-only for Zero Trust: an agent reads the mesh, it does not join a network or close a port.
+- A join installs a package and signs in: it can take a minute or two, within the 300 s the API's PHP-FPM pool and vhost allow.
+- On a Cipi older than 5.18.0 the three `mesh*` fields are `null`, `details` has no `mesh`, and the routes under `/api/zt/mesh` answer `503`.
 
 ## [1.47.0] - 2026-11-26
 
