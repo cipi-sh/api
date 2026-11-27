@@ -352,6 +352,33 @@ class CipiValidationService
         return null;
     }
 
+    /** The Cipi that takes `cipi app create --db=NAME`. */
+    public const APP_DB_MIN_CIPI = '5.18.0';
+
+    /**
+     * A database made with the app (`db` of POST /api/apps → `--db=NAME`):
+     * for a custom or a Node app. A Laravel app is created with its own.
+     *
+     * @param  'laravel'|'custom'|'node'  $kind
+     */
+    public function appDbError(?string $db, string $kind): ?string
+    {
+        if ($db === null || $db === '') {
+            return null;
+        }
+        if ($kind === 'laravel') {
+            return "'db' is for custom and Node apps: a Laravel app is created with its own database, named like the app. One more for it, afterwards: POST /api/dbs with `app`.";
+        }
+        if (! preg_match('/^[a-z][a-z0-9_]{1,63}$/', $db)) {
+            return "Invalid db '{$db}'. A database name: lowercase letters, digits and '_', starting with a letter (2-64 characters)";
+        }
+        if ($this->cipiVersion !== null && ! $this->cipiVersion->atLeast(self::APP_DB_MIN_CIPI)) {
+            return "'db' needs Cipi " . self::APP_DB_MIN_CIPI . '+ on the server (cipi self-update). Until then: create the app, then POST /api/dbs.';
+        }
+
+        return null;
+    }
+
     public function isForceHttps(string $name): bool
     {
         $apps = $this->getApps();

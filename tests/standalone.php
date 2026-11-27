@@ -1102,6 +1102,24 @@ namespace {
     $dcProps = $spec['components']['schemas']['DeployConfigUpdateRequest']['properties'];
     ok(($dcProps['build_timeout']['maximum'] ?? 0) === 3600 && ($dcProps['step_timeout']['maximum'] ?? 0) === 1800 && str_contains($spec['paths']['/apps/{name}/deploy-config']['put']['description'], 'Node app'), 'OpenAPI: the two fields, their bounds, the Node app');
 
+    echo "--- POST /api/apps: db — a database made with a custom or a Node app (Cipi 5.18.0)\n";
+    $v518 = new CipiApi\Services\CipiValidationService(new FakeVersion('5.18.0'));
+    ok($v518->appDbError(null, 'custom') === null && $v518->appDbError('', 'laravel') === null && $v518->appDbError('wpblog', 'custom') === null && $v518->appDbError('front_db', 'node') === null, 'no db, or a name for a custom or a Node app: nothing to say');
+    ok(str_contains((string) $v518->appDbError('extra', 'laravel'), 'a Laravel app is created with its own database'), 'a Laravel app has its own database: db is refused');
+    $badDb = 0; foreach (['WP', '1abc', 'a', 'bad-name', 'x; id', "it's", str_repeat('a', 65)] as $n) { $badDb += (int) str_contains((string) $v518->appDbError($n, 'custom'), "Invalid db '"); }
+    ok($badDb === 7, 'a name that is not a database name never reaches the command line');
+    ok(str_contains((string) (new CipiApi\Services\CipiValidationService(new FakeVersion('5.17.0')))->appDbError('wpblog', 'custom'), "'db' needs Cipi 5.18.0+"), 'an older core is told so instead of creating an app without its database');
+    $actl = (string) file_get_contents($root . '/src/Http/Controllers/AppController.php');
+    ok(str_contains($actl, "'db' => 'nullable|string|max:64',") && str_contains($actl, "\$this->validator->appDbError(\$validated['db'], \$isNodeRequest ? 'node' : (\$request->boolean('custom') ? 'custom' : 'laravel'))")
+        && str_contains($actl, "str_contains(\$err, 'needs Cipi') ? 503 : 422") && (bool) preg_match('/if \(! \$withDb\) \{\s+unset\(\$validated\[\'engine\'\]\);/', $actl),
+        'the controller: checked before the job; 503 for an older core, 422 otherwise; engine kept for a custom app only with db');
+    $mcpCreate = (string) file_get_contents($root . '/src/Mcp/Tools/AppCreateTool.php');
+    ok(str_contains($mcpCreate, "\$this->validator->appDbError(\$db, \$isNode ? 'node' : (\$custom ? 'custom' : 'laravel'))") && str_contains($mcpCreate, "\$params['db'] = \$db;") && str_contains($mcpCreate, "'db' => \$schema->string()"), 'MCP AppCreate: the same field, the same checks');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    ok(($spec['components']['schemas']['AppCreateRequest']['properties']['db']['pattern'] ?? '') === '^[a-z][a-z0-9_]{1,63}$', 'OpenAPI: db on AppCreateRequest');
+    $parser = (string) file_get_contents($root . '/src/Services/CipiOutputParser.php');
+    ok((bool) preg_match('/Database\s+(\S+)\s*\/\s*(\S+)/', "  Database    wpblog / s3cr3tPASS  (MariaDB)", $dbm) && $dbm[1] === 'wpblog' && $dbm[2] === 's3cr3tPASS' && str_contains($parser, "preg_match('/Database\\s+(\\S+)\\s*\\/\\s*(\\S+)/'"), "the job result carries the database's name and password: the CLI prints them on the line the parser reads");
+
     echo "--- how long a job may run (a deploy: two hours)\n";
     require_once $root . '/src/Services/CipiJobTimeout.php';
     $JT = CipiApi\Services\CipiJobTimeout::class;

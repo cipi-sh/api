@@ -10590,8 +10590,14 @@
                             "mariadb",
                             "pgsql"
                         ],
-                        "description": "Database engine for Laravel apps (ignored for custom apps). Requires Cipi 4.8+ and an installed engine. Server default when omitted.",
+                        "description": "Database engine for Laravel apps. Requires Cipi 4.8+ and an installed engine. Server default when omitted. For a custom or a Node app it is read only with `db`: the engine of that database.",
                         "example": "pgsql"
+                    },
+                    "db": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{1,63}$",
+                        "description": "Custom and Node apps only (Cipi 5.18.0+): the name of a new database to create with the app — a user of the same name, a generated password — on `engine` or the server's default, linked to the app (`GET /api/dbs` shows it as the app's). The job result carries its credentials in `database`. Refused for a Laravel app (`422`: it is created with its own database), when a database of that name exists (the job fails before anything is created), and on an older core (`503`).",
+                        "example": "wpblog"
                     },
                     "octane": {
                         "oneOf": [

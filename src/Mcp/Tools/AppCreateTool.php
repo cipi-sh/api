@@ -78,8 +78,14 @@ class AppCreateTool extends Tool
             $engine = $this->validator->normalizeEngine($engine);
         }
         $octane = $this->validator->normalizeOctane($octaneRaw);
+        // A database made with a custom or a Node app, and linked to it (Cipi 5.18.0+).
+        $db = is_string($request->get('db')) && trim($request->get('db')) !== '' ? trim($request->get('db')) : null;
+        if ($err = $this->validator->appDbError($db, $isNode ? 'node' : ($custom ? 'custom' : 'laravel'))) {
+            return Response::text("Error: {$err}");
+        }
         if ($custom) {
-            $engine = null;
+            // The engine of a custom app is the one of its database, when it is created with one.
+            $engine = $db !== null ? $engine : null;
             if ($octane !== null) {
                 return Response::text('Error: Octane is only available for Laravel apps (not custom)');
             }
@@ -90,8 +96,8 @@ class AppCreateTool extends Tool
             if ($custom || $octane !== null) {
                 return Response::text('Error: A Node app cannot be combined with custom or octane');
             }
-            if ($engine !== null) {
-                return Response::text('Error: Databases are not created with a Node app. Create one with DbCreate after creation.');
+            if ($engine !== null && $db === null) {
+                return Response::text("Error: engine names the engine of a database: pass db with it to create one with the Node app (Cipi 5.18.0+), or use DbCreate after creation.");
             }
             if (! $hasRepo) {
                 return Response::text('Error: repository is required for Node apps');
@@ -148,6 +154,9 @@ class AppCreateTool extends Tool
         if ($env !== null) {
             $params['env'] = $env;
         }
+        if ($db !== null) {
+            $params['db'] = $db;
+        }
         if ($isNode) {
             $params += array_filter([
                 'node' => $node,
@@ -194,7 +203,8 @@ class AppCreateTool extends Tool
             'php' => $schema->string()->description("PHP version: 8.3, 8.4, 8.5 or 8.6, installed on the server (PhpList). Omit it for the server's PHP"),
             'custom' => $schema->boolean()->description('Create a custom (non-Laravel) app with classic deploy (no zero-downtime)'),
             'docroot' => $schema->string()->description('Document root path for custom apps (e.g. dist, www, public). Default: /'),
-            'engine' => $schema->string()->description('Database engine for Laravel apps: mariadb (default) or pgsql. Requires Cipi 4.8+ and installed engine.'),
+            'engine' => $schema->string()->description('Database engine for Laravel apps: mariadb (default) or pgsql. Requires Cipi 4.8+ and installed engine. With db: the engine of that database.'),
+            'db' => $schema->string()->description('Custom and Node apps only (Cipi 5.18.0+): the name of a new database to create with the app and link to it — user of the same name, generated password in the job result. A Laravel app always gets its own database.'),
             'octane' => $schema->boolean()->description('Serve Laravel via Octane (FrankenPHP) instead of PHP-FPM. Requires Cipi 5.0+, laravel/octane in the repo. Not compatible with custom apps.'),
             'node' => $schema->string()->description('Create a Node frontend app: spa, static or ssr (Cipi 5.4.0+). Not compatible with custom/octane/engine/php.'),
             'framework' => $schema->string()->description('Node framework preset: next, nuxt, sveltekit, astro, remix or vite (fills mode/build/start/output defaults)'),

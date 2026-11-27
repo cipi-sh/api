@@ -96,6 +96,8 @@ class AppController extends Controller
             'custom' => 'nullable|boolean',
             'docroot' => 'nullable|string|max:128',
             'engine' => 'nullable|string',
+            // A database made with a custom or a Node app, and linked to it (Cipi CLI ≥ 5.18.0)
+            'db' => 'nullable|string|max:64',
             'octane' => 'nullable',
             // Node frontend apps (Cipi CLI ≥ 5.4.0)
             'node' => 'nullable|string|max:16',
@@ -150,8 +152,20 @@ class AppController extends Controller
         }
         $octane = $this->validator->normalizeOctane($validated['octane'] ?? null);
         unset($validated['octane']);
+        // `db`: a new database for a custom or a Node app, on `engine` or the server's default.
+        $isNodeRequest = $request->filled('node') || $request->filled('framework');
+        $validated['db'] = isset($validated['db']) ? trim((string) $validated['db']) : '';
+        $withDb = $validated['db'] !== '';
+        if (! $withDb) {
+            unset($validated['db']);
+        } elseif ($err = $this->validator->appDbError($validated['db'], $isNodeRequest ? 'node' : ($request->boolean('custom') ? 'custom' : 'laravel'))) {
+            return response()->json(['error' => $err], str_contains($err, 'needs Cipi') ? 503 : 422);
+        }
         if ($request->boolean('custom')) {
-            unset($validated['engine']);
+            // The engine of a custom app is the one of its database, when it is created with one.
+            if (! $withDb) {
+                unset($validated['engine']);
+            }
             if ($octane !== null) {
                 return response()->json(['error' => 'Octane is only available for Laravel apps (not custom)'], 422);
             }
@@ -174,8 +188,8 @@ class AppController extends Controller
             if ($request->boolean('custom') || $octane !== null) {
                 return response()->json(['error' => 'A Node app cannot be combined with custom or octane'], 422);
             }
-            if (! empty($validated['engine'])) {
-                return response()->json(['error' => 'Databases are not created with a Node app. Create one with the database API after creation.'], 422);
+            if (! empty($validated['engine']) && ! $withDb) {
+                return response()->json(['error' => "'engine' names the engine of a database: send 'db' with it to create one with the Node app (Cipi 5.18.0+), or create one with the database API after creation."], 422);
             }
             if (! empty($validated['php'])) {
                 return response()->json(['error' => 'PHP version does not apply to Node apps'], 422);
