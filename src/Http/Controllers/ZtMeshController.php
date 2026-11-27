@@ -15,7 +15,8 @@ use Illuminate\Routing\Controller;
  *
  * Synchronous: a join carries a key, which must not reach the jobs table.
  * Every change answers with Zero Trust as it is after it (`data`, the same
- * as `GET /api/zt`) and what the CLI said (`message`); its refusal is a 422
+ * as `GET /api/zt` — read for `client` too, when the body has one) and what
+ * the CLI said (`message`); its refusal is a 422
  * with its words, an older core a 503 before anything runs.
  *
  * What a click must not do is refused by the CLI itself (it ignores --force
