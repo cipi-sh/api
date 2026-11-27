@@ -18,6 +18,24 @@ namespace Illuminate\Support {
         }
     }
 }
+// What RunCipiCommand takes from the queue, and the jobs table as far as it asks.
+namespace Illuminate\Contracts\Queue { interface ShouldQueue {} }
+namespace Illuminate\Bus { trait Queueable {} }
+namespace Illuminate\Foundation\Bus { trait Dispatchable {} }
+namespace Illuminate\Queue {
+    trait InteractsWithQueue {}
+    trait SerializesModels {}
+    class MaxAttemptsExceededException extends \RuntimeException {}
+    class TimeoutExceededException extends MaxAttemptsExceededException {}
+}
+namespace CipiApi\Models {
+    class CipiJob {
+        public static array $rows = [];
+        public function __construct(public string $status = 'running', public ?string $output = null, public string $type = 'app-deploy', public mixed $params = null, public ?int $exit_code = null) {}
+        public static function find(string $id): ?self { return self::$rows[$id] ?? null; }
+        public function markCompleted(string $output, int $exitCode): void { $this->status = $exitCode === 0 ? 'completed' : 'failed'; $this->output = $output; $this->exit_code = $exitCode; }
+    }
+}
 namespace Composer {
     // What Composer writes for an installed package, as far as the status service asks.
     class InstalledVersions {
@@ -1045,6 +1063,46 @@ namespace {
     $refs = []; array_walk_recursive($spec, function ($v, $k) use (&$refs) { if ($k === '$ref') { $refs[$v] = true; } });
     $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
     ok($missing === [], 'OpenAPI: every $ref still points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));
+
+    echo "--- how long a job may run (a deploy: an hour)\n";
+    require_once $root . '/src/Services/CipiJobTimeout.php';
+    $JT = CipiApi\Services\CipiJobTimeout::class;
+    ok($JT::forCommand("deploy 'shop'") === 3600 && $JT::DEPLOY_SECONDS === 3600, "a deploy has an hour: the build alone may take 30 minutes of it");
+    ok($JT::forCommand("deploy 'shop' --rollback") === 600 && $JT::forCommand("deploy 'shop' --unlock") === 600 && $JT::forCommand("deploy 'shop' --status --json") === 600, 'a rollback, an unlock, a status: ten minutes, as before');
+    ok($JT::forCommand("app create --user='shop' --domain='shop.test'") === 600 && $JT::forCommand("backup run 'shop'") === 600 && $JT::forCommand('deploy') === 600 && $JT::forCommand('') === 600 && $JT::SECONDS === 600, 'every other command: ten minutes');
+    ok($JT::isDeploy(" deploy 'shop' ") && ! $JT::isDeploy("app deploy-config 'shop' --json") && ! $JT::isDeploy("redeploy 'shop'"), 'a deploy is `deploy <app>` and nothing after it');
+    $stopped = $JT::stoppedOutput("task deploy:vendors\ntask cipi:node_build\n", "deploy 'shop'", 3600);
+    ok(str_starts_with($stopped, "task deploy:vendors\ntask cipi:node_build\n\n[cipi-api] Stopped after 60 minutes") && str_contains($stopped, '`cipi deploy shop --status`'), 'a deploy the worker stopped: what it had printed, then why and where to look');
+    $stopped = $JT::stoppedOutput(null, "db restore 'shop' --file='/x.sql'", 600);
+    ok($stopped === '[cipi-api] Stopped after 10 minutes: the time the API gives a job of this kind. The command had not ended.', 'another job stopped with nothing printed: the one line');
+    $jobSrc = (string) file_get_contents($root . '/src/Jobs/RunCipiCommand.php');
+    ok(str_contains($jobSrc, 'public int $timeout = CipiJobTimeout::SECONDS;') && str_contains($jobSrc, '$this->timeout = CipiJobTimeout::forCommand($command);') && str_contains($jobSrc, 'public int $tries = 1;'), 'RunCipiCommand: the limit is set when the job is made, and travels with it');
+    ok((bool) preg_match('/public function failed\(\?\\\\Throwable \$e = null\): void.*?in_array\(\$job->status, \[\'pending\', \'running\'\], true\).*?instanceof TimeoutExceededException.*?CipiJobTimeout::EXIT_CODE.*?\$this->discardUpload\(\$job\);/s', $jobSrc)
+        && $JT::EXIT_CODE === 124, 'RunCipiCommand::failed(): a job the worker gave up is closed as failed (124 for a timeout) instead of staying "running"; the dump of a restore is discarded');
+    ok(! str_contains($jobSrc, '$e->getMessage()'), '…and the text of an exception never becomes the output of a job');
+    // The job itself, with the queue and the jobs table stood in for.
+    $GLOBALS['DISCARDED'] = [];
+    if (! function_exists('app')) {
+        function app(string $class): object { return new class { public function discard(string $id): void { $GLOBALS['DISCARDED'][] = $id; } }; }
+    }
+    require_once $root . '/src/Jobs/RunCipiCommand.php';
+    $J = CipiApi\Jobs\RunCipiCommand::class; $M = CipiApi\Models\CipiJob::class;
+    ok((new $J('a', "deploy 'shop'"))->timeout === 3600 && (new $J('a', "deploy 'shop' --rollback"))->timeout === 600 && (new $J('a', "ssl install 'shop'"))->timeout === 600 && (new $J('a', "deploy 'shop'"))->tries === 1,
+        'a job is made with its limit: 3600 for a deploy, 600 for the rest, one try');
+    $M::$rows = ['d1' => new $M('running', "task deploy:vendors\ntask cipi:node_build")];
+    (new $J('d1', "deploy 'shop'"))->failed(new Illuminate\Queue\TimeoutExceededException('App\Jobs has timed out.'));
+    ok($M::$rows['d1']->status === 'failed' && $M::$rows['d1']->exit_code === 124 && str_starts_with($M::$rows['d1']->output, "task deploy:vendors\ntask cipi:node_build\n\n[cipi-api] Stopped after 60 minutes")
+        && ! str_contains($M::$rows['d1']->output, 'timed out'), 'a deploy stopped at its hour: failed, 124, its output kept, the reason under it');
+    $M::$rows = ['r1' => new $M('running', 'Restoring…', 'db-restore', ['upload_id' => 'abc'])];
+    (new $J('r1', "db restore 'shop'"))->failed(new RuntimeException('SQLSTATE[HY000]: database is locked (password=hunter2)'));
+    ok($M::$rows['r1']->status === 'failed' && $M::$rows['r1']->exit_code === 1 && $M::$rows['r1']->output === "Restoring…\n\n[cipi-api] The job ended with an error before the result of the command was saved."
+        && $GLOBALS['DISCARDED'] === ['abc'], 'a job whose handler threw: failed, 1, no word of the exception; the uploaded dump is discarded');
+    $M::$rows = ['c1' => new $M('completed', 'successfully deployed!', 'app-deploy', null, 0)];
+    (new $J('c1', "deploy 'shop'"))->failed(new Illuminate\Queue\MaxAttemptsExceededException('attempted too many times'));
+    ok($M::$rows['c1']->status === 'completed' && $M::$rows['c1']->output === 'successfully deployed!' && $M::$rows['c1']->exit_code === 0, 'a job that had ended keeps its result, whatever the queue says afterwards');
+    (new $J('gone', "deploy 'shop'"))->failed(null);
+    ok(true, 'a job that is not in the table any more: nothing to close, nothing thrown');
+    ok(str_contains((string) file_get_contents($root . '/CHANGELOG.md'), 'CipiJobTimeout') && str_contains((string) file_get_contents($root . '/README.md'), 'a deploy gets an hour'), 'CHANGELOG and README say it');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);
