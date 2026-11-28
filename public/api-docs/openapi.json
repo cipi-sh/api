@@ -5989,7 +5989,7 @@
                     "Backups"
                 ],
                 "summary": "Add a backup destination: an SFTP server or an S3 bucket",
-                "description": "`type: \"sftp\"` (default) — `cipi backup destination add <name> --type=sftp`: a server reached over SSH — a VPS with a backup user, a Hetzner Storage Box (port 23), a NAS. Cipi makes a key of its own for it on the server; the answer has its public half, to install on the remote (`authorized_keys`, or `ssh-copy-id -s` for a Storage Box), then `POST /backups/destinations/test`. No password is sent or stored. Cipi CLI >= 5.18.0.\n\n`type: \"s3\"` — an S3-compatible bucket: `bucket`, `key`, `secret`, `region`, `endpoint`. The bucket is reached with those keys before anything is saved (422 with the provider's words otherwise). The secret key goes to the CLI on its standard input (`--secret-stdin`): never on a command line, never in a job, never answered. Cipi CLI >= 5.19.0.\n\nRequires `backups-manage`.",
+                "description": "`type: \"sftp\"` (default) — `cipi backup destination add <name> --type=sftp`: a server reached over SSH — a VPS with a backup user, a Hetzner Storage Box (port 23), a NAS. Cipi makes a key of its own for it on the server; the answer has its public half, to install on the remote (`authorized_keys`, or `ssh-copy-id -s` for a Storage Box), then `POST /backups/destinations/test`. No password is sent or stored. Cipi CLI >= 5.18.0.\n\n`type: \"s3\"` — an S3-compatible bucket: `bucket`, `key`, `secret`, `region`, `endpoint`. The bucket is reached with those keys before anything is saved (422 with the provider's words otherwise). The secret key goes to the CLI on its standard input (`--secret-stdin`): never on a command line, never in a job, never answered. Cipi CLI >= 5.19.0.\n\nS3 buckets and SFTP servers are on a par: any `name` but `local` (this server); `s3` is an S3 bucket's name only (Cipi CLI >= 5.19.1). `profiles`: the profiles sent there too (Cipi CLI >= 5.19.1).\n\nRequires `backups-manage`.",
                 "operationId": "backupDestinationCreate",
                 "requestBody": {
                     "required": true,
@@ -6058,6 +6058,16 @@
                                         "type": "string",
                                         "example": "https://fsn1.your-objectstorage.com",
                                         "description": "S3: every provider but AWS"
+                                    },
+                                    "profiles": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "example": [
+                                            "default"
+                                        ],
+                                        "description": "Profiles sent there too (Cipi CLI >= 5.19.1)"
                                     }
                                 }
                             }
@@ -6130,7 +6140,7 @@
                     "Backups"
                 ],
                 "summary": "Change a backup destination (SFTP or S3)",
-                "description": "What is given changes, the rest stays; `new_key: true` makes a new key (install its public half again). Requires `backups-manage` and Cipi CLI >= 5.18.0.\n\nS3 (Cipi CLI >= 5.19.0): `bucket`, `key`, `secret` (kept when left out; on the CLI's standard input when given), `region`, `endpoint`. The default bucket is `PUT /backups/config`.",
+                "description": "What is given changes, the rest stays; `new_key: true` makes a new key (install its public half again). Requires `backups-manage` and Cipi CLI >= 5.18.0.\n\nS3 (Cipi CLI >= 5.19.0): `bucket`, `key`, `secret` (kept when left out; on the CLI's standard input when given), `region`, `endpoint` (`none`: back to AWS) — the bucket named `s3` too (Cipi CLI >= 5.19.1). `profiles`: the profiles sent there too (5.19.1).",
                 "operationId": "backupDestinationUpdate",
                 "parameters": [
                     {
@@ -6198,6 +6208,16 @@
                                         "type": "string",
                                         "example": "https://fsn1.your-objectstorage.com",
                                         "description": "S3: every provider but AWS"
+                                    },
+                                    "profiles": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "example": [
+                                            "default"
+                                        ],
+                                        "description": "Profiles sent there too (Cipi CLI >= 5.19.1)"
                                     }
                                 }
                             }
@@ -6265,7 +6285,7 @@
                     "Backups"
                 ],
                 "summary": "Remove a backup destination (SFTP, or S3 from Cipi 5.19.0)",
-                "description": "`cipi backup destination remove`: refused while a profile writes to it. The archives on it stay where they are, and Cipi stops pruning them; an SFTP destination's key is deleted on the server. Requires `backups-manage` and Cipi CLI >= 5.18.0.",
+                "description": "`cipi backup destination remove`: refused while a profile writes to it. The archives on it stay where they are, and Cipi stops pruning them; an SFTP destination's key is deleted on the server. Requires `backups-manage` and Cipi CLI >= 5.18.0 (an S3 bucket: 5.19.0; the one named `s3`: 5.19.1).",
                 "operationId": "backupDestinationDelete",
                 "parameters": [
                     {
@@ -6342,91 +6362,12 @@
                 "tags": [
                     "Backups"
                 ],
-                "summary": "Set up backups: this server only, an S3 bucket or an SFTP server",
-                "description": "`cipi backup configure`, where backups go — `type`: `local` (this server only; `local_only: true` too), `s3` (the default bucket, 's3' in profiles: `bucket`, `key`, `secret` kept when left out, `region`, `endpoint`; the bucket is reached before anything is saved, the secret goes on the CLI's standard input) or `sftp` (an SFTP server: `host`, `user`, `port`, `path`, `name` — 'sftp' by default; Cipi makes its key, answered as `destination.public_key`, to install on the remote). Without `type`, the fields say it. A first setup makes the nightly profile, sent to what was chosen. The local and temp folders are not set from here. Synchronous. Requires `backups-manage` and Cipi CLI >= 5.19.0 (>= 5.19.1 for `sftp`).",
+                "summary": "Set up backups on the server: the local folder and the nightly profile",
+                "description": "`cipi backup configure`: backups on the server — the local folder and the nightly profile `default` (every app and database, kept there). S3 buckets and SFTP servers are then added on a par, as destinations (`POST /backups/destinations`). No body. The local and temp folders are set on the server. Synchronous; the answer is the backup status after it. Requires `backups-manage` and Cipi CLI >= 5.19.0.",
                 "operationId": "backupConfigure",
-                "requestBody": {
-                    "required": true,
-                    "content": {
-                        "application/json": {
-                            "schema": {
-                                "type": "object",
-                                "properties": {
-                                    "type": {
-                                        "type": "string",
-                                        "enum": [
-                                            "local",
-                                            "s3",
-                                            "sftp"
-                                        ],
-                                        "description": "Where backups go"
-                                    },
-                                    "local_only": {
-                                        "type": "boolean",
-                                        "description": "The same as type: local"
-                                    },
-                                    "bucket": {
-                                        "type": "string",
-                                        "example": "acme-backups",
-                                        "description": "S3: the bucket"
-                                    },
-                                    "key": {
-                                        "type": "string",
-                                        "example": "AKIA…",
-                                        "description": "S3: the access key ID"
-                                    },
-                                    "secret": {
-                                        "type": "string",
-                                        "format": "password",
-                                        "writeOnly": true,
-                                        "description": "S3: the secret access key — written to the CLI's standard input, never answered"
-                                    },
-                                    "region": {
-                                        "type": "string",
-                                        "example": "eu-central-1",
-                                        "description": "S3: eu-central-1 when not given"
-                                    },
-                                    "endpoint": {
-                                        "type": "string",
-                                        "example": "https://fsn1.your-objectstorage.com",
-                                        "description": "S3: every provider but AWS"
-                                    },
-                                    "host": {
-                                        "type": "string",
-                                        "example": "u1234.your-storagebox.de",
-                                        "description": "SFTP: the server"
-                                    },
-                                    "port": {
-                                        "type": "integer",
-                                        "minimum": 1,
-                                        "maximum": 65535,
-                                        "default": 22,
-                                        "description": "SFTP: 23 for a Hetzner Storage Box"
-                                    },
-                                    "user": {
-                                        "type": "string",
-                                        "example": "u1234",
-                                        "description": "SFTP: the login"
-                                    },
-                                    "path": {
-                                        "type": "string",
-                                        "example": "cipi",
-                                        "description": "SFTP: the folder on the remote; empty: the login's home"
-                                    },
-                                    "name": {
-                                        "type": "string",
-                                        "default": "sftp",
-                                        "pattern": "^[a-z][a-z0-9-]{1,31}$",
-                                        "description": "SFTP: its name in profiles"
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
                 "responses": {
                     "200": {
-                        "description": "The backup status after it (`data`), `type`, and `destination` — for an SFTP server its fields and `public_key`, null otherwise"
+                        "description": "The backup status after it (`data`), and the CLI's message"
                     },
                     "422": {
                         "description": "Refused: a field, the provider, or the server — with the reason"

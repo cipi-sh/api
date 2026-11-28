@@ -1315,29 +1315,29 @@ namespace {
     ok($bk19->s3Errors([], false) === ['bucket' => 'bucket is required', 'key' => 'key is required', 'secret' => 'secret is required'] && $bk19->s3Errors([], true) === []
         && array_keys($bk19->s3Errors(['bucket' => 'Bad_Bucket!', 'region' => 'eu central', 'endpoint' => 'ftp://x', 'key' => "a\nb", 'secret' => "has space"], true)) === ['bucket', 'region', 'endpoint', 'key', 'secret']
         && $bk19->s3Errors(['secret' => "quo'te"], true) === ['secret' => 'secret: printable characters, no space, no quote'] && array_keys($bk19->s3Errors(['key' => "AKIA\n"], true)) === ['key'] && $bk19->s3Errors(['endpoint' => 'none'], true) === [], 'the fields of a bucket checked before anything runs; a line break, a space or a quote in a key is refused');
-    $bk19->configure(['bucket' => 'acme-backups', 'key' => 'AKIAX', 'secret' => 'S2', 'endpoint' => 'https://fsn1.your-objectstorage.com']);
-    ok(end($cli->ran) === "backup configure '--bucket=acme-backups' '--key=AKIAX' '--endpoint=https://fsn1.your-objectstorage.com' --secret-stdin" && end($cli->inputs) === 'S2', 'configure: the default bucket, its secret on stdin');
-    ok($bk19->configure(['local_only' => true]) === ['type' => 'local', 'destination' => null] && end($cli->ran) === 'backup configure --local-only', 'configure: local only (local_only: true, or type: local) — as 5.19.0 takes it');
-    ok(str_contains((string) thrown(fn () => $bk19->configure(['type' => 'sftp', 'host' => 'h', 'user' => 'u'])), 'needs Cipi 5.19.1+'), 'configure: an SFTP server needs 5.19.1');
+    $bk19->configure();
+    ok(end($cli->ran) === 'backup configure --local-only', 'configure: backups on the server — the local folder and the nightly profile; nothing else (5.19.0 takes --local-only too)');
+    ok(str_contains((string) thrown(fn () => $bk19->saveS3('s3', ['bucket' => 'b', 'key' => 'k', 'secret' => 's'], false)), 'needs Cipi 5.19.1+')
+        && str_contains((string) thrown(fn () => $bk19->saveSftp('box', ['host' => 'h', 'user' => 'u', 'profiles' => ['default']], false)), 'needs Cipi 5.19.1+')
+        && str_contains((string) thrown(fn () => $bk19->removeDestination('s3')), 'needs Cipi 5.19.1+'), 'the bucket named s3 and --use: Cipi 5.19.1');
     $bk19 = new CipiApi\Services\CipiBackupCliService($cli, new FakeVersion('5.19.1'));
-    $sftpSetup = ['output' => "→ Created backup profile 'default'\n" . json_encode(['configured' => true, 'type' => 'sftp', 'destination' => ['name' => 'sftp', 'type' => 'sftp', 'host' => 'u1.your-storagebox.de', 'port' => 23, 'user' => 'u1', 'path' => 'cipi', 'public_key' => 'ssh-ed25519 AAAAKey cipi-backup-sftp@web1']]) . "\n✓ Backup configured", 'exit_code' => 0, 'success' => true];
-    $cli->by["backup configure --type=sftp"] = $sftpSetup;
-    $setup = $bk19->configure(['type' => 'sftp', 'host' => 'u1.your-storagebox.de', 'port' => 23, 'user' => 'u1', 'path' => 'cipi']);
-    ok(end($cli->ran) === "backup configure --type=sftp '--host=u1.your-storagebox.de' '--port=23' '--user=u1' '--path=cipi' --json" && $setup['type'] === 'sftp' && $setup['destination']['public_key'] === 'ssh-ed25519 AAAAKey cipi-backup-sftp@web1',
-        'configure: an SFTP server — the destination and the public key it has to accept');
-    $bk19->configure(['type' => 'sftp', 'host' => 'h1', 'user' => 'u', 'name' => 'vps']);
-    ok(end($cli->ran) === "backup configure --type=sftp '--host=h1' '--user=u' '--name=vps' --json", 'configure: an SFTP server with a name of its own');
-    $B = CipiApi\Services\CipiBackupCliService::class;
-    ok($B::setupType(['local_only' => true]) === 'local' && $B::setupType(['type' => 'sftp']) === 'sftp' && $B::setupType(['bucket' => 'b']) === 's3' && $B::setupType(['host' => 'h']) === 'sftp'
-        && $B::setupType([]) === null && $B::setupType(['type' => 'nas']) === '' && $B::setupType(['type' => ['s3']]) === '', 'what a setup is for: type, or what its fields say');
+    $cli->by["backup destination add 's3'"] = ['output' => json_encode(['name' => 's3', 'type' => 's3', 'bucket' => 'acme', 'region' => 'eu-central-1', 'endpoint' => '']), 'exit_code' => 0, 'success' => true];
+    $d = $bk19->saveS3('s3', ['bucket' => 'acme', 'key' => 'AKIAX', 'secret' => 'sEcR3t', 'profiles' => ['default', 'hourly-db']], false);
+    ok(end($cli->ran) === "backup destination add 's3' '--bucket=acme' '--key=AKIAX' --secret-stdin '--use=default,hourly-db' --json" && $d['name'] === 's3' && end($cli->inputs) === 'sEcR3t',
+        'S3 on a par: a bucket named s3 added like any other, the profiles sent there too (--use)');
+    $cli->by["backup sftp add 'box'"] = ['output' => json_encode(['name' => 'box', 'type' => 'sftp', 'host' => 'h', 'port' => 22, 'user' => 'u', 'path' => '', 'public_key' => 'ssh-ed25519 AAAA k']), 'exit_code' => 0, 'success' => true];
+    $bk19->saveSftp('box', ['host' => 'h', 'user' => 'u', 'profiles' => ['default']], false);
+    ok(str_contains(end($cli->ran), "'--use=default' --json"), '…an SFTP server too');
+    $bk19->removeDestination('s3'); ok(end($cli->ran) === "backup destination remove 's3'", 'remove s3, like any other');
+    ok($bk19->profilesError(null) === null && $bk19->profilesError(['default', 'hourly-db']) === null && $bk19->profilesError('default') !== null && $bk19->profilesError(['Bad;']) !== null && $bk19->profilesError(['a' => 'default']) !== null, 'profiles: a list of profile names');
     ok($bk19->encryptionKey() === 'dGhlLWtleQ==' && end($cli->ran) === 'backup key show --raw', 'the key, once: key show --raw');
     $bk19->rotateKey(); ok(end($cli->ran) === 'backup key rotate', 'key rotate');
     ok($bk19->pruneCommand('nightly', true) === "backup prune --profile='nightly' --dry-run" && $bk19->pruneCommand(null, false) === 'backup prune', 'prune: a profile, a dry run');
     $bk19->removeDestination('offsite'); ok(end($cli->ran) === "backup destination remove 'offsite'", 'remove: an S3 bucket or an SFTP server, on 5.19.0');
     $bk18r = new CipiApi\Services\CipiBackupCliService($cli, new FakeVersion('5.18.0')); $bk18r->removeDestination('box'); ok(end($cli->ran) === "backup sftp remove 'box'", '…backup sftp remove on 5.18.0');
     ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.18.0')))->saveS3('x', ['bucket' => 'b'], false)), 'needs Cipi 5.19.0+')
-        && str_contains((string) thrown(fn () => (new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.18.0')))->configure(['local_only' => true])), 'needs Cipi 5.19.0+'), 'S3 and configure on an older core: refused, with the version');
-    foreach (["backup configure --local-only", 'backup configure --type=local', "backup configure --type=sftp '--host=h' '--user=u' --json", "backup destination add 'x' --json", "backup destination edit 'x' --json", "backup destination remove 'x'", 'backup key show --raw', 'backup key rotate', 'backup prune', "backup prune --profile='x' --dry-run"] as $c) {
+        && str_contains((string) thrown(fn () => (new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.18.0')))->configure()), 'needs Cipi 5.19.0+'), 'S3 and configure on an older core: refused, with the version');
+    foreach (["backup configure --local-only", "backup destination add 's3' '--use=default' --json", "backup destination add 'x' --json", "backup destination edit 'x' --json", "backup destination remove 'x'", 'backup key show --raw', 'backup key rotate', 'backup prune', "backup prune --profile='x' --dry-run"] as $c) {
         ok((new FakeCli)->commandIsPermitted($c), "allowed: cipi {$c}");
     }
     $routes = (string) file_get_contents($root . '/routes/api.php');
@@ -1346,7 +1346,7 @@ namespace {
         ok(str_contains($routes, $r), 'route: ' . substr($r, 0, 60));
     }
     $ctl = (string) file_get_contents($root . '/src/Http/Controllers/BackupController.php');
-    ok(str_contains($ctl, "\$errors = \$this->backup->sftpErrors(\$fields, false);") && str_contains($ctl, "'type' => \$setup['type'], 'destination' => \$setup['destination']") && str_contains($ctl, 'Say where backups go: type local, s3'), 'PUT /backups/config: local, s3 or sftp — checked first; an SFTP server answered with its key');
+    ok(str_contains($ctl, "public function configure(): JsonResponse") && str_contains($ctl, "\$name === 'local' || (\$name === 's3' && \$type !== 's3')") && str_contains($ctl, "\$this->backup->profilesError(\$in['profiles'] ?? null)") && substr_count($ctl, "\$fields + array_intersect_key(\$in, ['profiles' => true])") === 2, 'the setup takes no body; any name but local (s3 an S3 bucket\'s); profiles checked');
     $cliSrc = (string) file_get_contents($root . '/src/Services/CipiCliService.php');
     ok(str_contains($cliSrc, 'public function runWithInput(string $command, string $input): array') && str_contains($cliSrc, "[0 => ['pipe', 'r'], 1 => ['pipe', 'w']]"), 'runWithInput: the secret into the command\'s standard input');
 

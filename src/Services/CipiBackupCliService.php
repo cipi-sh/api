@@ -237,7 +237,7 @@ class CipiBackupCliService
         if (! empty($in['new_key'])) {
             $command .= ' --new-key';
         }
-        $command .= ' --json';
+        $command .= $this->useFlag($in) . ' --json';
         $result = $this->cli->run($command);
         $output = $this->strip($result['output'] ?? '');
         if ($result['exit_code'] !== 0) {
@@ -270,6 +270,9 @@ class CipiBackupCliService
      */
     public function removeDestination(string $name): string
     {
+        if ($name === 's3') {
+            $this->version->require(self::MIN_CIPI_S3_PAR, 'Removing the bucket named s3 from the panel');
+        }
         if ($this->version->atLeast(self::MIN_CIPI_PANEL)) {
             return $this->plain('backup destination remove ' . escapeshellarg($name), 'cipi backup destination remove');
         }
@@ -281,8 +284,8 @@ class CipiBackupCliService
     // ── S3 buckets, the default bucket, the key, the retention (Cipi 5.19.0) ──
 
     /** Backups set up and managed from the panel: S3 buckets, `configure`, the key, prune. */
-    /** `cipi backup configure --type=sftp`: 5.19.1. */
-    public const MIN_CIPI_SFTP_SETUP = '5.19.1';
+    /** 5.19.1: S3 on a par — a bucket named s3 like any other, and `--use=` (send profiles there). */
+    public const MIN_CIPI_S3_PAR = '5.19.1';
 
     public const MIN_CIPI_PANEL = '5.19.0';
 
@@ -339,7 +342,10 @@ class CipiBackupCliService
     public function saveS3(string $name, array $in, bool $isEdit): array
     {
         $this->version->require(self::MIN_CIPI_PANEL, 'S3 backup destinations from the panel');
-        $command = 'backup destination ' . ($isEdit ? 'edit' : 'add') . ' ' . escapeshellarg($name) . $this->s3Flags($in) . ' --json';
+        if ($name === 's3') {
+            $this->version->require(self::MIN_CIPI_S3_PAR, 'The bucket named s3 from the panel');
+        }
+        $command = 'backup destination ' . ($isEdit ? 'edit' : 'add') . ' ' . escapeshellarg($name) . $this->s3Flags($in) . $this->useFlag($in) . ' --json';
         $decoded = CipiAppJitService::decode($this->withSecret($command, $in['secret'] ?? null, 'cipi backup destination'));
         if (! is_array($decoded) || ($decoded['type'] ?? null) !== 's3') {
             throw new \RuntimeException('Cipi CLI returned no destination (Cipi CLI ≥ ' . self::MIN_CIPI_PANEL . ' required)');
@@ -349,70 +355,16 @@ class CipiBackupCliService
     }
 
     /**
-     * Set up backups — where they go: `type` local (this server only), s3 (the
-     * default bucket, 's3' in profiles: `bucket`, `key`, `secret` kept when not
-     * given, `region`, `endpoint`) or sftp (an SFTP server: `host`, `user`,
-     * `port`, `path`, `name` — 'sftp' by default; Cipi makes its key). The
-     * bucket is reached with the keys before anything is saved. The local and
-     * temp folders stay the server's.
-     *
-     * @param  array<string, mixed>  $in
-     * @return array{type: string, destination: array<string, mixed>|null}  an SFTP destination with its public key
+     * Set up backups on the server: the local folder and the nightly profile
+     * (every app and database, kept there). S3 buckets and SFTP servers are
+     * destinations, added next. `--local-only` is what 5.19.0 takes for it,
+     * and 5.19.1 too (it sets nothing else up). The folders stay the server's.
      */
-    public function configure(array $in): array
+    public function configure(): string
     {
         $this->version->require(self::MIN_CIPI_PANEL, 'Setting up backups from the panel');
-        $type = self::setupType($in);
-        if ($type === 'local') {
-            // --local-only: what 5.19.0 already takes (--type= is 5.19.1's).
-            $this->plain('backup configure --local-only', 'cipi backup configure');
 
-            return ['type' => 'local', 'destination' => null];
-        }
-        if ($type === 'sftp') {
-            $this->version->require(self::MIN_CIPI_SFTP_SETUP, 'Setting up backups to an SFTP server');
-            $command = 'backup configure --type=sftp';
-            foreach (['host', 'port', 'user', 'path', 'name'] as $f) {
-                if (array_key_exists($f, $in) && $in[$f] !== null && $in[$f] !== '') {
-                    $command .= ' ' . escapeshellarg("--{$f}=" . $in[$f]);
-                }
-            }
-            $output = $this->plain($command . ' --json', 'cipi backup configure');
-            $decoded = CipiAppJitService::decode($output);
-            $dest = is_array($decoded) ? ($decoded['destination'] ?? null) : null;
-            if (! is_array($dest) || ($dest['type'] ?? null) !== 'sftp') {
-                throw new \RuntimeException('Cipi CLI returned no SFTP destination (Cipi CLI ≥ ' . self::MIN_CIPI_PANEL . ' required)');
-            }
-
-            return ['type' => 'sftp', 'destination' => $dest];
-        }
-        $this->withSecret('backup configure' . $this->s3Flags($in), $in['secret'] ?? null, 'cipi backup configure');
-
-        return ['type' => 's3', 'destination' => null];
-    }
-
-    /**
-     * What a setup is for: `type` (local, s3, sftp); `local_only: true` is
-     * local; S3 fields are s3, SFTP ones sftp. Null: nothing said.
-     *
-     * @param  array<string, mixed>  $in
-     */
-    public static function setupType(array $in): ?string
-    {
-        if (filter_var($in['local_only'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
-            return 'local';
-        }
-        if (isset($in['type'])) {
-            return is_string($in['type']) && in_array($in['type'], ['local', 's3', 'sftp'], true) ? $in['type'] : '';
-        }
-        if (array_intersect_key($in, array_flip(['bucket', 'key', 'secret', 'region', 'endpoint'])) !== []) {
-            return 's3';
-        }
-        if (array_intersect_key($in, array_flip(['host', 'user'])) !== []) {
-            return 'sftp';
-        }
-
-        return null;
+        return $this->plain('backup configure --local-only', 'cipi backup configure');
     }
 
     /** The encryption key, once — logged and notified on the server. Never kept here. */
@@ -461,6 +413,43 @@ class CipiBackupCliService
         }
 
         return $flags;
+    }
+
+    /**
+     * `--use=a,b`: the profiles sent to this destination too (5.19.1). Names
+     * checked by the caller (profilesErrors).
+     *
+     * @param  array<string, mixed>  $in
+     */
+    protected function useFlag(array $in): string
+    {
+        $profiles = $in['profiles'] ?? null;
+        if (! is_array($profiles) || $profiles === []) {
+            return '';
+        }
+        $this->version->require(self::MIN_CIPI_S3_PAR, 'Sending profiles to a destination from the panel');
+
+        return ' ' . escapeshellarg('--use=' . implode(',', $profiles));
+    }
+
+    /**
+     * What is wrong with `profiles` (a list of profile names), if anything.
+     */
+    public function profilesError(mixed $profiles): ?string
+    {
+        if ($profiles === null) {
+            return null;
+        }
+        if (! is_array($profiles) || ! array_is_list($profiles) || count($profiles) > 32) {
+            return 'profiles: a list of profile names';
+        }
+        foreach ($profiles as $p) {
+            if (! is_string($p) || ! $this->isValidName($p)) {
+                return 'profiles: a list of profile names';
+            }
+        }
+
+        return null;
     }
 
     /** Run a command, the secret on its standard input when there is one. */

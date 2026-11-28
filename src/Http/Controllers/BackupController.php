@@ -199,8 +199,13 @@ class BackupController extends Controller
             return response()->json(['error' => 'type: sftp or s3', 'errors' => ['type' => 'sftp or s3']], 422);
         }
         $name = $in['name'] ?? null;
-        if (! is_string($name) || ! $this->backup->isValidName($name) || in_array($name, ['local', 's3'], true)) {
-            return response()->json(['error' => 'name: lowercase letters, digits and dashes, 2 to 32; not local or s3', 'errors' => ['name' => 'invalid']], 422);
+        // S3 buckets and SFTP servers on a par: any name but local (this
+        // server); "s3" is an S3 bucket's name only (Cipi 5.19.1+).
+        if (! is_string($name) || ! $this->backup->isValidName($name) || $name === 'local' || ($name === 's3' && $type !== 's3')) {
+            return response()->json(['error' => "name: lowercase letters, digits and dashes, 2 to 32; not local (s3 is an S3 bucket's)", 'errors' => ['name' => 'invalid']], 422);
+        }
+        if (($e = $this->backup->profilesError($in['profiles'] ?? null)) !== null) {
+            return response()->json(['error' => $e, 'errors' => ['profiles' => $e]], 422);
         }
 
         return $type === 's3' ? $this->saveS3($name, $in, false) : $this->saveSftp($name, $in, false);
@@ -209,16 +214,20 @@ class BackupController extends Controller
     /**
      * PUT /backups/destinations/{name} — change one; only what is given changes.
      * SFTP: `host`, `port`, `user`, `path`, `new_key: true` for a new key.
-     * S3: `bucket`, `key`, `secret` (kept when left out), `region`, `endpoint`.
-     * The default bucket is `PUT /backups/config`.
+     * S3: `bucket`, `key`, `secret` (kept when left out), `region`, `endpoint`
+     * (`none`: back to AWS) — the bucket named s3 too (Cipi 5.19.1+). Both:
+     * `profiles`, sent there too (5.19.1+).
      */
     public function updateDestination(Request $request, string $name): JsonResponse
     {
-        if (! $this->backup->isValidName($name) || in_array($name, ['local', 's3'], true)) {
-            return response()->json(['error' => "Invalid destination name '{$name}' (the default bucket is PUT /backups/config)"], 422);
+        if (! $this->backup->isValidName($name) || $name === 'local') {
+            return response()->json(['error' => "Invalid destination name '{$name}'"], 422);
         }
         $in = $request->all();
-        $s3 = array_intersect_key($in, array_flip(['bucket', 'key', 'secret', 'region', 'endpoint'])) !== [];
+        if (($e = $this->backup->profilesError($in['profiles'] ?? null)) !== null) {
+            return response()->json(['error' => $e, 'errors' => ['profiles' => $e]], 422);
+        }
+        $s3 = $name === 's3' || array_intersect_key($in, array_flip(['bucket', 'key', 'secret', 'region', 'endpoint'])) !== [];
         if (! $s3 && array_intersect_key($in, array_flip(['host', 'port', 'user', 'path', 'new_key'])) === []) {
             // Nothing that says which kind: ask the server.
             try {
@@ -232,46 +241,17 @@ class BackupController extends Controller
     }
 
     /**
-     * PUT /backups/config — set up backups, where they go: `type` local (this
-     * server only; `local_only: true` too), s3 (the default bucket, 's3' in
-     * profiles — `bucket`, `key`, `secret` kept when left out, `region`,
-     * `endpoint`) or sftp (an SFTP server — `host`, `user`, `port`, `path`,
-     * `name`, 'sftp' by default). Synchronous; the answer is the backup status
-     * after it, and for an SFTP server the destination with the public key it
-     * has to accept. The secret goes on the CLI's standard input.
+     * PUT /backups/config — set up backups on the server: the local folder and
+     * the nightly profile, kept there. S3 buckets and SFTP servers are then
+     * added as destinations (POST /backups/destinations), on a par. No body.
+     * Synchronous; the answer is the backup status after it.
      */
-    public function configure(Request $request): JsonResponse
+    public function configure(): JsonResponse
     {
-        $in = $request->all();
-        $type = CipiBackupCliService::setupType($in);
-        if ($type === null || $type === '') {
-            return response()->json(['error' => 'Say where backups go: type local, s3 (bucket, key, secret, region, endpoint) or sftp (host, user, port, path, name)'], 422);
-        }
-        if ($type === 's3') {
-            $fields = array_intersect_key($in, array_flip(['bucket', 'key', 'secret', 'region', 'endpoint']));
-            if (($errors = $this->backup->s3Errors($fields, true)) !== []) {
-                return response()->json(['error' => implode('; ', $errors), 'errors' => $errors], 422);
-            }
-            // Only the region or the endpoint changes: the bucket stays as it is. Said as s3, or given: it is a bucket.
-            if ((array_key_exists('type', $in) || array_key_exists('bucket', $in)) && (! is_string($fields['bucket'] ?? null) || $fields['bucket'] === '')) {
-                return response()->json(['error' => 'An S3 bucket needs bucket (and key, secret)', 'errors' => ['bucket' => 'bucket is required']], 422);
-            }
-        }
-        if ($type === 'sftp') {
-            $fields = array_intersect_key($in, array_flip(['host', 'user', 'port', 'path']));
-            $errors = $this->backup->sftpErrors($fields, false);
-            if (isset($in['name']) && (! is_string($in['name']) || ! $this->backup->isValidName($in['name']) || in_array($in['name'], ['local', 's3'], true))) {
-                $errors['name'] = "name: lowercase letters, digits and dashes (2 to 32) — not 'local' or 's3'";
-            }
-            if ($errors !== []) {
-                return response()->json(['error' => implode('; ', $errors), 'errors' => $errors], 422);
-            }
-        }
-
         try {
-            $setup = $this->backup->configure(['type' => $type] + $in);
+            $message = $this->backup->configure();
 
-            return response()->json(['data' => $this->backup->status(), 'type' => $setup['type'], 'destination' => $setup['destination']], 200);
+            return response()->json(['data' => $this->backup->status(), 'message' => $message], 200);
         } catch (\RuntimeException $e) {
             return $this->cliError($e);
         }
@@ -340,7 +320,7 @@ class BackupController extends Controller
         }
 
         try {
-            return response()->json(['data' => $this->backup->saveS3($name, $fields, $isEdit)], $isEdit ? 200 : 201);
+            return response()->json(['data' => $this->backup->saveS3($name, $fields + array_intersect_key($in, ['profiles' => true]), $isEdit)], $isEdit ? 200 : 201);
         } catch (\RuntimeException $e) {
             return $this->cliError($e);
         }
@@ -360,10 +340,10 @@ class BackupController extends Controller
         }
     }
 
-    /** DELETE /backups/destinations/{name} — an SFTP server or (Cipi 5.19.0+) an S3 bucket; refused while a profile uses it; the archives stay. */
+    /** DELETE /backups/destinations/{name} — an SFTP server or (Cipi 5.19.0+) an S3 bucket, the one named s3 too (5.19.1+); refused while a profile uses it; the archives stay. */
     public function deleteDestination(string $name): JsonResponse
     {
-        if (! $this->backup->isValidName($name) || in_array($name, ['local', 's3'], true)) {
+        if (! $this->backup->isValidName($name) || $name === 'local') {
             return response()->json(['error' => "Invalid destination name '{$name}'"], 422);
         }
 
@@ -383,7 +363,7 @@ class BackupController extends Controller
         }
 
         try {
-            return response()->json(['data' => $this->backup->saveSftp($name, $fields, $isEdit)], $isEdit ? 200 : 201);
+            return response()->json(['data' => $this->backup->saveSftp($name, $fields + array_intersect_key($in, ['profiles' => true]), $isEdit)], $isEdit ? 200 : 201);
         } catch (\RuntimeException $e) {
             return $this->cliError($e);
         }
