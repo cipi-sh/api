@@ -1256,22 +1256,22 @@ namespace {
 
     echo "--- backups to SFTP, and how Cipi updates itself (Cipi 5.18.0)\n";
     $sjson = ['output' => "sudo: x\n" . json_encode(['name' => 'box', 'type' => 'sftp', 'host' => 'u1.your-storagebox.de', 'port' => 23, 'user' => 'u1', 'path' => 'cipi', 'created_at' => 1, 'public_key' => 'ssh-ed25519 AAAAC3Nz cipi-backup-box@web1']), 'exit_code' => 0, 'success' => true];
-    $cli = new ScriptCli; $cli->by = ["backup destination add 'box' --type=sftp" => $sjson, "backup destination edit 'box' --type=sftp" => $sjson,
-        "backup destination key 'box' --raw" => ['output' => "ssh-ed25519 AAAAC3Nz cipi-backup-box@web1\n", 'exit_code' => 0, 'success' => true]];
+    $cli = new ScriptCli; $cli->by = ["backup sftp add 'box'" => $sjson, "backup sftp edit 'box'" => $sjson,
+        "backup sftp key 'box' --raw" => ['output' => "ssh-ed25519 AAAAC3Nz cipi-backup-box@web1\n", 'exit_code' => 0, 'success' => true]];
     $bk18 = new CipiApi\Services\CipiBackupCliService($cli, new FakeVersion('5.18.0'));
     $d = $bk18->saveSftp('box', ['host' => 'u1.your-storagebox.de', 'port' => 23, 'user' => 'u1', 'path' => 'cipi'], false);
-    ok(end($cli->ran) === "backup destination add 'box' --type=sftp '--host=u1.your-storagebox.de' '--port=23' '--user=u1' '--path=cipi' --json" && $d['public_key'] === 'ssh-ed25519 AAAAC3Nz cipi-backup-box@web1', 'SFTP destination: add with each value quoted; the answer has the key to install');
+    ok(end($cli->ran) === "backup sftp add 'box' '--host=u1.your-storagebox.de' '--port=23' '--user=u1' '--path=cipi' --json" && $d['public_key'] === 'ssh-ed25519 AAAAC3Nz cipi-backup-box@web1', 'SFTP destination: add with each value quoted; the answer has the key to install');
     $bk18->saveSftp('box', ['port' => 22, 'new_key' => true], true);
-    ok(end($cli->ran) === "backup destination edit 'box' --type=sftp '--port=22' --new-key --json", 'edit: only what is given, and --new-key');
+    ok(end($cli->ran) === "backup sftp edit 'box' '--port=22' --new-key --json", 'edit: only what is given, and --new-key');
     ok($bk18->sftpKey('box') === 'ssh-ed25519 AAAAC3Nz cipi-backup-box@web1', 'the public key, one line');
     ok($bk18->sftpErrors(['host' => 'a;b', 'user' => 'x y', 'port' => 70000, 'path' => '../etc'], false) === ['host' => 'host must be an IP address or a hostname', 'user' => 'user: letters, digits, . _ - (64 at most)', 'port' => 'port must be between 1 and 65535', 'path' => 'path: a folder on the remote — letters, digits, . _ - /, no ..']
         && array_keys($bk18->sftpErrors([], false)) === ['host', 'user'] && $bk18->sftpErrors([], true) === [] && $bk18->sftpErrors(['host' => 'fd7a:115c::1', 'user' => 'u123', 'port' => '23', 'path' => '/srv/backups'], false) === [], 'the fields checked before anything runs: host, user, port, folder');
     ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.17.0')))->saveSftp('box', ['host' => 'h', 'user' => 'u'], false)), 'needs Cipi 5.18.0+'), 'SFTP on an older core: refused, with the version');
-    foreach (["backup destination add 'box' --type=sftp '--host=h' --json", "backup destination key 'box' --raw", "backup destination remove 'box'", 'self-update policy --json', "self-update policy --verify=on --json"] as $c) {
+    foreach (["backup sftp add 'box' '--host=h' --json", "backup sftp key 'box' --raw", "backup sftp remove 'box'", 'self-update policy --json', "self-update policy --verify=on --json"] as $c) {
         ok((new FakeCli)->commandIsPermitted($c), "allowed: cipi {$c}");
     }
     ok(! (new FakeCli)->commandIsPermitted('self-update') && ! (new FakeCli)->commandIsPermitted('self-update --now') && ! (new FakeCli)->commandIsPermitted('backup configure')
-        && ! (new FakeCli)->commandIsPermitted("backup destination add 'x' --bucket=b --secret=s") && ! (new FakeCli)->commandIsPermitted("backup destination add 'x' --secret=s --type=sftp"), 'not allowed: starting an update, backup configure, an S3 destination — --type=sftp right after the name');
+        && ! (new FakeCli)->commandIsPermitted("backup destination add 'x' --bucket=b --secret=s") && ! (new FakeCli)->commandIsPermitted("backup destination remove 'x'"), 'not allowed: starting an update, backup configure, backup destination add|remove (S3 secrets)');
 
     require_once $root . '/src/Services/SelfUpdatePolicyRefusedException.php';
     require_once $root . '/src/Services/CipiSelfUpdateService.php';

@@ -219,8 +219,7 @@ class CipiBackupCliService
     }
 
     /**
-     * Add or change an SFTP destination: `cipi backup destination add|edit
-     * <name> --type=sftp …`. Cipi makes the key on the server; the answer
+     * Add or change an SFTP destination: `cipi backup sftp add|edit <name> …`. Cipi makes the key on the server; the answer
      * carries its public half, to install on the remote. No secret is sent.
      *
      * @param  array<string, mixed>  $in  host, port, user, path, new_key
@@ -229,7 +228,7 @@ class CipiBackupCliService
     public function saveSftp(string $name, array $in, bool $isEdit): array
     {
         $this->version->require(self::MIN_CIPI_SFTP, 'SFTP backup destinations');
-        $command = 'backup destination ' . ($isEdit ? 'edit' : 'add') . ' ' . escapeshellarg($name) . ' --type=sftp';
+        $command = 'backup sftp ' . ($isEdit ? 'edit' : 'add') . ' ' . escapeshellarg($name);
         foreach (['host', 'port', 'user', 'path'] as $f) {
             if (array_key_exists($f, $in) && $in[$f] !== null) {
                 $command .= ' ' . escapeshellarg("--{$f}=" . $in[$f]);
@@ -256,7 +255,7 @@ class CipiBackupCliService
     public function sftpKey(string $name): string
     {
         $this->version->require(self::MIN_CIPI_SFTP, 'SFTP backup destinations');
-        $key = $this->plain('backup destination key ' . escapeshellarg($name) . ' --raw', 'cipi backup destination key');
+        $key = $this->plain('backup sftp key ' . escapeshellarg($name) . ' --raw', 'cipi backup sftp key');
         $line = trim((string) strtok($key, "\n"));
         if (! preg_match('#^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp\d+) [A-Za-z0-9+/=]+( \S+)?$#', $line)) {
             throw new \RuntimeException("No key for '{$name}'");
@@ -265,12 +264,12 @@ class CipiBackupCliService
         return $line;
     }
 
-    /** Remove a destination (S3 or SFTP): its archives stay where they are. */
+    /** Remove an SFTP destination: its archives stay where they are. An S3 one is removed at the shell. */
     public function removeDestination(string $name): string
     {
         $this->version->require(self::MIN_CIPI_SFTP, 'Removing a backup destination from the panel');
 
-        return $this->plain('backup destination remove ' . escapeshellarg($name), 'cipi backup destination remove');
+        return $this->plain('backup sftp remove ' . escapeshellarg($name), 'cipi backup sftp remove');
     }
 
     /**

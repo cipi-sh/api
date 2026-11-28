@@ -224,7 +224,7 @@ class BackupController extends Controller
         }
     }
 
-    /** DELETE /backups/destinations/{name} — refused while a profile uses it; the archives stay. */
+    /** DELETE /backups/destinations/{name} — an SFTP destination; refused while a profile uses it; the archives stay. */
     public function deleteDestination(string $name): JsonResponse
     {
         if (! $this->backup->isValidName($name) || in_array($name, ['local', 's3'], true)) {
