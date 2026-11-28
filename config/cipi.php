@@ -76,6 +76,8 @@ return [
         'yml-view' => 'Read cipi.yml status and plan',
         'yml-manage' => 'Apply cipi.yml, turn auto-apply on/off',
         'status-view' => 'Server status',
+        'updates-view' => 'View how the server updates Cipi: the release signature check, the delay, the trusted keys, what is waiting',
+        'updates-manage' => 'Turn the release signature check and the update delay on or off (trusting the shipped keys takes their fingerprint)',
         'ip-whitelist-view' => 'View API IP whitelist',
         'ip-whitelist-manage' => 'Manage API IP whitelist',
         'mcp-access' => 'MCP server',

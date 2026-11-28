@@ -4,9 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [1.48.0] - 2026-11-27
 
-For Cipi 5.18.0: the mesh network of Zero Trust — Tailscale or NetBird. `GET /api/zt` reads it, and five routes under `/api/zt/mesh` join it, leave it and lock the server behind it, so a panel can do everything the CLI does. One new ability, `zt-manage`.
+For Cipi 5.18.0: the mesh network of Zero Trust — Tailscale or NetBird. `GET /api/zt` reads it, and five routes under `/api/zt/mesh` join it, leave it and lock the server behind it, so a panel can do everything the CLI does. New abilities: `zt-manage`, `sync-manage`, `updates-view`, `updates-manage`.
 
 ### Added
+
+- **Backups to SFTP** (Cipi 5.18.0+): `POST /api/backups/destinations` adds an SFTP destination — `name`, `host`, `user`, `port`, `path` — a VPS with a backup user, a Hetzner Storage Box (port 23), a NAS. Cipi makes its key on the server and answers with `public_key`, to install on the remote; `PUT /api/backups/destinations/{name}` changes one (`new_key: true` for a new key), `GET …/{name}/key` gives the key again, `DELETE …/{name}` removes a destination no profile uses. `GET /api/backups` lists SFTP destinations with `type: "sftp"`. An S3 destination is still added at the shell: the allow-list takes `backup destination add|edit '<name>' --type=sftp` only.
+- **How the server updates Cipi** (Cipi 5.18.0+, abilities `updates-view`, `updates-manage`): `GET|PUT /api/self-update/policy` — `verify` (a release installed only when its tag is signed by a trusted key), `delay_hours` (0 to 168), and `fingerprint` to trust the shipped keys the first time. Both off by default. Starting an update is not in the API.
 
 - **Page cache — purge some pages** (Cipi 5.18.0+, ability `nginx-manage`): `POST /api/apps/{name}/cache/purge` with `{"paths": ["/blog/hello-world/", "/category/news/*", "https://www.example.com/x/"]}`. A path is that page on every domain and alias of the app, http and https, with its query-string variants; a trailing `*` is a prefix; a URL is that host only. At most 500 pages; answers `purged`, the cached files deleted, and the rest of the cache stays warm. MCP tool `PageCachePurge`.
 

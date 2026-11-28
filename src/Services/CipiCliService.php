@@ -118,6 +118,13 @@ class CipiCliService
         'backup profile enable',
         'backup profile disable',
         'backup destination test',
+        // Cipi CLI ≥ 5.18.0: SFTP destinations (no secret: the key is made on the
+        // server). add and edit only as `<name> --type=sftp …` — see isAllowed().
+        'backup destination key ',
+        'backup destination remove ',
+        // Cipi CLI ≥ 5.18.0: how the server updates Cipi (not the update itself).
+        'self-update policy --json',
+        'self-update policy ',
         // Cipi CLI ≥ 5.10.0 (API sudoers ≥ 5.10.0)
         'app jit',
         'frankenphp status',
@@ -308,6 +315,11 @@ class CipiCliService
 
     private function isAllowed(string $command): bool
     {
+        // An SFTP destination: its name, then --type=sftp. An S3 one takes a
+        // secret key and stays at the server's shell.
+        if (preg_match("/^backup destination (add|edit) '[a-z][a-z0-9-]{1,31}' --type=sftp( |$)/", $command)) {
+            return true;
+        }
         foreach (self::ALLOWED_COMMANDS as $allowed) {
             if (str_starts_with($command, $allowed)) {
                 return true;

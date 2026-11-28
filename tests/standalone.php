@@ -1254,6 +1254,51 @@ namespace {
     ok(true, 'a job that is not in the table any more: nothing to close, nothing thrown');
     ok(str_contains((string) file_get_contents($root . '/CHANGELOG.md'), 'CipiJobTimeout') && str_contains((string) file_get_contents($root . '/README.md'), 'a deploy gets two hours'), 'CHANGELOG and README say it');
 
+    echo "--- backups to SFTP, and how Cipi updates itself (Cipi 5.18.0)\n";
+    $sjson = ['output' => "sudo: x\n" . json_encode(['name' => 'box', 'type' => 'sftp', 'host' => 'u1.your-storagebox.de', 'port' => 23, 'user' => 'u1', 'path' => 'cipi', 'created_at' => 1, 'public_key' => 'ssh-ed25519 AAAAC3Nz cipi-backup-box@web1']), 'exit_code' => 0, 'success' => true];
+    $cli = new ScriptCli; $cli->by = ["backup destination add 'box' --type=sftp" => $sjson, "backup destination edit 'box' --type=sftp" => $sjson,
+        "backup destination key 'box' --raw" => ['output' => "ssh-ed25519 AAAAC3Nz cipi-backup-box@web1\n", 'exit_code' => 0, 'success' => true]];
+    $bk18 = new CipiApi\Services\CipiBackupCliService($cli, new FakeVersion('5.18.0'));
+    $d = $bk18->saveSftp('box', ['host' => 'u1.your-storagebox.de', 'port' => 23, 'user' => 'u1', 'path' => 'cipi'], false);
+    ok(end($cli->ran) === "backup destination add 'box' --type=sftp '--host=u1.your-storagebox.de' '--port=23' '--user=u1' '--path=cipi' --json" && $d['public_key'] === 'ssh-ed25519 AAAAC3Nz cipi-backup-box@web1', 'SFTP destination: add with each value quoted; the answer has the key to install');
+    $bk18->saveSftp('box', ['port' => 22, 'new_key' => true], true);
+    ok(end($cli->ran) === "backup destination edit 'box' --type=sftp '--port=22' --new-key --json", 'edit: only what is given, and --new-key');
+    ok($bk18->sftpKey('box') === 'ssh-ed25519 AAAAC3Nz cipi-backup-box@web1', 'the public key, one line');
+    ok($bk18->sftpErrors(['host' => 'a;b', 'user' => 'x y', 'port' => 70000, 'path' => '../etc'], false) === ['host' => 'host must be an IP address or a hostname', 'user' => 'user: letters, digits, . _ - (64 at most)', 'port' => 'port must be between 1 and 65535', 'path' => 'path: a folder on the remote — letters, digits, . _ - /, no ..']
+        && array_keys($bk18->sftpErrors([], false)) === ['host', 'user'] && $bk18->sftpErrors([], true) === [] && $bk18->sftpErrors(['host' => 'fd7a:115c::1', 'user' => 'u123', 'port' => '23', 'path' => '/srv/backups'], false) === [], 'the fields checked before anything runs: host, user, port, folder');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.17.0')))->saveSftp('box', ['host' => 'h', 'user' => 'u'], false)), 'needs Cipi 5.18.0+'), 'SFTP on an older core: refused, with the version');
+    foreach (["backup destination add 'box' --type=sftp '--host=h' --json", "backup destination key 'box' --raw", "backup destination remove 'box'", 'self-update policy --json', "self-update policy --verify=on --json"] as $c) {
+        ok((new FakeCli)->commandIsPermitted($c), "allowed: cipi {$c}");
+    }
+    ok(! (new FakeCli)->commandIsPermitted('self-update') && ! (new FakeCli)->commandIsPermitted('self-update --now') && ! (new FakeCli)->commandIsPermitted('backup configure')
+        && ! (new FakeCli)->commandIsPermitted("backup destination add 'x' --bucket=b --secret=s") && ! (new FakeCli)->commandIsPermitted("backup destination add 'x' --secret=s --type=sftp"), 'not allowed: starting an update, backup configure, an S3 destination — --type=sftp right after the name');
+
+    require_once $root . '/src/Services/SelfUpdatePolicyRefusedException.php';
+    require_once $root . '/src/Services/CipiSelfUpdateService.php';
+    $pol = ['output' => "sudo: x\n" . json_encode(['verify' => true, 'delay_hours' => 12, 'delay_default_hours' => 12, 'signers' => [['fingerprint' => 'SHA256:x', 'principal' => 'andrea@cipi.sh']], 'signers_ready' => true, 'pending' => null, 'held' => null]), 'exit_code' => 0, 'success' => true];
+    $cli = new ScriptCli; $cli->by = ['self-update policy' => $pol];
+    $su = new CipiApi\Services\CipiSelfUpdateService($cli, new FakeVersion('5.18.0'));
+    ok($su->show()['delay_hours'] === 12 && end($cli->ran) === 'self-update policy --json', 'policy: read');
+    $fp = 'SHA256:' . str_repeat('A', 43);
+    $su->update(['verify' => true, 'delay_hours' => 12, 'fingerprint' => $fp]);
+    ok(end($cli->ran) === "self-update policy --verify=on --delay=12h '--fingerprint={$fp}' --json", 'policy: the check on with the fingerprint compared, a delay of 12 hours');
+    $su->update(['verify' => false, 'delay_hours' => 0]);
+    ok(end($cli->ran) === 'self-update policy --verify=off --delay=off --json', 'policy: both off');
+    $before = count($cli->ran);
+    ok(str_starts_with((string) thrown(fn () => $su->update(['delay_hours' => 169])), 'CipiApi\Services\SelfUpdatePolicyRefusedException') && str_starts_with((string) thrown(fn () => $su->update(['fingerprint' => 'SHA256:bad;id'])), 'CipiApi\Services\SelfUpdatePolicyRefusedException') && count($cli->ran) === $before, 'a delay past a week, a fingerprint that is not one: 422 before anything runs');
+    $cli->by = ['self-update policy' => ['output' => '[ERROR] Say which key you checked: --fingerprint=SHA256:… — nothing changed', 'exit_code' => 1, 'success' => false]];
+    ok(str_starts_with((string) thrown(fn () => $su->update(['verify' => true])), 'CipiApi\Services\SelfUpdatePolicyRefusedException: Say which key you checked'), 'the server asking for the fingerprint is a 422 in its words');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiSelfUpdateService(new FakeCli, new FakeVersion('5.17.0')))->show()), 'needs Cipi 5.18.0+'), 'policy on an older core: refused, with the version');
+    $routes = (string) file_get_contents($root . '/routes/api.php');
+    foreach (["Route::get('/self-update/policy', [SelfUpdateController::class, 'show'])->middleware('ability:updates-view')", "Route::put('/self-update/policy', [SelfUpdateController::class, 'update'])->middleware('ability:updates-manage')",
+        "Route::post('/backups/destinations', [BackupController::class, 'createDestination'])->middleware('ability:backups-manage')", "Route::put('/backups/destinations/{name}', [BackupController::class, 'updateDestination'])->middleware('ability:backups-manage')",
+        "Route::get('/backups/destinations/{name}/key', [BackupController::class, 'destinationKey'])->middleware('ability:backups-view')", "Route::delete('/backups/destinations/{name}', [BackupController::class, 'deleteDestination'])->middleware('ability:backups-manage')"] as $r) {
+        ok(str_contains($routes, $r), 'route: ' . substr($r, 0, 70));
+    }
+    $cfg = (string) file_get_contents($root . '/config/cipi.php');
+    ok(str_contains($cfg, "'updates-view' =>") && str_contains($cfg, "'updates-manage' =>"), 'abilities updates-view and updates-manage');
+    ok(str_contains((string) file_get_contents($root . '/src/Http/Controllers/BackupController.php'), "if ((\$in['type'] ?? 'sftp') !== 'sftp') {"), 'the API adds SFTP destinations only: an S3 one needs its secret, at the shell');
+
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);
 }

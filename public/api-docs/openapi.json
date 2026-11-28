@@ -5983,6 +5983,382 @@
                 }
             }
         },
+        "/backups/destinations": {
+            "post": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Add an SFTP backup destination",
+                "description": "`cipi backup destination add <name> --type=sftp`: a server reached over SSH — a VPS with a backup user, a Hetzner Storage Box (port 23), a NAS. Cipi makes a key of its own for it on the server; the answer has its public half, to install on the remote (`authorized_keys`, or `ssh-copy-id -s` for a Storage Box), then `POST /backups/destinations/test`. No password or secret is sent or stored. An S3 destination is not added here: its secret key stays at the server's shell. Requires `backups-manage` and Cipi CLI >= 5.18.0.",
+                "operationId": "backupDestinationCreate",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name",
+                                    "host",
+                                    "user"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "box"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "sftp"
+                                        ],
+                                        "default": "sftp"
+                                    },
+                                    "host": {
+                                        "type": "string",
+                                        "example": "u1234.your-storagebox.de"
+                                    },
+                                    "port": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 65535,
+                                        "default": 22,
+                                        "example": 23
+                                    },
+                                    "user": {
+                                        "type": "string",
+                                        "example": "u1234"
+                                    },
+                                    "path": {
+                                        "type": "string",
+                                        "description": "A folder on the remote, relative to the login's home or absolute; empty: the home",
+                                        "example": "cipi"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The destination, with the public key the remote must accept",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "sftp"
+                                                    ]
+                                                },
+                                                "public_key": {
+                                                    "type": "string",
+                                                    "example": "ssh-ed25519 AAAAC3Nz… cipi-backup-box@web1"
+                                                },
+                                                "host": {
+                                                    "type": "string",
+                                                    "example": "u1234.your-storagebox.de"
+                                                },
+                                                "port": {
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                    "maximum": 65535,
+                                                    "default": 22,
+                                                    "example": 23
+                                                },
+                                                "user": {
+                                                    "type": "string",
+                                                    "example": "u1234"
+                                                },
+                                                "path": {
+                                                    "type": "string",
+                                                    "description": "A folder on the remote, relative to the login's home or absolute; empty: the home",
+                                                    "example": "cipi"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field that is not one, an S3 type, a name that exists"
+                    },
+                    "503": {
+                        "description": "Cipi CLI older than 5.18.0"
+                    }
+                }
+            }
+        },
+        "/backups/destinations/{name}": {
+            "put": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Change an SFTP backup destination",
+                "description": "What is given changes, the rest stays; `new_key: true` makes a new key (install its public half again). Requires `backups-manage` and Cipi CLI >= 5.18.0.",
+                "operationId": "backupDestinationUpdate",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "new_key": {
+                                        "type": "boolean"
+                                    },
+                                    "host": {
+                                        "type": "string",
+                                        "example": "u1234.your-storagebox.de"
+                                    },
+                                    "port": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 65535,
+                                        "default": 22,
+                                        "example": 23
+                                    },
+                                    "user": {
+                                        "type": "string",
+                                        "example": "u1234"
+                                    },
+                                    "path": {
+                                        "type": "string",
+                                        "description": "A folder on the remote, relative to the login's home or absolute; empty: the home",
+                                        "example": "cipi"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The destination, with the public key the remote must accept",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "sftp"
+                                                    ]
+                                                },
+                                                "public_key": {
+                                                    "type": "string",
+                                                    "example": "ssh-ed25519 AAAAC3Nz… cipi-backup-box@web1"
+                                                },
+                                                "host": {
+                                                    "type": "string",
+                                                    "example": "u1234.your-storagebox.de"
+                                                },
+                                                "port": {
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                    "maximum": 65535,
+                                                    "default": 22,
+                                                    "example": 23
+                                                },
+                                                "user": {
+                                                    "type": "string",
+                                                    "example": "u1234"
+                                                },
+                                                "path": {
+                                                    "type": "string",
+                                                    "description": "A folder on the remote, relative to the login's home or absolute; empty: the home",
+                                                    "example": "cipi"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field that is not one, or not an SFTP destination"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Remove a backup destination",
+                "description": "`cipi backup destination remove`: refused while a profile writes to it. The archives on it stay where they are, and Cipi stops pruning them; an SFTP destination's key is deleted on the server. Requires `backups-manage` and Cipi CLI >= 5.18.0.",
+                "operationId": "backupDestinationDelete",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Removed"
+                    },
+                    "422": {
+                        "description": "Used by a profile, or no such destination"
+                    }
+                }
+            }
+        },
+        "/backups/destinations/{name}/key": {
+            "get": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "The public key of an SFTP destination",
+                "description": "The key Cipi signs in with: what the remote has to accept. Requires `backups-view` and Cipi CLI >= 5.18.0.",
+                "operationId": "backupDestinationKey",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The key",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "public_key": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Not an SFTP destination"
+                    }
+                }
+            }
+        },
+        "/self-update/policy": {
+            "get": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "How the server updates Cipi",
+                "description": "`cipi self-update policy --json`. By default the nightly self-update installs what is on GitHub. Two safeguards can be on: `verify` — a release is installed only when its tag `v<version>` is signed by a key of the server's own list (`signers`) and points at the commit downloaded; `delay_hours` — a new commit is installed only once this server has seen it for that long. `pending` is a release waiting for its delay, `held` why the last update was not installed. `shipped_signers` are the keys that come with the release, offered for the first trust. Requires `updates-view` and Cipi CLI >= 5.18.0.",
+                "operationId": "selfUpdatePolicyShow",
+                "responses": {
+                    "200": {
+                        "description": "The policy",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SelfUpdatePolicy"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi CLI older than 5.18.0"
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Set how the server updates Cipi",
+                "description": "`verify` on or off; `delay_hours` 0 (none) to 168. Turning `verify` on the first time trusts the keys shipped with the release, and takes `fingerprint` — one of theirs, as the person compared it with the one published at cipi.sh. Starting an update is not here: it stays the server's. Requires `updates-manage` and Cipi CLI >= 5.18.0.",
+                "operationId": "selfUpdatePolicyUpdate",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "verify": {
+                                        "type": "boolean"
+                                    },
+                                    "delay_hours": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 168,
+                                        "example": 12
+                                    },
+                                    "fingerprint": {
+                                        "type": "string",
+                                        "example": "SHA256:abcd…"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The policy after it",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SelfUpdatePolicy"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A delay past a week, a fingerprint that is not the shipped key's, no key to trust"
+                    }
+                }
+            }
+        },
         "/backups/profiles": {
             "post": {
                 "tags": [
@@ -10851,6 +11227,25 @@
             }
         },
         "schemas": {
+            "SelfUpdatePolicy": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "verify": {"type": "boolean"},
+                            "delay_hours": {"type": "integer", "example": 12},
+                            "delay_default_hours": {"type": "integer", "example": 12},
+                            "signers_ready": {"type": "boolean"},
+                            "signers": {"type": "array", "items": {"type": "object", "properties": {"fingerprint": {"type": "string"}, "principal": {"type": "string"}}}},
+                            "shipped_signers": {"type": "array", "items": {"type": "object", "properties": {"fingerprint": {"type": "string"}, "principal": {"type": "string"}}}},
+                            "pending": {"type": "object", "nullable": true, "properties": {"sha": {"type": "string"}, "version": {"type": "string"}, "first_seen": {"type": "integer"}}},
+                            "held": {"type": "object", "nullable": true, "properties": {"reason": {"type": "string"}, "at": {"type": "integer"}}},
+                            "installed_sha": {"type": "string", "nullable": true}
+                        }
+                    }
+                }
+            },
             "AppCreateRequest": {
                 "type": "object",
                 "required": [
