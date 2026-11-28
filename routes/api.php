@@ -195,6 +195,11 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::put('/backups/destinations/{name}', [BackupController::class, 'updateDestination'])->middleware('ability:backups-manage');
     Route::get('/backups/destinations/{name}/key', [BackupController::class, 'destinationKey'])->middleware('ability:backups-view');
     Route::delete('/backups/destinations/{name}', [BackupController::class, 'deleteDestination'])->middleware('ability:backups-manage');
+    // Backups set up from the panel (Cipi ≥ 5.19.0): the default bucket, the key, the retention now.
+    Route::put('/backups/config', [BackupController::class, 'configure'])->middleware('ability:backups-manage');
+    Route::get('/backups/key', [BackupController::class, 'key'])->middleware('ability:backups-manage');
+    Route::post('/backups/key/rotate', [BackupController::class, 'rotateKey'])->middleware('ability:backups-manage');
+    Route::post('/backups/prune', [BackupController::class, 'prune'])->middleware('ability:backups-manage');
     Route::post('/backups/profiles', [BackupController::class, 'createProfile'])->middleware('ability:backups-manage');
     Route::put('/backups/profiles/{name}', [BackupController::class, 'updateProfile'])->middleware('ability:backups-manage');
     Route::delete('/backups/profiles/{name}', [BackupController::class, 'deleteProfile'])->middleware('ability:backups-manage');

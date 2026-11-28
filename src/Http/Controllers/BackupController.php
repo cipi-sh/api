@@ -181,33 +181,152 @@ class BackupController extends Controller
     }
 
     /**
-     * POST /backups/destinations — a new SFTP destination: `name`, `host`,
-     * `user`, `port` (22), `path` (the login's home). Cipi makes its key on
-     * the server; the answer has `public_key`, to install on the remote. An S3
-     * destination is added at the server's shell (its secret key).
+     * POST /backups/destinations — a new destination.
+     *
+     * `type: "sftp"` (the default): `name`, `host`, `user`, `port` (22),
+     * `path` (the login's home). Cipi makes its key on the server; the answer
+     * has `public_key`, to install on the remote.
+     *
+     * `type: "s3"` (Cipi 5.19.0+): `name`, `bucket`, `key`, `secret`,
+     * `region`, `endpoint`. The bucket is reached before it is saved. The
+     * secret goes to the CLI on its standard input and is never answered.
      */
     public function createDestination(Request $request): JsonResponse
     {
         $in = $request->all();
-        if (($in['type'] ?? 'sftp') !== 'sftp') {
-            return response()->json(['error' => 'Only an SFTP destination is added through the API: an S3 one needs its secret key, at the server (cipi backup destination add)', 'errors' => ['type' => 'sftp']], 422);
+        $type = $in['type'] ?? 'sftp';
+        if (! in_array($type, ['sftp', 's3'], true)) {
+            return response()->json(['error' => 'type: sftp or s3', 'errors' => ['type' => 'sftp or s3']], 422);
         }
         $name = $in['name'] ?? null;
         if (! is_string($name) || ! $this->backup->isValidName($name) || in_array($name, ['local', 's3'], true)) {
             return response()->json(['error' => 'name: lowercase letters, digits and dashes, 2 to 32; not local or s3', 'errors' => ['name' => 'invalid']], 422);
         }
 
-        return $this->saveSftp($name, $in, false);
+        return $type === 's3' ? $this->saveS3($name, $in, false) : $this->saveSftp($name, $in, false);
     }
 
-    /** PUT /backups/destinations/{name} — change an SFTP destination; `new_key: true` makes a new key. */
+    /**
+     * PUT /backups/destinations/{name} — change one; only what is given changes.
+     * SFTP: `host`, `port`, `user`, `path`, `new_key: true` for a new key.
+     * S3: `bucket`, `key`, `secret` (kept when left out), `region`, `endpoint`.
+     * The default bucket is `PUT /backups/config`.
+     */
     public function updateDestination(Request $request, string $name): JsonResponse
     {
-        if (! $this->backup->isValidName($name)) {
-            return response()->json(['error' => "Invalid destination name '{$name}'"], 422);
+        if (! $this->backup->isValidName($name) || in_array($name, ['local', 's3'], true)) {
+            return response()->json(['error' => "Invalid destination name '{$name}' (the default bucket is PUT /backups/config)"], 422);
+        }
+        $in = $request->all();
+        $s3 = array_intersect_key($in, array_flip(['bucket', 'key', 'secret', 'region', 'endpoint'])) !== [];
+        if (! $s3 && array_intersect_key($in, array_flip(['host', 'port', 'user', 'path', 'new_key'])) === []) {
+            // Nothing that says which kind: ask the server.
+            try {
+                $s3 = $this->destinationType($name) === 's3';
+            } catch (\RuntimeException $e) {
+                return $this->cliError($e);
+            }
         }
 
-        return $this->saveSftp($name, $request->all(), true);
+        return $s3 ? $this->saveS3($name, $in, true) : $this->saveSftp($name, $in, true);
+    }
+
+    /**
+     * PUT /backups/config — set up backups: the default bucket ('s3' in
+     * profiles) — `bucket`, `key`, `secret` (kept when left out), `region`,
+     * `endpoint` — or `local_only: true`. Synchronous; the answer is the
+     * backup status after it. The secret goes on the CLI's standard input.
+     */
+    public function configure(Request $request): JsonResponse
+    {
+        $in = $request->all();
+        $localOnly = filter_var($in['local_only'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        if (! $localOnly) {
+            $fields = array_intersect_key($in, array_flip(['bucket', 'key', 'secret', 'region', 'endpoint']));
+            if ($fields === []) {
+                return response()->json(['error' => 'Give the bucket (bucket, key, secret, region, endpoint) or local_only: true'], 422);
+            }
+            if (($errors = $this->backup->s3Errors($fields, true)) !== []) {
+                return response()->json(['error' => implode('; ', $errors), 'errors' => $errors], 422);
+            }
+        }
+
+        try {
+            $message = $this->backup->configure($localOnly ? ['local_only' => true] : $in);
+
+            return response()->json(['data' => $this->backup->status(), 'message' => $message], 200);
+        } catch (\RuntimeException $e) {
+            return $this->cliError($e);
+        }
+    }
+
+    /**
+     * GET /backups/key — the encryption key, to keep off the server. Shown
+     * once: the server logs and notifies it; nothing here keeps it.
+     */
+    public function key(): JsonResponse
+    {
+        try {
+            return response()->json(['data' => ['key' => $this->backup->encryptionKey()]], 200);
+        } catch (\RuntimeException $e) {
+            return $this->cliError($e);
+        }
+    }
+
+    /** POST /backups/key/rotate — a new key for the runs to come; the old one stays on the server for the old runs. */
+    public function rotateKey(): JsonResponse
+    {
+        try {
+            return response()->json(['data' => ['rotated' => true, 'message' => $this->backup->rotateKey()]], 200);
+        } catch (\RuntimeException $e) {
+            return $this->cliError($e);
+        }
+    }
+
+    /** POST /backups/prune — the retention applied now (`profile`, `dry_run`): a job of type `backup-prune`. */
+    public function prune(Request $request): JsonResponse
+    {
+        $profile = $request->input('profile');
+        $profile = is_string($profile) && $profile !== '' ? $profile : null;
+        if ($profile !== null && ! $this->backup->isValidName($profile)) {
+            return response()->json(['error' => "Invalid profile name '{$profile}'"], 422);
+        }
+        $dryRun = filter_var($request->input('dry_run', false), FILTER_VALIDATE_BOOLEAN);
+
+        try {
+            $command = $this->backup->pruneCommand($profile, $dryRun);
+        } catch (\RuntimeException $e) {
+            return $this->cliError($e);
+        }
+        $job = $this->jobs->dispatch('backup-prune', $command, array_filter(['profile' => $profile, 'dry_run' => $dryRun ?: null]));
+
+        return response()->json(['job_id' => $job->id, 'status' => 'pending'], 202);
+    }
+
+    /** The type of a destination ('s3' or 'sftp'), from the backup status. */
+    protected function destinationType(string $name): ?string
+    {
+        foreach ((array) ($this->backup->status()['destinations'] ?? []) as $d) {
+            if (is_array($d) && ($d['name'] ?? null) === $name) {
+                return is_string($d['type'] ?? null) ? $d['type'] : null;
+            }
+        }
+        throw new \RuntimeException("No such destination: {$name}");
+    }
+
+    /** @param  array<string, mixed>  $in */
+    protected function saveS3(string $name, array $in, bool $isEdit): JsonResponse
+    {
+        $fields = array_intersect_key($in, array_flip(['bucket', 'key', 'secret', 'region', 'endpoint']));
+        if (($errors = $this->backup->s3Errors($fields, $isEdit)) !== []) {
+            return response()->json(['error' => implode('; ', $errors), 'errors' => $errors], 422);
+        }
+
+        try {
+            return response()->json(['data' => $this->backup->saveS3($name, $fields, $isEdit)], $isEdit ? 200 : 201);
+        } catch (\RuntimeException $e) {
+            return $this->cliError($e);
+        }
     }
 
     /** GET /backups/destinations/{name}/key — the public key an SFTP destination must accept. */
@@ -224,7 +343,7 @@ class BackupController extends Controller
         }
     }
 
-    /** DELETE /backups/destinations/{name} — an SFTP destination; refused while a profile uses it; the archives stay. */
+    /** DELETE /backups/destinations/{name} — an SFTP server or (Cipi 5.19.0+) an S3 bucket; refused while a profile uses it; the archives stay. */
     public function deleteDestination(string $name): JsonResponse
     {
         if (! $this->backup->isValidName($name) || in_array($name, ['local', 's3'], true)) {

@@ -264,12 +264,162 @@ class CipiBackupCliService
         return $line;
     }
 
-    /** Remove an SFTP destination: its archives stay where they are. An S3 one is removed at the shell. */
+    /**
+     * Remove a destination — an SFTP server, and from Cipi 5.19.0 an S3
+     * bucket too. Its archives stay where they are.
+     */
     public function removeDestination(string $name): string
     {
+        if ($this->version->atLeast(self::MIN_CIPI_PANEL)) {
+            return $this->plain('backup destination remove ' . escapeshellarg($name), 'cipi backup destination remove');
+        }
         $this->version->require(self::MIN_CIPI_SFTP, 'Removing a backup destination from the panel');
 
         return $this->plain('backup sftp remove ' . escapeshellarg($name), 'cipi backup sftp remove');
+    }
+
+    // ── S3 buckets, the default bucket, the key, the retention (Cipi 5.19.0) ──
+
+    /** Backups set up and managed from the panel: S3 buckets, `configure`, the key, prune. */
+    public const MIN_CIPI_PANEL = '5.19.0';
+
+    public const BUCKET_RE = '/^[a-z0-9][a-z0-9._-]{1,62}$/D';
+
+    public const REGION_RE = '/^[A-Za-z0-9-]{1,64}$/D';
+
+    public const ENDPOINT_RE = '#^https?://[A-Za-z0-9.:/_-]{1,255}$#D';
+
+    /** An access key or a secret key: printable, no space, no quote, no backslash. */
+    public const CRED_RE = '/^[\x21\x23-\x26\x28-\x5b\x5d-\x7e]{1,256}$/D';
+
+    /**
+     * What is wrong with the fields of an S3 bucket, by field.
+     *
+     * @param  array<string, mixed>  $in  bucket, key, secret, region, endpoint
+     * @return array<string, string>
+     */
+    public function s3Errors(array $in, bool $isEdit): array
+    {
+        $errors = [];
+        if (! $isEdit) {
+            foreach (['bucket', 'key', 'secret'] as $f) {
+                if (! isset($in[$f]) || $in[$f] === '') {
+                    $errors[$f] = "{$f} is required";
+                }
+            }
+        }
+        $checks = ['bucket' => [self::BUCKET_RE, 'bucket: lowercase letters, digits, . _ - (3 to 63)'],
+            'region' => [self::REGION_RE, 'region: letters, digits and dashes'],
+            'endpoint' => [self::ENDPOINT_RE, 'endpoint: an http(s) URL'],
+            'key' => [self::CRED_RE, 'key: printable characters, no space, no quote'],
+            'secret' => [self::CRED_RE, 'secret: printable characters, no space, no quote']];
+        foreach ($checks as $f => [$re, $message]) {
+            if (isset($in[$f]) && $in[$f] !== '' && ! isset($errors[$f]) && (! is_string($in[$f]) || ! preg_match($re, $in[$f]))) {
+                $errors[$f] = $message;
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Add or change an S3 bucket: `cipi backup destination add|edit <name> …
+     * --secret-stdin --json`. The secret key, when given, goes on the CLI's
+     * standard input — never on its command line; the answer never has it.
+     *
+     * @param  array<string, mixed>  $in  bucket, key, secret, region, endpoint
+     * @return array<string, mixed>  name, type, bucket, region, endpoint
+     */
+    public function saveS3(string $name, array $in, bool $isEdit): array
+    {
+        $this->version->require(self::MIN_CIPI_PANEL, 'S3 backup destinations from the panel');
+        $command = 'backup destination ' . ($isEdit ? 'edit' : 'add') . ' ' . escapeshellarg($name) . $this->s3Flags($in) . ' --json';
+        $decoded = CipiAppJitService::decode($this->withSecret($command, $in['secret'] ?? null, 'cipi backup destination'));
+        if (! is_array($decoded) || ($decoded['type'] ?? null) !== 's3') {
+            throw new \RuntimeException('Cipi CLI returned no destination (Cipi CLI ≥ ' . self::MIN_CIPI_PANEL . ' required)');
+        }
+
+        return $decoded;
+    }
+
+    /**
+     * Set up backups: the default bucket ('s3' in profiles) — `bucket`, `key`,
+     * `secret` (kept when not given), `region`, `endpoint` — or `local_only`.
+     * The bucket is reached with the keys before anything is saved. The local
+     * and temp folders stay the server's.
+     *
+     * @param  array<string, mixed>  $in
+     */
+    public function configure(array $in): string
+    {
+        $this->version->require(self::MIN_CIPI_PANEL, 'Setting up backups from the panel');
+        if (! empty($in['local_only'])) {
+            return $this->plain('backup configure --local-only', 'cipi backup configure');
+        }
+
+        return $this->withSecret('backup configure' . $this->s3Flags($in), $in['secret'] ?? null, 'cipi backup configure');
+    }
+
+    /** The encryption key, once — logged and notified on the server. Never kept here. */
+    public function encryptionKey(): string
+    {
+        $this->version->require(self::MIN_CIPI_PANEL, 'The backup key from the panel');
+        $key = trim($this->plain('backup key show --raw', 'cipi backup key show'));
+        if ($key === '' || str_contains($key, "\n")) {
+            throw new \RuntimeException('Cipi CLI returned no key');
+        }
+
+        return $key;
+    }
+
+    /** A new key for the runs to come; the old one is kept on the server for the old runs. */
+    public function rotateKey(): string
+    {
+        $this->version->require(self::MIN_CIPI_PANEL, 'Rotating the backup key from the panel');
+
+        return $this->plain('backup key rotate', 'cipi backup key rotate');
+    }
+
+    /** The command of a prune: the retention applied now (a job). */
+    public function pruneCommand(?string $profile, bool $dryRun): string
+    {
+        $this->version->require(self::MIN_CIPI_PANEL, 'Pruning backups from the panel');
+        $command = 'backup prune';
+        if ($profile !== null) {
+            $command .= ' --profile=' . escapeshellarg($profile);
+        }
+
+        return $dryRun ? $command . ' --dry-run' : $command;
+    }
+
+    /** @param  array<string, mixed>  $in */
+    protected function s3Flags(array $in): string
+    {
+        $flags = '';
+        foreach (['bucket', 'key', 'region', 'endpoint'] as $f) {
+            if (isset($in[$f]) && is_string($in[$f]) && $in[$f] !== '') {
+                $flags .= ' ' . escapeshellarg("--{$f}=" . $in[$f]);
+            }
+        }
+        if (isset($in['secret']) && is_string($in['secret']) && $in['secret'] !== '') {
+            $flags .= ' --secret-stdin';
+        }
+
+        return $flags;
+    }
+
+    /** Run a command, the secret on its standard input when there is one. */
+    protected function withSecret(string $command, mixed $secret, string $label): string
+    {
+        $result = is_string($secret) && $secret !== ''
+            ? $this->cli->runWithInput($command, $secret)
+            : $this->cli->run($command);
+        $output = $this->strip($result['output'] ?? '');
+        if ($result['exit_code'] !== 0) {
+            throw new \RuntimeException($this->firstError($output, "{$label} failed"));
+        }
+
+        return $output;
     }
 
     /**

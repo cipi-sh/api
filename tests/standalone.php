@@ -161,8 +161,8 @@ namespace {
     $cli->next = ['output' => "\e[0;31m[ERROR]\e[0m No such profile: nope", 'exit_code' => 1, 'success' => false];
     ok(thrown(fn () => $bk->toggle('nope', true)) === 'RuntimeException: No such profile: nope', "the CLI's refusal comes back as its message, without colours");
     ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.8.5')))->status()), 'needs Cipi 5.9.0+'), 'an older core is refused');
-    $n = count($cli->ran); $r = $cli->run('backup configure'); $r2 = $cli->run('backup destination add x --secret=s'); $r3 = $cli->run('backup run --profile=x'); $r4 = $cli->run('backup key show');
-    ok(! $r['success'] && ! $r2['success'] && ! $r3['success'] && ! $r4['success'] && count($cli->ran) === $n, 'not on the allow-list: backup configure, destination add, key, a run that is not detached');
+    $n = count($cli->ran); $r = $cli->run('backup configure'); $r2 = $cli->run('backup fetch nightly x'); $r3 = $cli->run('backup run --profile=x'); $r4 = $cli->run('backup key show');
+    ok(! $r['success'] && ! $r2['success'] && ! $r3['success'] && ! $r4['success'] && count($cli->ran) === $n, 'not on the allow-list: backup configure without flags, fetch, key show without --raw, a run that is not detached');
 
     echo "--- backup status (1.39.1)\n";
     $cli = new FakeCli; $bk = new CipiApi\Services\CipiBackupCliService($cli, new FakeVersion('5.9.0'));
@@ -351,6 +351,8 @@ namespace {
     echo "--- Notifications (1.42.0, Cipi 5.12.0)\n";
     class ScriptCli extends FakeCli {
         public array $by = [];
+        public array $inputs = [];
+        public function runWithInput(string $command, string $input): array { $this->inputs[] = $input; return $this->run($command); }
         public function run(string $command): array {
             if (! $this->commandIsPermitted($command)) { return ['output' => "Command not allowed: {$command}", 'exit_code' => 1, 'success' => false]; }
             $this->ran[] = $command;
@@ -1270,8 +1272,8 @@ namespace {
     foreach (["backup sftp add 'box' '--host=h' --json", "backup sftp key 'box' --raw", "backup sftp remove 'box'", 'self-update policy --json', "self-update policy --verify=on --json"] as $c) {
         ok((new FakeCli)->commandIsPermitted($c), "allowed: cipi {$c}");
     }
-    ok(! (new FakeCli)->commandIsPermitted('self-update') && ! (new FakeCli)->commandIsPermitted('self-update --now') && ! (new FakeCli)->commandIsPermitted('backup configure')
-        && ! (new FakeCli)->commandIsPermitted("backup destination add 'x' --bucket=b --secret=s") && ! (new FakeCli)->commandIsPermitted("backup destination remove 'x'"), 'not allowed: starting an update, backup configure, backup destination add|remove (S3 secrets)');
+    ok(! (new FakeCli)->commandIsPermitted('self-update') && ! (new FakeCli)->commandIsPermitted('self-update --now') && ! (new FakeCli)->commandIsPermitted('backup configure'),
+        'not allowed: starting an update, backup configure without flags');
 
     require_once $root . '/src/Services/SelfUpdatePolicyRefusedException.php';
     require_once $root . '/src/Services/CipiSelfUpdateService.php';
@@ -1297,7 +1299,43 @@ namespace {
     }
     $cfg = (string) file_get_contents($root . '/config/cipi.php');
     ok(str_contains($cfg, "'updates-view' =>") && str_contains($cfg, "'updates-manage' =>"), 'abilities updates-view and updates-manage');
-    ok(str_contains((string) file_get_contents($root . '/src/Http/Controllers/BackupController.php'), "if ((\$in['type'] ?? 'sftp') !== 'sftp') {"), 'the API adds SFTP destinations only: an S3 one needs its secret, at the shell');
+    ok(str_contains((string) file_get_contents($root . '/src/Http/Controllers/BackupController.php'), "if (! in_array(\$type, ['sftp', 's3'], true)) {"), 'a destination is an SFTP server or (Cipi 5.19.0) an S3 bucket');
+
+    echo "--- backups set up from the panel: S3 buckets, the default bucket, the key, prune (Cipi 5.19.0)\n";
+    $s3json = ['output' => "→ Testing\n" . json_encode(['name' => 'offsite', 'type' => 's3', 'bucket' => 'acme-offsite', 'region' => 'eu-central-1', 'endpoint' => '']), 'exit_code' => 0, 'success' => true];
+    $cli = new ScriptCli; $cli->by = ["backup destination add 'offsite'" => $s3json, "backup destination edit 'offsite'" => $s3json,
+        'backup key show --raw' => ['output' => "dGhlLWtleQ==\n", 'exit_code' => 0, 'success' => true]];
+    $bk19 = new CipiApi\Services\CipiBackupCliService($cli, new FakeVersion('5.19.0'));
+    $d = $bk19->saveS3('offsite', ['bucket' => 'acme-offsite', 'key' => 'AKIAX', 'secret' => 'sEcR3t/+=', 'region' => 'eu-central-1'], false);
+    ok(end($cli->ran) === "backup destination add 'offsite' '--bucket=acme-offsite' '--key=AKIAX' '--region=eu-central-1' --secret-stdin --json" && $cli->inputs === ['sEcR3t/+='] && $d['bucket'] === 'acme-offsite',
+        'S3 bucket: the secret on standard input (--secret-stdin), never on the command line');
+    ok(! str_contains(implode(' ', $cli->ran), 'sEcR3t'), '…and in no command that ran');
+    $bk19->saveS3('offsite', ['region' => 'us-east-1'], true);
+    ok(end($cli->ran) === "backup destination edit 'offsite' '--region=us-east-1' --json" && count($cli->inputs) === 1, 'edit without a secret: nothing on stdin, the secret kept by the server');
+    ok($bk19->s3Errors([], false) === ['bucket' => 'bucket is required', 'key' => 'key is required', 'secret' => 'secret is required'] && $bk19->s3Errors([], true) === []
+        && array_keys($bk19->s3Errors(['bucket' => 'Bad_Bucket!', 'region' => 'eu central', 'endpoint' => 'ftp://x', 'key' => "a\nb", 'secret' => "has space"], true)) === ['bucket', 'region', 'endpoint', 'key', 'secret']
+        && $bk19->s3Errors(['secret' => "quo'te"], true) === ['secret' => 'secret: printable characters, no space, no quote'] && array_keys($bk19->s3Errors(['key' => "AKIA\n"], true)) === ['key'], 'the fields of a bucket checked before anything runs; a line break, a space or a quote in a key is refused');
+    $bk19->configure(['bucket' => 'acme-backups', 'key' => 'AKIAX', 'secret' => 'S2', 'endpoint' => 'https://fsn1.your-objectstorage.com']);
+    ok(end($cli->ran) === "backup configure '--bucket=acme-backups' '--key=AKIAX' '--endpoint=https://fsn1.your-objectstorage.com' --secret-stdin" && end($cli->inputs) === 'S2', 'configure: the default bucket, its secret on stdin');
+    $bk19->configure(['local_only' => true]);
+    ok(end($cli->ran) === 'backup configure --local-only', 'configure: local only');
+    ok($bk19->encryptionKey() === 'dGhlLWtleQ==' && end($cli->ran) === 'backup key show --raw', 'the key, once: key show --raw');
+    $bk19->rotateKey(); ok(end($cli->ran) === 'backup key rotate', 'key rotate');
+    ok($bk19->pruneCommand('nightly', true) === "backup prune --profile='nightly' --dry-run" && $bk19->pruneCommand(null, false) === 'backup prune', 'prune: a profile, a dry run');
+    $bk19->removeDestination('offsite'); ok(end($cli->ran) === "backup destination remove 'offsite'", 'remove: an S3 bucket or an SFTP server, on 5.19.0');
+    $bk18r = new CipiApi\Services\CipiBackupCliService($cli, new FakeVersion('5.18.0')); $bk18r->removeDestination('box'); ok(end($cli->ran) === "backup sftp remove 'box'", '…backup sftp remove on 5.18.0');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.18.0')))->saveS3('x', ['bucket' => 'b'], false)), 'needs Cipi 5.19.0+')
+        && str_contains((string) thrown(fn () => (new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.18.0')))->configure(['local_only' => true])), 'needs Cipi 5.19.0+'), 'S3 and configure on an older core: refused, with the version');
+    foreach (["backup configure --local-only", "backup destination add 'x' --json", "backup destination edit 'x' --json", "backup destination remove 'x'", 'backup key show --raw', 'backup key rotate', 'backup prune', "backup prune --profile='x' --dry-run"] as $c) {
+        ok((new FakeCli)->commandIsPermitted($c), "allowed: cipi {$c}");
+    }
+    $routes = (string) file_get_contents($root . '/routes/api.php');
+    foreach (["Route::put('/backups/config', [BackupController::class, 'configure'])->middleware('ability:backups-manage')", "Route::get('/backups/key', [BackupController::class, 'key'])->middleware('ability:backups-manage')",
+        "Route::post('/backups/key/rotate', [BackupController::class, 'rotateKey'])->middleware('ability:backups-manage')", "Route::post('/backups/prune', [BackupController::class, 'prune'])->middleware('ability:backups-manage')"] as $r) {
+        ok(str_contains($routes, $r), 'route: ' . substr($r, 0, 60));
+    }
+    $cliSrc = (string) file_get_contents($root . '/src/Services/CipiCliService.php');
+    ok(str_contains($cliSrc, 'public function runWithInput(string $command, string $input): array') && str_contains($cliSrc, "[0 => ['pipe', 'r'], 1 => ['pipe', 'w']]"), 'runWithInput: the secret into the command\'s standard input');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);

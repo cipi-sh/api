@@ -120,6 +120,16 @@ class CipiCliService
         'backup destination test',
         // Cipi CLI ≥ 5.18.0: SFTP destinations only (no secret: the key is made
         // on the server). `backup destination add|edit|remove` take S3 secrets.
+        // Cipi CLI ≥ 5.19.0: backups set up and managed from the panel. A
+        // secret key goes on standard input (runWithInput, --secret-stdin):
+        // never on this command line, never in a job.
+        'backup configure ',
+        'backup destination add ',
+        'backup destination edit ',
+        'backup destination remove ',
+        'backup key show --raw',
+        'backup key rotate',
+        'backup prune',
         'backup sftp add ',
         'backup sftp edit ',
         'backup sftp key ',
@@ -253,6 +263,34 @@ class CipiCliService
             'exit_code' => $exitCode,
             'success' => $exitCode === 0,
         ];
+    }
+
+    /**
+     * run(), with $input written to the command's standard input — a secret
+     * the CLI reads with --secret-stdin. It is never on the command line (ps,
+     * logs), never in a job, never in the answer: the CLI does not print it.
+     *
+     * @return array{output: string, exit_code: int, success: bool}
+     */
+    public function runWithInput(string $command, string $input): array
+    {
+        if (! $this->commandIsPermitted($command)) {
+            return ['output' => "Command not allowed: {$command}", 'exit_code' => 1, 'success' => false];
+        }
+        if (! function_exists('proc_open')) {
+            return ['output' => 'proc_open is disabled: a secret cannot be handed to the CLI', 'exit_code' => 1, 'success' => false];
+        }
+        $process = @proc_open($this->shellLine($command), [0 => ['pipe', 'r'], 1 => ['pipe', 'w']], $pipes);
+        if (! is_resource($process)) {
+            return ['output' => 'The CLI could not be started', 'exit_code' => 1, 'success' => false];
+        }
+        fwrite($pipes[0], str_replace(["\r", "\n"], '', $input) . "\n");
+        fclose($pipes[0]);
+        $buffer = (string) stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $exitCode = proc_close($process);
+
+        return ['output' => self::asExec($buffer), 'exit_code' => $exitCode, 'success' => $exitCode === 0];
     }
 
     /**
