@@ -11,6 +11,12 @@ class CipiAppEnvService
     /** `--order` (the panel's drag and drop): Cipi 5.13.0. */
     public const MIN_CIPI_ORDER = '5.13.0';
 
+    /** `--raw` / `--stdin` (the file as it is, the panel's text editor): Cipi 5.19.2. */
+    public const MIN_CIPI_RAW = '5.19.2';
+
+    /** What `cipi app env --stdin` takes at most. */
+    public const MAX_RAW_BYTES = 65536;
+
     public function __construct(
         protected CipiCliService $cli,
         protected CipiValidationService $validator,
@@ -106,6 +112,79 @@ class CipiAppEnvService
             'app' => $app,
             'vars' => $this->decodeJsonObject($result['output'] ?? ''),
         ];
+    }
+
+    /**
+     * The .env as it is: every line, comment, blank line and space
+     * (`cipi app env --raw --json`).
+     *
+     * @return array{app: string, text: string}
+     */
+    public function raw(string $app): array
+    {
+        $this->assertLaravelApp($app);
+        $this->assertRawSupported();
+
+        $result = $this->cli->run('app env ' . escapeshellarg($app) . ' --raw --json');
+        if ($result['exit_code'] !== 0) {
+            $detail = trim(preg_replace('/\x1b\[[0-9;]*m/', '', (string) ($result['output'] ?? '')) ?? '');
+            throw new \RuntimeException($detail !== '' ? $detail : 'cipi app env --raw failed');
+        }
+
+        return ['app' => $app, 'text' => $this->decodeText($result['output'] ?? '')];
+    }
+
+    /**
+     * Replace the whole .env with $text, written byte for byte — nothing
+     * parsed, quoted, trimmed or moved (`cipi app env --stdin`). The text
+     * goes on the CLI's standard input, never on its command line.
+     *
+     * @return array{app: string, text: string} the file as it is now
+     */
+    public function replaceRaw(string $app, string $text): array
+    {
+        $this->assertLaravelApp($app);
+
+        if ($text === '') {
+            throw new \InvalidArgumentException('The text is empty: the .env is left as it was');
+        }
+        if (strlen($text) > self::MAX_RAW_BYTES) {
+            throw new \InvalidArgumentException('The text is too long (64 KB at most)');
+        }
+        if (str_contains($text, "\0")) {
+            throw new \InvalidArgumentException('The text holds a NUL byte');
+        }
+        $this->assertRawSupported();
+
+        $result = $this->cli->runWithText('app env ' . escapeshellarg($app) . ' --stdin --json', $text);
+        if ($result['exit_code'] !== 0) {
+            $detail = trim(preg_replace('/\x1b\[[0-9;]*m/', '', (string) ($result['output'] ?? '')) ?? '');
+            throw new \RuntimeException($detail !== '' ? $detail : 'cipi app env --stdin failed');
+        }
+
+        return ['app' => $app, 'text' => $this->decodeText($result['output'] ?? '')];
+    }
+
+    /** An older core has no --raw/--stdin: refused here (501) instead of a CLI error. */
+    protected function assertRawSupported(): void
+    {
+        if ($this->version !== null && ! $this->version->atLeast(self::MIN_CIPI_RAW)) {
+            throw new EnvRawUnsupportedException('Editing the .env as text needs Cipi ' . self::MIN_CIPI_RAW . '+ on the server (cipi self-update)');
+        }
+    }
+
+    protected function decodeText(string $output): string
+    {
+        $plain = preg_replace('/\x1b\[[0-9;]*m/', '', $output) ?? $output;
+        if (! preg_match('/\{.*\}/s', $plain, $m)) {
+            throw new \RuntimeException('Could not parse the .env text from cipi output');
+        }
+        $decoded = json_decode($m[0], true);
+        if (! is_array($decoded) || ! is_string($decoded['text'] ?? null)) {
+            throw new \RuntimeException('Invalid .env text from cipi');
+        }
+
+        return $decoded['text'];
     }
 
     public function assertEnvKey(string $key): void

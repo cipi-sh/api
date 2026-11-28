@@ -294,6 +294,34 @@ class CipiCliService
     }
 
     /**
+     * run(), with $text on the command's standard input exactly as it is —
+     * every line, blank and newline (runWithInput() takes one line: a secret).
+     * For a whole file the CLI writes byte for byte: `cipi app env --stdin`.
+     *
+     * @return array{output: string, exit_code: int, success: bool}
+     */
+    public function runWithText(string $command, string $text): array
+    {
+        if (! $this->commandIsPermitted($command)) {
+            return ['output' => "Command not allowed: {$command}", 'exit_code' => 1, 'success' => false];
+        }
+        if (! function_exists('proc_open')) {
+            return ['output' => 'proc_open is disabled: the text cannot be handed to the CLI', 'exit_code' => 1, 'success' => false];
+        }
+        $process = @proc_open($this->shellLine($command), [0 => ['pipe', 'r'], 1 => ['pipe', 'w']], $pipes);
+        if (! is_resource($process)) {
+            return ['output' => 'The CLI could not be started', 'exit_code' => 1, 'success' => false];
+        }
+        fwrite($pipes[0], $text);
+        fclose($pipes[0]);
+        $buffer = (string) stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        $exitCode = proc_close($process);
+
+        return ['output' => self::asExec($buffer), 'exit_code' => $exitCode, 'success' => $exitCode === 0];
+    }
+
+    /**
      * run(), handing what the command has printed so far to $onOutput each
      * time more of it arrives — for a job, whose output can then be read while
      * it runs (a deploy takes minutes). The result is the one run() gives.

@@ -72,6 +72,8 @@ namespace {
     }
     class FakeCli extends CipiApi\Services\CipiCliService {
         public array $ran = [];
+        public array $texts = [];
+        public function runWithText(string $command, string $text): array { $this->texts[] = $text; return $this->run($command); }
         public array $next = ['output' => '', 'exit_code' => 0, 'success' => true];
         public function run(string $command): array {
             if (! $this->commandIsPermitted($command)) { return ['output' => "Command not allowed: {$command}", 'exit_code' => 1, 'success' => false]; }
@@ -409,7 +411,7 @@ namespace {
     ok(substr_count($mcp, 'Notification') >= 10, 'five notification MCP tools registered');
 
     echo "--- 1.43.0 (Cipi 5.13.0)\n";
-    foreach (['CipiBasicAuthCliService', 'CipiDatabaseEnginesCliService', 'CipiAppEnvService'] as $c) {
+    foreach (['CipiBasicAuthCliService', 'CipiDatabaseEnginesCliService', 'EnvRawUnsupportedException', 'CipiAppEnvService'] as $c) {
         require_once $src . $c . '.php';
     }
     $parser = new CipiApi\Services\CipiOutputParser;
@@ -464,6 +466,28 @@ namespace {
     ok(str_contains((string) thrown(fn () => $env->update('shop', [], [], ['A; rm'])), 'Invalid env key'), 'env order: an invalid key is refused');
     ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiAppEnvService(clone $scripted, $val, new FakeVersion('5.12.0')))->update('shop', [], [], ['A'])), 'needs Cipi 5.13.0'), 'env order on an older core: refused, not sent');
     ok(str_contains((string) thrown(fn () => $env->update('shop')), 'set, unset or order'), 'env: nothing to do is refused');
+    // The .env as text (Cipi 5.19.2): read and written as it is.
+    $file = "APP_NAME=Shop\n\n# Mail\nMAIL_MAILER=ses      # aligned\nMAIL_FROM_NAME=\"\${APP_NAME}\"   \n";
+    $c = clone $scripted; $c->answers = [['output' => json_encode(['app' => 'shop', 'text' => $file], JSON_PRETTY_PRINT), 'exit_code' => 0, 'success' => true]];
+    $r = (new CipiApi\Services\CipiAppEnvService($c, $val, new FakeVersion('5.19.2')))->raw('shop');
+    ok($c->ran === ["app env 'shop' --raw --json"] && $r === ['app' => 'shop', 'text' => $file], 'env raw: --raw --json, the text byte for byte (comments, blank lines, blanks)');
+    $c = clone $scripted; $c->answers = [['output' => json_encode(['app' => 'shop', 'text' => $file]), 'exit_code' => 0, 'success' => true]];
+    $r = (new CipiApi\Services\CipiAppEnvService($c, $val, new FakeVersion('5.19.2')))->replaceRaw('shop', $file);
+    ok($c->ran === ["app env 'shop' --stdin --json"] && $c->texts === [$file] && $r['text'] === $file, 'env raw write: the text on standard input as it is — not on the command line — and the file back');
+    foreach ([['', 'empty'], [str_repeat('a', 65537), 'too long'], ["A=1\0B=2", 'NUL']] as [$bad, $why]) {
+        $c = clone $scripted;
+        ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiAppEnvService($c, $val, new FakeVersion('5.19.2')))->replaceRaw('shop', $bad)), $why) && $c->ran === [], "env raw write: {$why} refused before the CLI");
+    }
+    ok(str_starts_with((string) thrown(fn () => (new CipiApi\Services\CipiAppEnvService(clone $scripted, $val, new FakeVersion('5.19.1')))->raw('shop')), 'CipiApi\Services\EnvRawUnsupportedException'), 'env raw on an older core: refused (501), not sent');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiAppEnvService(clone $scripted, $val, new FakeVersion('5.19.2')))->raw('site')), 'custom app'), 'env raw: a custom app has no .env');
+    $cliSrc2 = file_get_contents($src . 'CipiCliService.php');
+    ok(preg_match('/function runWithText\(string \$command, string \$text\): array\s*\{.*?fwrite\(\$pipes\[0\], \$text\);/s', $cliSrc2) === 1, 'runWithText: the text as it is (runWithInput takes one line)');
+    $ctl = file_get_contents(dirname($src) . '/Http/Controllers/EnvController.php');
+    ok(str_contains($ctl, '$request->getContent()') && str_contains($ctl, 'EnvRawUnsupportedException') && str_contains($ctl, '501'), 'PUT …/env/raw reads the body itself (no TrimStrings), 501 on an older core');
+    $routes = file_get_contents(dirname($src, 2) . '/routes/api.php');
+    ok(str_contains($routes, "Route::get('/apps/{name}/env/raw'") && str_contains($routes, "Route::put('/apps/{name}/env/raw'") && substr_count($routes, "env/raw', [EnvController::class") === 2 && substr_count($routes, "'updateRaw'])->middleware('ability:apps-env')") === 1, 'routes: GET|PUT /apps/{name}/env/raw under apps-env');
+    $spec = json_decode(file_get_contents(dirname($src, 2) . '/public/api-docs/openapi.json'), true);
+    ok(isset($spec['paths']['/apps/{name}/env/raw']['get'], $spec['paths']['/apps/{name}/env/raw']['put'], $spec['components']['schemas']['AppEnvRawResponse']), 'OpenAPI: /apps/{name}/env/raw');
     $c = clone $scripted; $c->answers = [['output' => "\e[31m✗\e[0m Order not applied: the order leaves out APP_KEY", 'exit_code' => 1, 'success' => false]];
     $err = (string) thrown(fn () => (new CipiApi\Services\CipiAppEnvService($c, $val, new FakeVersion('5.13.0')))->update('shop', [], [], ['APP_NAME']));
     ok(str_starts_with($err, 'InvalidArgumentException: ✗ Order not applied: the order leaves out APP_KEY'), "the core's refusal of an order: 422, without colours");

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.49.1] - 2026-11-28
+
+For Cipi 5.19.2: the `.env` as text, read and written as it is.
+
+### Added
+
+- `GET /api/apps/{name}/env/raw` — the `.env` as it is: every line, comment, blank line and space (`cipi app env --raw --json`). `PUT /api/apps/{name}/env/raw` with `{"text": "…"}` replaces the whole file, byte for byte: nothing parsed, quoted, trimmed or moved (`cipi app env --stdin`), and answers the file as it is now. Empty, more than 64 KB or a NUL byte: `422`, the file as it was. Both under `apps-env`; `501` on a server whose Cipi is older than 5.19.2, so a panel can fall back.
+- `CipiCliService::runWithText()`: a whole text on the command's standard input, as it is (`runWithInput()` takes one line: a secret). The `.env` never goes on a command line.
+- The text of `PUT …/env/raw` is read from the request's own body: `TrimStrings` would have taken the blanks and the newline at its end.
+- OpenAPI 1.49.1. `tests/standalone.php`: 705 checks.
+
 ## [1.49.0] - 2026-11-28
 
 For Cipi 5.19.0/5.19.1: backups set up and managed from the panel — on the server first, then S3 buckets and SFTP servers on a par, the encryption key, the retention now.

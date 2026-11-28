@@ -72,6 +72,9 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     // App .env (key/value — requires Cipi CLI ≥ 5.0.3)
     Route::get('/apps/{name}/env', [EnvController::class, 'show'])->middleware('ability:apps-env');
     Route::put('/apps/{name}/env', [EnvController::class, 'update'])->middleware('ability:apps-env');
+    // The .env as it is — text in, text out (Cipi CLI ≥ 5.19.2)
+    Route::get('/apps/{name}/env/raw', [EnvController::class, 'raw'])->middleware('ability:apps-env');
+    Route::put('/apps/{name}/env/raw', [EnvController::class, 'updateRaw'])->middleware('ability:apps-env');
 
     // Shared auth.json (Composer / structured JSON — not HTTP Basic Auth)
     Route::get('/apps/{name}/auth', [AuthJsonController::class, 'show'])->middleware('ability:apps-auth');
