@@ -124,7 +124,6 @@ class CipiCliService
         'backup sftp edit ',
         'backup sftp key ',
         'backup sftp remove ',
-        'backup destination remove ',
         // Cipi CLI ≥ 5.18.0: how the server updates Cipi (not the update itself).
         'self-update policy --json',
         'self-update policy ',
