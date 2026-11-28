@@ -18,6 +18,24 @@ namespace Illuminate\Support {
         }
     }
 }
+// What RunCipiCommand takes from the queue, and the jobs table as far as it asks.
+namespace Illuminate\Contracts\Queue { interface ShouldQueue {} }
+namespace Illuminate\Bus { trait Queueable {} }
+namespace Illuminate\Foundation\Bus { trait Dispatchable {} }
+namespace Illuminate\Queue {
+    trait InteractsWithQueue {}
+    trait SerializesModels {}
+    class MaxAttemptsExceededException extends \RuntimeException {}
+    class TimeoutExceededException extends MaxAttemptsExceededException {}
+}
+namespace CipiApi\Models {
+    class CipiJob {
+        public static array $rows = [];
+        public function __construct(public string $status = 'running', public ?string $output = null, public string $type = 'app-deploy', public mixed $params = null, public ?int $exit_code = null) {}
+        public static function find(string $id): ?self { return self::$rows[$id] ?? null; }
+        public function markCompleted(string $output, int $exitCode): void { $this->status = $exitCode === 0 ? 'completed' : 'failed'; $this->output = $output; $this->exit_code = $exitCode; }
+    }
+}
 namespace Composer {
     // What Composer writes for an installed package, as far as the status service asks.
     class InstalledVersions {
@@ -520,7 +538,7 @@ namespace {
     $st = (new $F($cli2, new FakeVersion('5.14.0'), new CipiApi\Services\CipiIpWhitelistService($cli2)))->status();
     ok($cli2->ran === ['firewall status --json'], 'status: one command');
     ok(count($st['ufw']['rules']) === 2 && $st['ufw']['rules'][0]['protected'] === true && $st['ufw']['rules'][1]['kind'] === 'block' && $st['ufw']['rules'][1]['to'] === 'any' && $st['ufw']['rules'][1]['managed_by'] === '', 'status: rules typed, every key present, junk dropped');
-    ok($st['protected_ports'] === [22, 80, 443] && $st['zero_trust'] === ['lock_http' => true, 'lock_ssh' => false], 'status: protected ports and Zero Trust locks');
+    ok($st['protected_ports'] === [22, 80, 443] && $st['zero_trust'] === ['lock_http' => true, 'lock_ssh' => false, 'by' => ['http' => [], 'ssh' => []]], 'status: protected ports and Zero Trust locks (an older core does not say who holds them)');
     ok($st['fail2ban']['attempts'] === 3 && $st['fail2ban']['attempts_custom'] === null && count($st['fail2ban']['jails']) === 1 && $st['fail2ban']['jails'][0]['banned'] === ['11.2.3.45'], 'status: fail2ban');
     ok($st['crowdsec']['installed'] === false && $st['crowdsec']['decisions'] === [] && $st['crowdsec']['enable_blockers'] === ['Only 300 MB of RAM free'] && $st['crowdsec']['allowlist'] === [], 'status: CrowdSec, a decision without an address dropped');
     $cli2->next = ['output' => 'not json', 'exit_code' => 0, 'success' => true];
@@ -749,6 +767,20 @@ namespace {
     ok($pc->clear('blog')['cleared'] === 128 && $pc->clear('blog')['enabled'] === true, 'clear: the pages deleted, and the status after it');
     $cli->by = ["cache 'blog' clear" => ['output' => "[INFO] The page cache of 'blog' is off — nothing to empty", 'exit_code' => 0, 'success' => true]] + $cli->by;
     ok($pc->clear('blog')['cleared'] === 0, 'clear with the cache off: nothing deleted, no error');
+    $pj = ['output' => "sudo: unable to resolve host x\n" . json_encode(['app' => 'blog', 'enabled' => true, 'purged' => 3, 'targets' => ['/hello/', '/news/*']]), 'exit_code' => 0, 'success' => true];
+    $cli = new ScriptCli; $cli->by = ["cache 'blog' purge --json '/hello/' '/news/*'" => $pj];
+    $pc18 = new $P($cli, new FakeVersion('5.18.0'), $parser);
+    ok($pc18->purge('blog', ['/hello/', '/news/*', '/hello/']) === ['app' => 'blog', 'enabled' => true, 'purged' => 3, 'targets' => ['/hello/', '/news/*']] && end($cli->ran) === "cache 'blog' purge --json '/hello/' '/news/*'", 'purge: some pages, each quoted, once, and the files deleted');
+    ok((new FakeCli)->commandIsPermitted("cache 'blog' purge --json '/hello/'"), 'allowed: cipi cache <app> purge');
+    foreach (['hello', '/a b', "/x'", '/a*b', '/a?b=1', 'https://x.test', 'ftp://x.test/a', '/$(id)', "/a\n/b"] as $bad) {
+        ok($P::purgeError([$bad]) !== null, 'purge refuses ' . json_encode($bad));
+    }
+    ok($P::purgeError(['/', '/blog/*', 'https://www.example.com/blog/post/', 'http://example.com:8080/x/', '/caff%C3%A8/']) === null && $P::purgeError([]) !== null && $P::purgeError(array_fill(0, 501, '/x')) !== null, 'purge takes a path, a prefix and a URL; not none, not 501');
+    $before = count($cli->ran);
+    ok(str_starts_with((string) thrown(fn () => $pc18->purge('blog', ['/ok', '/a id'])), 'CipiApi\Services\PageCacheRefusedException') && count($cli->ran) === $before, 'purge: a bad page is a 422 before anything runs');
+    ok(str_contains((string) thrown(fn () => (new $P(new FakeCli, new FakeVersion('5.17.0'), $parser))->purge('blog', ['/x'])), 'needs Cipi 5.18.0+'), 'purge on an older core: refused, with the version it needs');
+    $cli->by = ["cache 'blog' purge --json 'https://evil.test/x'" => ['output' => "[ERROR] Not a page of 'blog': https://evil.test/x — a path …", 'exit_code' => 1, 'success' => false]];
+    ok(str_starts_with((string) thrown(fn () => $pc18->purge('blog', ['https://evil.test/x'])), "CipiApi\\Services\\PageCacheRefusedException: Not a page of 'blog'"), 'purge: a host that is not the app\'s is the server\'s 422');
     $cli = new ScriptCli; $cli->by = ["cache 'blog' on" => ['output' => "\e[0;31m[ERROR]\e[0m nginx refused the configuration — nothing changed\n  [emerg] \"fastcgi_cache\" zone \"cipi_blog\" is unknown", 'exit_code' => 1, 'success' => false]];
     $pc = new $P($cli, new FakeVersion('5.17.0'), $parser);
     ok(str_starts_with((string) thrown(fn () => $pc->update('blog', ['enabled' => true])), 'CipiApi\Services\PageCacheRefusedException: nginx refused the configuration'), 'nginx refusing the cache is a refusal (422), with the CLI\'s words');
@@ -850,6 +882,7 @@ namespace {
         "Route::put('/apps/{name}/cache', [PageCacheController::class, 'update'])->middleware('ability:nginx-manage')",
         "Route::put('/apps/{name}/cache/exclude', [PageCacheController::class, 'exclude'])->middleware('ability:nginx-manage')",
         "Route::post('/apps/{name}/cache/clear', [PageCacheController::class, 'clear'])->middleware('ability:nginx-manage')",
+        "Route::post('/apps/{name}/cache/purge', [PageCacheController::class, 'purge'])->middleware('ability:nginx-manage')",
         "Route::get('/apps/{name}/octane', [FrankenPhpController::class, 'appPhp'])->middleware('ability:php-view')",
         "Route::put('/apps/{name}/octane/php', [FrankenPhpController::class, 'switchPhp'])->middleware('ability:php-manage')",
         "Route::post('/apps/{name}/octane/restart', [FrankenPhpController::class, 'restart'])->middleware('ability:php-manage')",
@@ -866,7 +899,7 @@ namespace {
     ok(strpos($routes, "'/valkey/flush-shared'") < strpos($routes, "'/valkey/{name}/restart'"), 'the fixed /valkey paths come before /valkey/{name}/restart');
     $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
     $sc = $spec['components']['schemas'];
-    ok($spec['info']['version'] === '1.47.0' && isset($spec['paths']['/cache']['get'], $spec['paths']['/apps/{name}/cache']['get'], $spec['paths']['/apps/{name}/cache']['put'], $spec['paths']['/apps/{name}/cache/clear']['post'], $spec['paths']['/apps/{name}/cache/exclude']['put'], $sc['PageCacheExclude'], $sc['PageCache']['properties']['exclude'], $sc['PageCacheRequest']['properties']['exclude'], $spec['paths']['/apps/{name}/octane']['get'], $spec['paths']['/apps/{name}/octane/php']['put'], $spec['paths']['/apps/{name}/octane/restart']['post'], $spec['paths']['/valkey']['get'], $spec['paths']['/valkey/isolate']['post'], $spec['paths']['/valkey/share']['post'], $spec['paths']['/valkey/flush-shared']['post'], $spec['paths']['/valkey/{name}/restart']['post'], $spec['paths']['/notifications/settings']['get'], $spec['paths']['/notifications/settings']['put'], $sc['PageCache'], $sc['PageCacheRequest'], $sc['OctanePhp'], $sc['ValkeyList'], $sc['NotificationSettings'], $sc['JobResultOctanePhp'], $sc['JobResultValkeyMove']), 'OpenAPI 1.47.0: the new routes and schemas');
+    ok(version_compare($spec['info']['version'], '1.47.0', '>=') && isset($spec['paths']['/cache']['get'], $spec['paths']['/apps/{name}/cache']['get'], $spec['paths']['/apps/{name}/cache']['put'], $spec['paths']['/apps/{name}/cache/clear']['post'], $spec['paths']['/apps/{name}/cache/exclude']['put'], $sc['PageCacheExclude'], $sc['PageCache']['properties']['exclude'], $sc['PageCacheRequest']['properties']['exclude'], $spec['paths']['/apps/{name}/octane']['get'], $spec['paths']['/apps/{name}/octane/php']['put'], $spec['paths']['/apps/{name}/octane/restart']['post'], $spec['paths']['/valkey']['get'], $spec['paths']['/valkey/isolate']['post'], $spec['paths']['/valkey/share']['post'], $spec['paths']['/valkey/flush-shared']['post'], $spec['paths']['/valkey/{name}/restart']['post'], $spec['paths']['/notifications/settings']['get'], $spec['paths']['/notifications/settings']['put'], $sc['PageCache'], $sc['PageCacheRequest'], $sc['OctanePhp'], $sc['ValkeyList'], $sc['NotificationSettings'], $sc['JobResultOctanePhp'], $sc['JobResultValkeyMove']), 'OpenAPI 1.47.0: the new routes and schemas');
     $refs = []; array_walk_recursive($spec, function ($v, $k) use (&$refs) { if ($k === '$ref') { $refs[$v] = true; } });
     $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
     ok($missing === [], 'OpenAPI: every $ref points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));
@@ -875,6 +908,396 @@ namespace {
         $sudoers = (string) file_get_contents(getenv('CIPI_CORE_SUDOERS') ?: $sud);
         ok(str_contains($sudoers, 'cipi cache *') && str_contains($sudoers, 'cipi valkey flush-shared --yes,') && str_contains($sudoers, 'cipi frankenphp php *') && str_contains($sudoers, 'cipi notification server-name *') && ! str_contains($sudoers, 'cipi valkey flush-shared *'), 'the core\'s sudoers carry what the API runs (flush-shared spelled out)');
     }
+
+    echo "--- 1.48.0 (Cipi 5.18.0): the mesh network in GET /zt, who holds a firewall lock\n";
+    $mesh = ['enabled' => true, 'provider' => 'tailscale', 'label' => 'Tailscale', 'connected' => true, 'state' => 'Running', 'ip' => '100.101.102.103',
+        'fqdn' => 'web1.tail1234.ts.net', 'peers' => ['total' => 3, 'online' => 2], 'key_expiry' => null, 'lock' => ['ssh' => true, 'http' => false], 'warnings' => []];
+    $zs = $Z::fromJson(['enabled' => false, 'tunnel' => null, 'mesh' => $mesh]);
+    ok($zs['enabled'] === false && $zs['tunnel'] === null && $zs['lock_ssh'] === null && $zs['mesh'] === 'tailscale' && $zs['mesh_state'] === 'connected' && $zs['mesh_ip'] === '100.101.102.103',
+        'zt: a mesh without Cloudflare — enabled stays Cloudflare\'s, mesh says tailscale, connected, its address');
+    ok(($zs['details']['mesh']['lock'] ?? null) === ['ssh' => true, 'http' => false] && ($zs['details']['mesh']['peers']['online'] ?? null) === 2, 'zt: details.mesh is what the CLI says, whole');
+    $zs = $Z::fromJson($zjson + ['mesh' => ['enabled' => true, 'provider' => 'netbird', 'connected' => false, 'state' => 'NeedsLogin', 'ip' => null]]);
+    ok($zs['enabled'] === true && $zs['tunnel'] === 'cipi-mozart' && $zs['mesh'] === 'netbird' && $zs['mesh_state'] === 'disconnected' && $zs['mesh_ip'] === null, 'zt: Cloudflare and a mesh side by side; a mesh that is down has no address');
+    $zs = $Z::fromJson(['enabled' => true, 'tunnel' => ['name' => 't'], 'mesh' => ['enabled' => false, 'provider' => null, 'active' => null]]);
+    ok($zs['mesh'] === null && $zs['mesh_state'] === null && $zs['mesh_ip'] === null, 'zt: no mesh on');
+    $zs = $Z::fromJson($zjson);
+    ok(array_key_exists('mesh', $zs) && $zs['mesh'] === null && $zs['mesh_state'] === null, 'zt on Cipi 5.16/5.17 (no mesh in the JSON): the keys are there, null');
+    $zs = $Z::fromJson(['enabled' => false, 'mesh' => ['enabled' => true, 'provider' => '', 'ip' => '']]);
+    ok($zs['mesh'] === null && $zs['mesh_ip'] === null, 'zt: a mesh with no provider name is no mesh');
+    $cli = new ScriptCli; $cli->by = ['zt status --json' => ['output' => $text, 'exit_code' => 0, 'success' => true]];
+    $zs = (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status();
+    ok(array_key_exists('mesh', $zs) && $zs['mesh'] === null && $zs['mesh_ip'] === null && $zs['tunnel'] === 'cipi-old', 'zt on a Cipi that prints text: mesh null, the rest as before');
+    $raw2 = json_decode($raw, true); $raw2['zero_trust'] = ['lock_http' => true, 'lock_ssh' => true, 'by' => ['http' => ['cloudflare', 'tailscale'], 'ssh' => ['tailscale', ['x']]]];
+    $cli2 = new FakeCli; $cli2->next = ['output' => json_encode($raw2), 'exit_code' => 0, 'success' => true];
+    $st = (new $F($cli2, new FakeVersion('5.18.0'), new CipiApi\Services\CipiIpWhitelistService($cli2)))->status();
+    ok($st['zero_trust'] === ['lock_http' => true, 'lock_ssh' => true, 'by' => ['http' => ['cloudflare', 'tailscale'], 'ssh' => ['tailscale']]], 'firewall status: who holds each lock, strings only');
+    $perm = new CipiApi\Services\CipiCliService;
+    // Cloudflare's side stays with the operator; of the mesh, only what the sudoers spell out.
+    foreach (['zt enable --token=k', 'zt disable --yes', 'zt lock http --yes', 'zt lock ssh --yes', 'zt unlock http', 'zt hostname add shop', 'zt access set shop', 'zt reset',
+        'zt tailscale disable', 'zt tailscale lock ssh', 'zt tailscale lock http', 'zt netbird ssh enable', 'zt tailscale up', 'zt headscale enable --auth-key=k'] as $c) {
+        ok(! $perm->commandIsPermitted($c), "not whitelisted: {$c}");
+    }
+    ok($perm->commandIsPermitted('zt status --json'), 'zt status --json is what the API may run');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    $zp = $spec['components']['schemas']['ZtStatusResponse']['properties']['data']['properties'];
+    ok(version_compare($spec['info']['version'], '1.48.0', '>=') && isset($zp['mesh'], $zp['mesh_state'], $zp['mesh_ip']) && str_contains($zp['details']['description'], '`mesh`')
+        && isset($spec['components']['schemas']['FirewallStatus']['properties']['zero_trust']['properties']['by']['properties']['ssh']), 'OpenAPI ≥ 1.48.0: mesh on GET /zt, by on the firewall locks');
+
+    echo "--- the mesh from the panel (Cipi 5.18.0, ability zt-manage)\n";
+    require_once $src . 'ZtRefusedException.php';
+    require_once $src . 'CipiZtMeshService.php';
+    $M = 'CipiApi\Services\CipiZtMeshService';
+    $R = 'CipiApi\Services\ZtRefusedException';
+    foreach (['zt tailscale enable --auth-key=k', 'zt netbird enable --setup-key=k', 'zt tailscale disable --yes', "zt tailscale disable --yes --via='100.64.0.2'", 'zt tailscale lock ssh --yes', "zt netbird lock http --yes --via='203.0.113.9'",
+        'zt tailscale unlock ssh', 'zt netbird unlock http', 'zt tailscale ssh enable', 'zt tailscale ssh disable', "zt status --json --via='203.0.113.9'"] as $c) {
+        ok($perm->commandIsPermitted($c), "whitelisted: {$c}");
+    }
+    $sud = getenv('CIPI_CORE_SUDOERS') ?: '/home/claude/cipi/lib/cipi-api-sudoers.sh';
+    if (is_file($sud)) {
+        $sudoers = (string) file_get_contents($sud);
+        $missing = [];
+        foreach (CipiApi\Services\CipiCliService::ALLOWED_COMMANDS as $a) {
+            if (! str_starts_with($a, 'zt tailscale') && ! str_starts_with($a, 'zt netbird')) { continue; }
+            $line = '/usr/local/bin/cipi ' . (str_ends_with($a, ' ') ? $a . '*' : $a) . ',';
+            if (! str_contains($sudoers, $line)) { $missing[] = $a; }
+        }
+        ok($missing === [], 'every mesh command of the whitelist is a line of the core\'s sudoers' . ($missing ? ': ' . implode(' | ', $missing) : ''));
+        ok(str_contains($sudoers, 'cipi zt tailscale disable --yes *,') && str_contains($sudoers, 'cipi zt netbird lock http --yes *,') && ! str_contains($sudoers, 'cipi zt tailscale lock ssh --yes *') && ! str_contains($sudoers, 'cipi zt tailscale *') && ! str_contains($sudoers, 'cipi zt netbird ssh'),
+            'sudoers: --via only where it is read (leave, lock http); lock ssh takes nothing more; no wildcard over the mesh; no NetBird SSH');
+    }
+    $J = fn (array $i) => $M::joinError($i);
+    ok($J(['provider' => 'tailscale', 'key' => 'tskey-auth-kABC123CNTRL-xyz']) === null && $J(['provider' => 'netbird', 'key' => 'A1B2C3D4-E5F6-7890-ABCD-EF1234567890']) === null, 'join: an auth key, a setup key');
+    ok($J(['provider' => 'tailscale']) === null && $J(['provider' => 'netbird', 'key' => '']) === null, 'join without a key: a client already connected is taken as it is');
+    ok(str_contains((string) $J(['provider' => 'zerotier', 'key' => 'abcdefgh']), 'tailscale or netbird') && str_contains((string) $J([]), 'tailscale or netbird'), 'join: tailscale or netbird, nothing else');
+    foreach (["tskey'; id", 'short', 'has space key', 'a"b"cdefgh', "tskey-\nx-abcdef", 'tskey$(id)x', 'tskey`id`xx'] as $bad) {
+        ok(str_contains((string) $J(['provider' => 'tailscale', 'key' => $bad]), 'does not look like a key'), 'join: not a key ' . json_encode($bad));
+    }
+    ok(str_contains((string) $J(['provider' => 'tailscale', 'key' => 'tskey-abcdef', 'hostname' => 'web_1']), 'Not a hostname') && $J(['provider' => 'tailscale', 'key' => 'tskey-abcdef', 'hostname' => 'web-1']) === null, 'join: a hostname is letters, digits and -');
+    ok(str_contains((string) $J(['provider' => 'tailscale', 'key' => 'tskey-abcdef', 'control_url' => 'ftp://x']), 'coordination server') && str_contains((string) $J(['provider' => 'netbird', 'key' => 'abcdefgh', 'control_url' => "https://nb.test'; id"]), 'coordination server')
+        && $J(['provider' => 'tailscale', 'key' => 'tskey-abcdef', 'control_url' => 'https://headscale.example.com:8443']) === null && $J(['provider' => 'netbird', 'key' => 'abcdefgh', 'control_url' => 'https://netbird.example.com/']) === null, 'join: a control URL is http(s)://host[:port]');
+    ok($M::tags('cipi, tag:prod ,cipi') === ['tag:cipi', 'tag:prod'] && $M::tags(['a', 'tag:b']) === ['tag:a', 'tag:b'] && $M::tags(null) === [] && $M::tags('') === [] && $M::tags('ok,no way') === null && $M::tags([['x']]) === null && $M::tags("a';id") === null, 'tags: a list or a,b — tag: added, doubles dropped; a bad one is refused');
+    ok(str_contains((string) $J(['provider' => 'tailscale', 'key' => 'tskey-abcdef', 'tags' => 'no way']), 'Not a tag'), 'join: a tag that is not one');
+    foreach (['tags' => 'cipi', 'ssh' => true, 'reauth' => true] as $f => $v) {
+        ok(str_contains((string) $J(['provider' => 'netbird', 'key' => 'abcdefgh', $f => $v]), "'{$f}' is Tailscale's"), "join NetBird: {$f} is Tailscale's");
+    }
+    ok(str_contains((string) $J(['provider' => 'tailscale', 'reauth' => true]), 'needs a key') && $J(['provider' => 'tailscale', 'reauth' => true, 'key' => 'tskey-abcdef']) === null, 'join: reauth needs a key');
+    ok($M::joinCommand(['provider' => 'tailscale', 'key' => 'tskey-auth-k1', 'hostname' => 'web1', 'control_url' => 'https://hs.example.com', 'tags' => ['cipi', 'tag:prod'], 'direct' => true, 'accept_dns' => true, 'accept_routes' => true, 'ssh' => true, 'reauth' => true])
+        === "zt tailscale enable --auth-key='tskey-auth-k1' --hostname='web1' --login-server='https://hs.example.com' --tags='tag:cipi,tag:prod' --direct --accept-dns --accept-routes --ssh --reauth", 'join Tailscale: every flag, values quoted');
+    ok($M::joinCommand(['provider' => 'netbird', 'key' => 'A1B2C3D4-E5F6', 'hostname' => 'web1', 'control_url' => 'https://nb.example.com', 'direct' => false, 'accept_dns' => '0', 'ssh' => true, 'tags' => 'x'])
+        === "zt netbird enable --setup-key='A1B2C3D4-E5F6' --hostname='web1' --management-url='https://nb.example.com'", 'join NetBird: its own flag names; nothing of Tailscale\'s, nothing that is off');
+    ok($M::joinCommand(['provider' => 'tailscale']) === 'zt tailscale enable --adopt' && $perm->commandIsPermitted('zt tailscale enable --adopt') && ! $perm->commandIsPermitted('zt tailscale enable')
+        && $M::joinCommand(['provider' => 'netbird', 'key' => '', 'hostname' => 'web1']) === "zt netbird enable --adopt --hostname='web1'", 'join without a key: --adopt, so the CLI takes a connected client and never waits for a key; the bare command is not one the API runs');
+
+    $meshOn = fn (string $p, array $more = []) => ['zt status' => ['output' => json_encode(['enabled' => false, 'tunnel' => null, 'mesh' => ['enabled' => true, 'provider' => $p, 'connected' => true, 'ip' => '100.64.0.7'] + $more]), 'exit_code' => 0, 'success' => true]];
+    $meshOff = ['zt status' => ['output' => json_encode(['enabled' => false, 'tunnel' => null, 'mesh' => ['enabled' => false, 'provider' => null]]), 'exit_code' => 0, 'success' => true]];
+    $mk = function (array $by, string $v = '5.18.0') use ($M, $Z) {
+        $cli = new ScriptCli; $cli->by = $by;
+        return [new $M($cli, new FakeVersion($v), new $Z($cli, new CipiApi\Services\CipiOutputParser), new CipiApi\Services\CipiIpWhitelistService($cli)), $cli];
+    };
+    [$ms, $cli] = $mk($meshOff, '5.17.2');
+    foreach (['join' => fn () => $ms->join(['provider' => 'tailscale', 'key' => 'tskey-abcdef']), 'leave' => fn () => $ms->leave(''), 'lock' => fn () => $ms->lock('ssh', ''), 'unlock' => fn () => $ms->unlock('ssh'), 'ssh' => fn () => $ms->providerSsh(true)] as $what => $f) {
+        $e = (string) thrown($f);
+        ok(str_starts_with($e, 'RuntimeException: The mesh network from the panel needs Cipi 5.18.0+'), "an older core: {$what} is refused before anything runs");
+    }
+    ok($cli->ran === [], 'an older core: nothing ran');
+    [$ms, $cli] = $mk($meshOff);
+    ok($ms->clientIp('::ffff:203.0.113.9') === '203.0.113.9' && $ms->clientIp('100.64.0.2') === '100.64.0.2' && $ms->clientIp('fd7a:115c:a1e0::1') === 'fd7a:115c:a1e0::1' && $ms->clientIp("1.2.3.4'; id") === '' && $ms->clientIp(null) === '' && $ms->clientIp('unix:') === '', 'the caller\'s address: an IP as it is, anything else nothing');
+    ok($ms->provider() === null, 'no mesh: provider is null');
+    foreach (['leave' => fn () => $ms->leave('1.2.3.4'), 'lock' => fn () => $ms->lock('http', '1.2.3.4'), 'unlock' => fn () => $ms->unlock('http'), 'ssh' => fn () => $ms->providerSsh(true)] as $what => $f) {
+        ok(thrown($f) === $R . ': This server is on no mesh network', "no mesh: {$what} has nothing to work on");
+    }
+    $cli->ran = [];
+    $cli->by = ['zt tailscale enable' => ['output' => "\e[0;36m→\e[0m Installing Tailscale...\n\e[0;32m✓\e[0m Tailscale: web1 is on the network as 100.64.0.7", 'exit_code' => 0, 'success' => true]] + $meshOff;
+    $out = $ms->join(['provider' => 'tailscale', 'key' => 'tskey-auth-k1', 'hostname' => 'web1']);
+    ok($cli->ran === ["zt tailscale enable --auth-key='tskey-auth-k1' --hostname='web1'"] && $out === "Installing Tailscale...\nTailscale: web1 is on the network as 100.64.0.7", 'join: one command; what the CLI said, without colours');
+    $cli->by = ['zt netbird enable' => ['output' => "\e[0;31m[ERROR]\e[0m The setup key A1B2C3D4-E5F6-7890 was refused by the management server", 'exit_code' => 1, 'success' => false]] + $meshOff;
+    $e = (string) thrown(fn () => $ms->join(['provider' => 'netbird', 'key' => 'A1B2C3D4-E5F6-7890']));
+    ok($e === $R . ': The setup key [key] was refused by the management server', 'a refused join: the CLI\'s words — and never the key, even if it repeats it');
+    ok(str_contains((string) thrown(fn () => $ms->join(['provider' => 'netbird', 'key' => 'abcdefgh', 'ssh' => true])), "'ssh' is Tailscale's"), 'join validates again by itself: nothing runs on a bad request');
+
+    [$ms, $cli] = $mk($meshOn('tailscale'));
+    ok($ms->provider() === 'tailscale', 'provider: the mesh the server is on');
+    $cli->ran = []; $ms->lock('ssh', '203.0.113.9');
+    ok(end($cli->ran) === 'zt tailscale lock ssh --yes', 'lock ssh: nothing more than --yes (it is not the panel\'s way in)');
+    $ms->lock('http', '203.0.113.9');
+    ok(end($cli->ran) === "zt tailscale lock http --yes --via='203.0.113.9'", 'lock http: where the caller comes from goes with it, last');
+    $ms->lock('http', '');
+    ok(end($cli->ran) === 'zt tailscale lock http --yes', 'lock http with no address to give: the CLI then takes the caller for unknown, and refuses');
+    $ms->lock('http', '127.0.0.1', '198.51.100.7');
+    ok(end($cli->ran) === "zt tailscale lock http --yes --via='127.0.0.1' --client='198.51.100.7'", 'lock http from a panel on this server: the address of the person at it too');
+    $ms->lock('ssh', '127.0.0.1', '198.51.100.7');
+    ok(end($cli->ran) === 'zt tailscale lock ssh --yes', 'lock ssh never carries an address');
+    $ms->unlock('ssh'); ok(end($cli->ran) === 'zt tailscale unlock ssh', 'unlock ssh');
+    $ms->unlock('http'); ok(end($cli->ran) === 'zt tailscale unlock http', 'unlock http');
+    $ms->leave('100.64.0.2'); ok(end($cli->ran) === "zt tailscale disable --yes --via='100.64.0.2'", 'leave: --yes and the caller\'s address');
+    $ms->providerSsh(true); ok(end($cli->ran) === 'zt tailscale ssh enable', 'Tailscale SSH on');
+    $ms->providerSsh(false); ok(end($cli->ran) === 'zt tailscale ssh disable', 'Tailscale SSH off');
+    ok(thrown(fn () => $ms->lock('rdp', '')) === $R . ": 'port' is ssh or http" && thrown(fn () => $ms->unlock('22')) === $R . ": 'port' is ssh or http", 'a port that is neither ssh nor http');
+    ok(! array_filter($cli->ran, fn ($c) => str_contains($c, '--force')), 'nothing the API runs carries --force');
+    $cli->by = ['zt tailscale lock ssh' => ['output' => "\e[0;31m[ERROR]\e[0m Nobody has signed in over SSH through Tailscale yet. Do it once from a device of the network (ssh cipi@100.64.0.7): that login is the proof that it works, and then the port can be closed.", 'exit_code' => 1, 'success' => false]] + $meshOn('tailscale');
+    $e = (string) thrown(fn () => $ms->lock('ssh', '203.0.113.9'));
+    ok(str_starts_with($e, $R . ': Nobody has signed in over SSH through Tailscale yet.') && str_contains($e, 'ssh cipi@100.64.0.7'), 'a refused lock: the CLI\'s reason, whole');
+    $cli->by = ['zt tailscale disable' => ['output' => '', 'exit_code' => 1, 'success' => false]] + $meshOn('tailscale');
+    ok(thrown(fn () => $ms->leave('')) === $R . ': cipi zt tailscale disable failed', 'a failure that says nothing still says what failed');
+
+    [$ms, $cli] = $mk($meshOn('netbird'));
+    $cli->ran = []; $ms->lock('http', '100.64.0.2'); $ms->leave('::1');
+    ok($cli->ran[1] === "zt netbird lock http --yes --via='100.64.0.2'" && $cli->ran[3] === "zt netbird disable --yes --via='::1'", 'NetBird: the same commands under its own name');
+    $n = count($cli->ran);
+    ok(str_contains((string) thrown(fn () => $ms->providerSsh(true)), "NetBird's own SSH server is not turned on by Cipi") && ! array_filter(array_slice($cli->ran, $n), fn ($c) => ! str_starts_with($c, 'zt status')), 'NetBird: its SSH server is not Cipi\'s to turn on — nothing runs');
+
+    $cli = new ScriptCli; $cli->by = $meshOn('tailscale', ['panel' => ['via' => 'public', 'from' => '203.0.113.9', 'blocked' => ['lock_ssh' => null, 'lock_http' => 'The panel reaches this server\'s API on its public address', 'disable' => null]]]);
+    $zs = (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status('203.0.113.9');
+    ok($cli->ran === ["zt status --json --via='203.0.113.9'"] && ($zs['details']['mesh']['panel']['via'] ?? null) === 'public' && str_starts_with((string) $zs['details']['mesh']['panel']['blocked']['lock_http'], 'The panel reaches'), 'status with the caller\'s address: what the panel may do from there, as the CLI says it');
+    $cli->ran = []; (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status(); (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status('');
+    ok($cli->ran === ['zt status --json', 'zt status --json'], 'status without an address: the command as it always was');
+    $cli->ran = []; (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status('127.0.0.1', '198.51.100.7'); (new $Z($cli, new CipiApi\Services\CipiOutputParser))->status(null, '198.51.100.7');
+    ok($cli->ran === ["zt status --json --via='127.0.0.1' --client='198.51.100.7'", "zt status --json --client='198.51.100.7'"] && $perm->commandIsPermitted($cli->ran[0]), 'status from a panel on this server: the browser\'s address goes too');
+
+    $routes = (string) file_get_contents($root . '/routes/api.php');
+    foreach ([
+        "Route::get('/zt', [ZtController::class, 'status'])->middleware('ability:zt-view')",
+        "Route::post('/zt/mesh', [ZtMeshController::class, 'join'])->middleware('ability:zt-manage')",
+        "Route::delete('/zt/mesh', [ZtMeshController::class, 'leave'])->middleware('ability:zt-manage')",
+        "Route::post('/zt/mesh/lock', [ZtMeshController::class, 'lock'])->middleware('ability:zt-manage')",
+        "Route::delete('/zt/mesh/lock', [ZtMeshController::class, 'unlock'])->middleware('ability:zt-manage')",
+        "Route::put('/zt/mesh/ssh', [ZtMeshController::class, 'ssh'])->middleware('ability:zt-manage')",
+    ] as $line) {
+        ok(str_contains($routes, $line), 'route: ' . substr($line, 7, strpos($line, ',') - 7));
+    }
+    ok(substr_count($routes, 'ability:zt-manage') === 5 && ! preg_match('/zt\/mesh.*ability:zt-view/', $routes), 'every change of the mesh needs zt-manage; zt-view only reads');
+    $cfg = (string) file_get_contents($root . '/config/cipi.php');
+    ok(str_contains($cfg, "'zt-manage' => ") && str_contains($cfg, "'zt-view' => 'View Zero Trust status"), 'abilities: zt-manage is one; zt-view reads both sides');
+    $ctl = (string) file_get_contents($root . '/src/Http/Controllers/ZtMeshController.php');
+    ok(! str_contains($ctl, 'dispatch(') && ! str_contains($ctl, 'CipiJob') && str_contains($ctl, "'key' => 'nullable|string|max:512'") && substr_count($ctl, '], 422)') === 2 && str_contains($ctl, '], 503)'), 'the controller: synchronous (a key never reaches the jobs table); 422 for a refusal, 503 for an older core');
+    ok(str_contains($ctl, "'client' => 'nullable|ip'") && str_contains((string) file_get_contents($root . '/src/Http/Controllers/ZtController.php'), "\$request->query('client')"), 'the browser\'s address is an IP or nothing, on the lock and on the status');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    $sc = $spec['components']['schemas'];
+    ok(is_array($spec) && isset($spec['paths']['/zt/mesh']['post'], $spec['paths']['/zt/mesh']['delete'], $spec['paths']['/zt/mesh/lock']['post'], $spec['paths']['/zt/mesh/lock']['delete'], $spec['paths']['/zt/mesh/ssh']['put'], $sc['ZtMeshJoinRequest'], $sc['ZtMeshLockRequest'], $sc['ZtMeshSshRequest'], $sc['ZtMeshChangeResponse']), 'OpenAPI: the five routes of the mesh and their schemas');
+    ok(str_contains(json_encode($spec['paths']['/zt/mesh']['post']), 'zt-manage') && str_contains(json_encode($spec['paths']['/zt/mesh/lock']['post']), 'zt-manage') && in_array('Zero Trust', array_column($spec['tags'], 'name'), true) && isset($spec['paths']['/zt/mesh']['post']['responses']['422'], $spec['paths']['/zt/mesh']['post']['responses']['503'], $sc['ZtMeshLockRequest']['properties']['client']) && ($spec['paths']['/zt']['get']['parameters'][0]['name'] ?? null) === 'client', 'OpenAPI: zt-manage, 422 and 503 on a change; client on the lock and on the status');
+    $refs = []; array_walk_recursive($spec, function ($v, $k) use (&$refs) { if ($k === '$ref') { $refs[$v] = true; } });
+    $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
+    ok($missing === [], 'OpenAPI: every $ref still points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));
+
+    echo "--- deploy config: the two clocks of a deploy, and a Node app's options (Cipi 5.18.0)\n";
+    require_once $root . '/src/Services/CipiAppDeployConfigService.php';
+    $DCS = CipiApi\Services\CipiAppDeployConfigService::class;
+    $dcApps = new class(new FakeVersion('5.18.0')) extends CipiApi\Services\CipiValidationService {
+        public function getApps(): array { return ['shop' => ['php' => '8.5'], 'front' => ['custom' => true, 'runtime' => 'node'], 'static' => ['custom' => true]]; }
+    };
+    $dcCli = new FakeCli;
+    $dcCli->next = ['output' => "\e[32m✓\e[0m Deploy config updated for shop (deploy.php regenerated)\n{\"app\":\"shop\",\"keep_releases\":5,\"build_timeout\":2700,\"step_timeout\":600}", 'exit_code' => 0, 'success' => true];
+    $dc = new $DCS($dcCli, $dcApps, new FakeVersion('5.18.0'));
+    ok($dc->buildFlags(['build_timeout' => 2700, 'step_timeout' => '600']) === ["--build-timeout='2700'", "--step-timeout='600'"] && $dc->buildFlags(['build_timeout' => null, 'keep_releases' => 3]) === ["--keep-releases='3'"],
+        'build_timeout and step_timeout become the CLI\'s flags, in seconds; null leaves one alone');
+    $refused = 0;
+    foreach ([['build_timeout' => 59], ['build_timeout' => 3601], ['build_timeout' => '1800; id'], ['build_timeout' => 12.5], ['build_timeout' => true], ['step_timeout' => 1801], ['step_timeout' => 'abc'], ['step_timeout' => [300]]] as $bad) {
+        try { $dc->buildFlags($bad); } catch (InvalidArgumentException $e) { $refused += (int) str_contains($e->getMessage(), 'must be a number of seconds between'); }
+    }
+    ok($refused === 8, 'out of bounds (60-3600, 60-1800), a fraction, a word, a command, a boolean, a list: each refused before the CLI is asked');
+    $data = $dc->update('shop', ['build_timeout' => 2700, 'step_timeout' => 600]);
+    ok($dcCli->ran === ["app deploy-config 'shop' --build-timeout='2700' --step-timeout='600' --json"] && $data['build_timeout'] === 2700 && $data['step_timeout'] === 600, 'update: one CLI call, and the answer is the config after it');
+    $dcCli->ran = [];
+    $dcCli->next = ['output' => '{"app":"front","runtime":"node","keep_releases":5,"predeploy_snapshot":false,"build_timeout":900,"step_timeout":300}', 'exit_code' => 0, 'success' => true];
+    ok($dc->show('front')['runtime'] === 'node' && $dc->update('front', ['build_timeout' => 900, 'keep_releases' => 5, 'migrate' => null])['build_timeout'] === 900
+        && $dcCli->ran === ["app deploy-config 'front' --json", "app deploy-config 'front' --keep-releases='5' --build-timeout='900' --json"], 'a Node app has deploy options too: keep_releases, predeploy_snapshot and the two clocks');
+    $msg = ''; try { $dc->update('front', ['migrate' => false, 'build_timeout' => 900]); } catch (InvalidArgumentException $e) { $msg = $e->getMessage(); }
+    ok(str_contains($msg, "'front' is a Node app") && str_contains($msg, 'not migrate') && count($dcCli->ran) === 2, 'an artisan option sent to a Node app is refused by name, and nothing runs');
+    $msg = ''; try { $dc->show('static'); } catch (RuntimeException $e) { $msg = $e->getMessage(); }
+    ok(str_contains($msg, 'custom app'), 'a classic custom app has no recipe, as before');
+    $oldCli = new FakeCli; $old = new $DCS($oldCli, $dcApps, new FakeVersion('5.17.0'));
+    $msgs = [];
+    foreach ([fn () => $old->update('shop', ['step_timeout' => 600]), fn () => $old->show('front')] as $call) { try { $call(); } catch (RuntimeException $e) { $msgs[] = $e->getMessage(); } }
+    ok(count($msgs) === 2 && str_contains($msgs[0], 'step_timeout needs Cipi 5.18.0+') && str_contains($msgs[1], 'Node app need Cipi 5.18.0+') && $oldCli->ran === [], 'an older core is told so (503) instead of taking a flag for nothing');
+    $oldCli->next = ['output' => '{"app":"shop","keep_releases":3}', 'exit_code' => 0, 'success' => true];
+    ok($old->update('shop', ['keep_releases' => 3])['keep_releases'] === 3, '…and what it always knew still goes through');
+    $dctl = (string) file_get_contents($root . '/src/Http/Controllers/DeployConfigController.php');
+    ok(str_contains($dctl, "'build_timeout' => 'nullable|integer|min:60|max:3600'") && str_contains($dctl, "'step_timeout' => 'nullable|integer|min:60|max:1800'"), 'the controller validates both');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    $dcProps = $spec['components']['schemas']['DeployConfigUpdateRequest']['properties'];
+    ok(($dcProps['build_timeout']['maximum'] ?? 0) === 3600 && ($dcProps['step_timeout']['maximum'] ?? 0) === 1800 && str_contains($spec['paths']['/apps/{name}/deploy-config']['put']['description'], 'Node app'), 'OpenAPI: the two fields, their bounds, the Node app');
+
+    echo "--- POST /api/apps: db — a database made with a custom or a Node app (Cipi 5.18.0)\n";
+    $v518 = new CipiApi\Services\CipiValidationService(new FakeVersion('5.18.0'));
+    ok($v518->appDbError(null, 'custom') === null && $v518->appDbError('', 'laravel') === null && $v518->appDbError('wpblog', 'custom') === null && $v518->appDbError('front_db', 'node') === null, 'no db, or a name for a custom or a Node app: nothing to say');
+    ok(str_contains((string) $v518->appDbError('extra', 'laravel'), 'a Laravel app is created with its own database'), 'a Laravel app has its own database: db is refused');
+    $badDb = 0; foreach (['WP', '1abc', 'a', 'bad-name', 'x; id', "it's", str_repeat('a', 65)] as $n) { $badDb += (int) str_contains((string) $v518->appDbError($n, 'custom'), "Invalid db '"); }
+    ok($badDb === 7, 'a name that is not a database name never reaches the command line');
+    ok(str_contains((string) (new CipiApi\Services\CipiValidationService(new FakeVersion('5.17.0')))->appDbError('wpblog', 'custom'), "'db' needs Cipi 5.18.0+"), 'an older core is told so instead of creating an app without its database');
+    $actl = (string) file_get_contents($root . '/src/Http/Controllers/AppController.php');
+    ok(str_contains($actl, "'db' => 'nullable|string|max:64',") && str_contains($actl, "\$this->validator->appDbError(\$validated['db'], \$isNodeRequest ? 'node' : (\$request->boolean('custom') ? 'custom' : 'laravel'))")
+        && str_contains($actl, "str_contains(\$err, 'needs Cipi') ? 503 : 422") && (bool) preg_match('/if \(! \$withDb\) \{\s+unset\(\$validated\[\'engine\'\]\);/', $actl),
+        'the controller: checked before the job; 503 for an older core, 422 otherwise; engine kept for a custom app only with db');
+    $mcpCreate = (string) file_get_contents($root . '/src/Mcp/Tools/AppCreateTool.php');
+    ok(str_contains($mcpCreate, "\$this->validator->appDbError(\$db, \$isNode ? 'node' : (\$custom ? 'custom' : 'laravel'))") && str_contains($mcpCreate, "\$params['db'] = \$db;") && str_contains($mcpCreate, "'db' => \$schema->string()"), 'MCP AppCreate: the same field, the same checks');
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    ok(($spec['components']['schemas']['AppCreateRequest']['properties']['db']['pattern'] ?? '') === '^[a-z][a-z0-9_]{1,63}$', 'OpenAPI: db on AppCreateRequest');
+    $parser = (string) file_get_contents($root . '/src/Services/CipiOutputParser.php');
+    ok((bool) preg_match('/Database\s+(\S+)\s*\/\s*(\S+)/', "  Database    wpblog / s3cr3tPASS  (MariaDB)", $dbm) && $dbm[1] === 'wpblog' && $dbm[2] === 's3cr3tPASS' && str_contains($parser, "preg_match('/Database\\s+(\\S+)\\s*\\/\\s*(\\S+)/'"), "the job result carries the database's name and password: the CLI prints them on the line the parser reads");
+
+    echo "--- moving apps to another server (cipi sync, Cipi 5.18.0, ability sync-manage)\n";
+    require_once $root . '/src/Services/SyncUnsupportedException.php';
+    require_once $root . '/src/Services/CipiSyncService.php';
+    $SY = CipiApi\Services\CipiSyncService::class;
+    $mkKey = fn (string $type, string $comment = 'cipi@fra1') => $type . ' ' . base64_encode(pack('N', strlen($type)) . $type . pack('N', 32) . random_bytes(32)) . ($comment !== '' ? ' ' . $comment : '');
+    $kSrc = $mkKey('ssh-ed25519');
+    ok($SY::normalizeKey("  {$kSrc}\n") === $kSrc && $SY::normalizeKey($mkKey('ssh-ed25519', '')) !== null && $SY::normalizeKey($mkKey('ecdsa-sha2-nistp256', 'ops@laptop')) !== null, 'a public key: a type, the key, at most a comment');
+    $bad = ['', 'ssh-ed25519', 'ssh-ed25519 AAAA', "{$kSrc}\ncommand=\"id\" {$kSrc}", 'command="id" ' . $kSrc, 'from="*" ' . $kSrc, $kSrc . ' extra words', str_replace('ssh-ed25519 ', 'ssh-rsa ', $kSrc), 'ssh-ed25519 ' . base64_encode(random_bytes(51)) . ' x', $kSrc . ';id', $mkKey('ssh-dss')];
+    ok(array_filter($bad, fn ($k) => $SY::normalizeKey($k) !== null) === [], 'not a key: nothing, half of one, two lines, sshd options in front, words behind, a type that is not the key\'s own, a command');
+    $d = $SY::describeKey($kSrc);
+    ok($d['type'] === 'ssh-ed25519' && $d['comment'] === 'cipi@fra1' && (bool) preg_match('/^SHA256:[A-Za-z0-9+\/]{43}$/', $d['fingerprint']), 'its fingerprint, as ssh-keygen -l prints it');
+    $syApps = new class(new FakeVersion('5.18.0')) extends CipiApi\Services\CipiValidationService {
+        public function getApps(): array { return ['shop' => [], 'blog' => []]; }
+    };
+    $syCli = new FakeCli;
+    $sy = new $SY($syCli, $syApps, new FakeVersion('5.18.0'));
+    $syCli->next = ['output' => $kSrc . "\n", 'exit_code' => 0, 'success' => true];
+    ok($sy->key()['key'] === $kSrc && $syCli->ran === ['sync pubkey --raw'], 'GET /sync/key: this server\'s key, read with pubkey --raw');
+    $syCli->ran = [];
+    $syCli->next = ['output' => '{"ok":true,"host":"203.0.113.9","port":2222,"user":"cipi","cipi":"5.18.0","auto_passphrase":true,"reason":null,"message":null}', 'exit_code' => 0, 'success' => true];
+    $c = $sy->check('203.0.113.9', 2222);
+    ok($c['ok'] === true && $c['cipi'] === '5.18.0' && $c['auto_passphrase'] === true && $syCli->ran === ["sync check --host='203.0.113.9' --port='2222' --user='cipi' --json"], 'check: one CLI call, the target\'s answer');
+    $syCli->next = ['output' => "{\"ok\":false,\"host\":\"203.0.113.9\",\"port\":22,\"user\":\"cipi\",\"cipi\":null,\"auto_passphrase\":false,\"reason\":\"not-trusted\",\"message\":\"203.0.113.9 does not trust this server's sync key yet\"}", 'exit_code' => 1, 'success' => false];
+    $c = $sy->check('203.0.113.9');
+    ok($c['ok'] === false && $c['reason'] === 'not-trusted' && str_contains((string) $c['message'], 'does not trust'), 'check: a target that says no is an answer, not an error');
+    $refused = 0;
+    foreach ([['host;id', 22, 'cipi'], ['-oProxyCommand=x', 22, 'cipi'], ['a b', 22, 'cipi'], ['h.example', 0, 'cipi'], ['h.example', 70000, 'cipi'], ['h.example', 22, 'root;id'], ['h.example', 22, '-l']] as [$h, $po, $u]) {
+        try { $sy->check($h, $po, $u); } catch (InvalidArgumentException) { $refused++; }
+    }
+    ok($refused === 7 && count($syCli->ran) === 2, 'a host, a port or a user that is not one never reaches the command line');
+    $syCli->ran = []; $syCli->next = ['output' => '✓ Key added', 'exit_code' => 0, 'success' => true];
+    ok($sy->trust($kSrc)['fingerprint'] === $d['fingerprint'] && $sy->untrust(" {$kSrc} ")['key'] === $kSrc
+        && $syCli->ran === ['sync trust --key=' . escapeshellarg($kSrc), 'sync untrust --key=' . escapeshellarg($kSrc)], 'trust and untrust: the key as one quoted flag');
+    $syCli->next = ['output' => '[WARN] Key already trusted', 'exit_code' => 0, 'success' => true];
+    $again = $sy->trust($kSrc)['changed'];
+    $syCli->next = ['output' => '✓ Key added to cipi\'s authorized_keys', 'exit_code' => 0, 'success' => true];
+    $first = $sy->trust($kSrc)['changed'];
+    $syCli->next = ['output' => 'That key is not trusted here: nothing to remove', 'exit_code' => 0, 'success' => true];
+    ok($again === false && $first === true && $sy->untrust($kSrc)['changed'] === false, 'changed: whether this call added (or removed) the key — a wizard takes back only the trust it added');
+    $syCli->ran = array_slice($syCli->ran, 0, 2);
+    $refused = 0; foreach ($bad as $k) { try { $sy->trust($k); } catch (InvalidArgumentException) { $refused++; } }
+    ok($refused === count($bad) && count($syCli->ran) === 2, 'what is not a key is refused before the CLI is asked');
+    $cmd = $sy->pushCommand('203.0.113.9', 22, 'cipi', ['shop', 'blog', 'shop'], true, false);
+    ok($cmd === "sync push 'shop' 'blog' --host='203.0.113.9' --port='22' --user='cipi' --import --auto-passphrase --with-db", 'a transfer: the apps, the target, import on arrival, a passphrase the CLI makes — ' . $cmd);
+    ok($sy->pushCommand('fra2.example.com', 2222, 'cipi', [], false, true) === "sync push --host='fra2.example.com' --port='2222' --user='cipi' --import --auto-passphrase --with-storage", 'no app named: every app of the server');
+    ok(str_contains((string) thrown(fn () => $sy->pushCommand('203.0.113.9', 22, 'cipi', ['shop', 'nosuch'], false, false)), "App 'nosuch' not found"), 'an app that is not there is refused before the job');
+    $perm = new CipiApi\Services\CipiCliService;
+    ok($perm->commandIsPermitted($cmd) && $perm->commandIsPermitted('sync pubkey --raw') && $perm->commandIsPermitted("sync check --host='x' --json") && $perm->commandIsPermitted("sync trust --key='k'") && $perm->commandIsPermitted("sync untrust --key='k'"), 'whitelisted: the key, check, trust, untrust, push');
+    ok(! $perm->commandIsPermitted('sync export shop') && ! $perm->commandIsPermitted('sync import /tmp/x.tar.gz.enc --yes') && ! $perm->commandIsPermitted('sync list /tmp/x') && ! $perm->commandIsPermitted('sync pubkey') && ! $perm->commandIsPermitted('sync push'), 'not whitelisted: export, import, list — an archive at a path the caller names');
+    $oldSy = new $SY(new FakeCli, $syApps, new FakeVersion('5.17.0'));
+    $n = 0; foreach ([fn () => $oldSy->key(), fn () => $oldSy->check('h.example'), fn () => $oldSy->trust($kSrc), fn () => $oldSy->pushCommand('h.example', 22, 'cipi', [], false, false)] as $call) {
+        try { $call(); } catch (CipiApi\Services\SyncUnsupportedException $e) { $n += (int) str_contains($e->getMessage(), 'need Cipi 5.18.0+'); }
+    }
+    ok($n === 4, 'an older core: every call says what it needs (503)');
+    require_once $root . '/src/Services/CipiJobTimeout.php';
+    ok(CipiApi\Services\CipiJobTimeout::forCommand($cmd) === 7200 && CipiApi\Services\CipiJobTimeout::forCommand("sync check --host='x' --json") === 600, 'a transfer has two hours, like a deploy: databases and storage travel with the apps');
+    $routes = (string) file_get_contents($root . '/routes/api.php');
+    foreach (["Route::get('/sync/key', [SyncController::class, 'key'])", "Route::post('/sync/check', [SyncController::class, 'check'])", "Route::post('/sync/trust', [SyncController::class, 'trust'])", "Route::delete('/sync/trust', [SyncController::class, 'untrust'])", "Route::post('/sync/push', [SyncController::class, 'push'])"] as $line) {
+        ok(str_contains($routes, $line . "->middleware('ability:sync-manage');"), 'route: ' . substr($line, 7, strpos($line, ',') - 7));
+    }
+    $sctl = (string) file_get_contents($root . '/src/Http/Controllers/SyncController.php');
+    ok(! preg_match('/[\'"]passphrase[\'"]\s*=>/', $sctl) && str_contains($sctl, "\$this->jobs->dispatch('sync-push', \$command, [") && str_contains((string) file_get_contents($root . '/src/Services/CipiJobAbilities.php'), "'sync-push' => 'sync-manage'")
+        && str_contains((string) file_get_contents($root . '/config/cipi.php'), "'sync-manage' => "), 'no route takes a passphrase; the transfer is a job read with sync-manage; the ability is one');
+    $sud = getenv('CIPI_CORE_SUDOERS') ?: '/home/claude/cipi/lib/cipi-api-sudoers.sh';
+    if (is_file($sud)) {
+        $sudoers = (string) file_get_contents($sud); $missing = [];
+        foreach (CipiApi\Services\CipiCliService::ALLOWED_COMMANDS as $a) {
+            if (! str_starts_with($a, 'sync ')) { continue; }
+            if (! str_contains($sudoers, '/usr/local/bin/cipi ' . (str_ends_with($a, ' ') ? $a . '*' : $a) . ',')) { $missing[] = $a; }
+        }
+        ok($missing === [], 'every sync command of the whitelist is a line of the core\'s sudoers' . ($missing ? ': ' . implode(' | ', $missing) : ''));
+    }
+    $spec = json_decode((string) file_get_contents($root . '/public/api-docs/openapi.json'), true);
+    ok(isset($spec['paths']['/sync/key']['get'], $spec['paths']['/sync/check']['post'], $spec['paths']['/sync/trust']['post'], $spec['paths']['/sync/trust']['delete'], $spec['paths']['/sync/push']['post'], $spec['components']['schemas']['SyncPushRequest'], $spec['components']['schemas']['SyncKey'])
+        && ! str_contains(json_encode($spec['components']['schemas']['SyncPushRequest']), '"passphrase"') && in_array('Sync', array_column($spec['tags'] ?? [], 'name'), true), 'OpenAPI: the five routes, their schemas, a Sync tag — and no passphrase field');
+    $refs = []; array_walk_recursive($spec, function ($v, $k) use (&$refs) { if ($k === '$ref') { $refs[$v] = true; } });
+    $missing = array_filter(array_keys($refs), function ($r) use ($spec) { $n = $spec; foreach (explode('/', substr($r, 2)) as $seg) { if (! isset($n[$seg])) { return true; } $n = $n[$seg]; } return false; });
+    ok($missing === [], 'OpenAPI: every $ref points at something' . ($missing ? ': ' . implode(', ', $missing) : ''));
+
+    echo "--- how long a job may run (a deploy: two hours)\n";
+    require_once $root . '/src/Services/CipiJobTimeout.php';
+    $JT = CipiApi\Services\CipiJobTimeout::class;
+    ok($JT::forCommand("deploy 'shop'") === 7200 && $JT::DEPLOY_SECONDS === 7200, "a deploy has two hours: the build alone may be given one of them");
+    ok($JT::forCommand("deploy 'shop' --rollback") === 600 && $JT::forCommand("deploy 'shop' --unlock") === 600 && $JT::forCommand("deploy 'shop' --status --json") === 600, 'a rollback, an unlock, a status: ten minutes, as before');
+    ok($JT::forCommand("app create --user='shop' --domain='shop.test'") === 600 && $JT::forCommand("backup run 'shop'") === 600 && $JT::forCommand('deploy') === 600 && $JT::forCommand('') === 600 && $JT::SECONDS === 600, 'every other command: ten minutes');
+    ok($JT::isDeploy(" deploy 'shop' ") && ! $JT::isDeploy("app deploy-config 'shop' --json") && ! $JT::isDeploy("redeploy 'shop'"), 'a deploy is `deploy <app>` and nothing after it');
+    $stopped = $JT::stoppedOutput("task deploy:vendors\ntask cipi:node_build\n", "deploy 'shop'", 7200);
+    ok(str_starts_with($stopped, "task deploy:vendors\ntask cipi:node_build\n\n[cipi-api] Stopped after 120 minutes") && str_contains($stopped, '`cipi deploy shop --status`'), 'a deploy the worker stopped: what it had printed, then why and where to look');
+    $stopped = $JT::stoppedOutput(null, "db restore 'shop' --file='/x.sql'", 600);
+    ok($stopped === '[cipi-api] Stopped after 10 minutes: the time the API gives a job of this kind. The command had not ended.', 'another job stopped with nothing printed: the one line');
+    $jobSrc = (string) file_get_contents($root . '/src/Jobs/RunCipiCommand.php');
+    ok(str_contains($jobSrc, 'public int $timeout = CipiJobTimeout::SECONDS;') && str_contains($jobSrc, '$this->timeout = CipiJobTimeout::forCommand($command);') && str_contains($jobSrc, 'public int $tries = 1;'), 'RunCipiCommand: the limit is set when the job is made, and travels with it');
+    ok((bool) preg_match('/public function failed\(\?\\\\Throwable \$e = null\): void.*?in_array\(\$job->status, \[\'pending\', \'running\'\], true\).*?instanceof TimeoutExceededException.*?CipiJobTimeout::EXIT_CODE.*?\$this->discardUpload\(\$job\);/s', $jobSrc)
+        && $JT::EXIT_CODE === 124, 'RunCipiCommand::failed(): a job the worker gave up is closed as failed (124 for a timeout) instead of staying "running"; the dump of a restore is discarded');
+    ok(! str_contains($jobSrc, '$e->getMessage()'), '…and the text of an exception never becomes the output of a job');
+    // The job itself, with the queue and the jobs table stood in for.
+    $GLOBALS['DISCARDED'] = [];
+    if (! function_exists('app')) {
+        function app(string $class): object { return new class { public function discard(string $id): void { $GLOBALS['DISCARDED'][] = $id; } }; }
+    }
+    require_once $root . '/src/Jobs/RunCipiCommand.php';
+    $J = CipiApi\Jobs\RunCipiCommand::class; $M = CipiApi\Models\CipiJob::class;
+    ok((new $J('a', "deploy 'shop'"))->timeout === 7200 && (new $J('a', "deploy 'shop' --rollback"))->timeout === 600 && (new $J('a', "ssl install 'shop'"))->timeout === 600 && (new $J('a', "deploy 'shop'"))->tries === 1,
+        'a job is made with its limit: 7200 for a deploy, 600 for the rest, one try');
+    $M::$rows = ['d1' => new $M('running', "task deploy:vendors\ntask cipi:node_build")];
+    (new $J('d1', "deploy 'shop'"))->failed(new Illuminate\Queue\TimeoutExceededException('App\Jobs has timed out.'));
+    ok($M::$rows['d1']->status === 'failed' && $M::$rows['d1']->exit_code === 124 && str_starts_with($M::$rows['d1']->output, "task deploy:vendors\ntask cipi:node_build\n\n[cipi-api] Stopped after 120 minutes")
+        && ! str_contains($M::$rows['d1']->output, 'timed out'), 'a deploy stopped at its two hours: failed, 124, its output kept, the reason under it');
+    $M::$rows = ['r1' => new $M('running', 'Restoring…', 'db-restore', ['upload_id' => 'abc'])];
+    (new $J('r1', "db restore 'shop'"))->failed(new RuntimeException('SQLSTATE[HY000]: database is locked (password=hunter2)'));
+    ok($M::$rows['r1']->status === 'failed' && $M::$rows['r1']->exit_code === 1 && $M::$rows['r1']->output === "Restoring…\n\n[cipi-api] The job ended with an error before the result of the command was saved."
+        && $GLOBALS['DISCARDED'] === ['abc'], 'a job whose handler threw: failed, 1, no word of the exception; the uploaded dump is discarded');
+    $M::$rows = ['c1' => new $M('completed', 'successfully deployed!', 'app-deploy', null, 0)];
+    (new $J('c1', "deploy 'shop'"))->failed(new Illuminate\Queue\MaxAttemptsExceededException('attempted too many times'));
+    ok($M::$rows['c1']->status === 'completed' && $M::$rows['c1']->output === 'successfully deployed!' && $M::$rows['c1']->exit_code === 0, 'a job that had ended keeps its result, whatever the queue says afterwards');
+    (new $J('gone', "deploy 'shop'"))->failed(null);
+    ok(true, 'a job that is not in the table any more: nothing to close, nothing thrown');
+    ok(str_contains((string) file_get_contents($root . '/CHANGELOG.md'), 'CipiJobTimeout') && str_contains((string) file_get_contents($root . '/README.md'), 'a deploy gets two hours'), 'CHANGELOG and README say it');
+
+    echo "--- backups to SFTP, and how Cipi updates itself (Cipi 5.18.0)\n";
+    $sjson = ['output' => "sudo: x\n" . json_encode(['name' => 'box', 'type' => 'sftp', 'host' => 'u1.your-storagebox.de', 'port' => 23, 'user' => 'u1', 'path' => 'cipi', 'created_at' => 1, 'public_key' => 'ssh-ed25519 AAAAC3Nz cipi-backup-box@web1']), 'exit_code' => 0, 'success' => true];
+    $cli = new ScriptCli; $cli->by = ["backup sftp add 'box'" => $sjson, "backup sftp edit 'box'" => $sjson,
+        "backup sftp key 'box' --raw" => ['output' => "ssh-ed25519 AAAAC3Nz cipi-backup-box@web1\n", 'exit_code' => 0, 'success' => true]];
+    $bk18 = new CipiApi\Services\CipiBackupCliService($cli, new FakeVersion('5.18.0'));
+    $d = $bk18->saveSftp('box', ['host' => 'u1.your-storagebox.de', 'port' => 23, 'user' => 'u1', 'path' => 'cipi'], false);
+    ok(end($cli->ran) === "backup sftp add 'box' '--host=u1.your-storagebox.de' '--port=23' '--user=u1' '--path=cipi' --json" && $d['public_key'] === 'ssh-ed25519 AAAAC3Nz cipi-backup-box@web1', 'SFTP destination: add with each value quoted; the answer has the key to install');
+    $bk18->saveSftp('box', ['port' => 22, 'new_key' => true], true);
+    ok(end($cli->ran) === "backup sftp edit 'box' '--port=22' --new-key --json", 'edit: only what is given, and --new-key');
+    ok($bk18->sftpKey('box') === 'ssh-ed25519 AAAAC3Nz cipi-backup-box@web1', 'the public key, one line');
+    ok($bk18->sftpErrors(['host' => 'a;b', 'user' => 'x y', 'port' => 70000, 'path' => '../etc'], false) === ['host' => 'host must be an IP address or a hostname', 'user' => 'user: letters, digits, . _ - (64 at most)', 'port' => 'port must be between 1 and 65535', 'path' => 'path: a folder on the remote — letters, digits, . _ - /, no ..']
+        && array_keys($bk18->sftpErrors([], false)) === ['host', 'user'] && $bk18->sftpErrors([], true) === [] && $bk18->sftpErrors(['host' => 'fd7a:115c::1', 'user' => 'u123', 'port' => '23', 'path' => '/srv/backups'], false) === [], 'the fields checked before anything runs: host, user, port, folder');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiBackupCliService(new FakeCli, new FakeVersion('5.17.0')))->saveSftp('box', ['host' => 'h', 'user' => 'u'], false)), 'needs Cipi 5.18.0+'), 'SFTP on an older core: refused, with the version');
+    foreach (["backup sftp add 'box' '--host=h' --json", "backup sftp key 'box' --raw", "backup sftp remove 'box'", 'self-update policy --json', "self-update policy --verify=on --json"] as $c) {
+        ok((new FakeCli)->commandIsPermitted($c), "allowed: cipi {$c}");
+    }
+    ok(! (new FakeCli)->commandIsPermitted('self-update') && ! (new FakeCli)->commandIsPermitted('self-update --now') && ! (new FakeCli)->commandIsPermitted('backup configure')
+        && ! (new FakeCli)->commandIsPermitted("backup destination add 'x' --bucket=b --secret=s") && ! (new FakeCli)->commandIsPermitted("backup destination remove 'x'"), 'not allowed: starting an update, backup configure, backup destination add|remove (S3 secrets)');
+
+    require_once $root . '/src/Services/SelfUpdatePolicyRefusedException.php';
+    require_once $root . '/src/Services/CipiSelfUpdateService.php';
+    $pol = ['output' => "sudo: x\n" . json_encode(['verify' => true, 'delay_hours' => 12, 'delay_default_hours' => 12, 'signers' => [['fingerprint' => 'SHA256:x', 'principal' => 'andrea@cipi.sh']], 'signers_ready' => true, 'pending' => null, 'held' => null]), 'exit_code' => 0, 'success' => true];
+    $cli = new ScriptCli; $cli->by = ['self-update policy' => $pol];
+    $su = new CipiApi\Services\CipiSelfUpdateService($cli, new FakeVersion('5.18.0'));
+    ok($su->show()['delay_hours'] === 12 && end($cli->ran) === 'self-update policy --json', 'policy: read');
+    $fp = 'SHA256:' . str_repeat('A', 43);
+    $su->update(['verify' => true, 'delay_hours' => 12, 'fingerprint' => $fp]);
+    ok(end($cli->ran) === "self-update policy --verify=on --delay=12h '--fingerprint={$fp}' --json", 'policy: the check on with the fingerprint compared, a delay of 12 hours');
+    $su->update(['verify' => false, 'delay_hours' => 0]);
+    ok(end($cli->ran) === 'self-update policy --verify=off --delay=off --json', 'policy: both off');
+    $before = count($cli->ran);
+    ok(str_starts_with((string) thrown(fn () => $su->update(['delay_hours' => 169])), 'CipiApi\Services\SelfUpdatePolicyRefusedException') && str_starts_with((string) thrown(fn () => $su->update(['fingerprint' => 'SHA256:bad;id'])), 'CipiApi\Services\SelfUpdatePolicyRefusedException') && count($cli->ran) === $before, 'a delay past a week, a fingerprint that is not one: 422 before anything runs');
+    $cli->by = ['self-update policy' => ['output' => '[ERROR] Say which key you checked: --fingerprint=SHA256:… — nothing changed', 'exit_code' => 1, 'success' => false]];
+    ok(str_starts_with((string) thrown(fn () => $su->update(['verify' => true])), 'CipiApi\Services\SelfUpdatePolicyRefusedException: Say which key you checked'), 'the server asking for the fingerprint is a 422 in its words');
+    ok(str_contains((string) thrown(fn () => (new CipiApi\Services\CipiSelfUpdateService(new FakeCli, new FakeVersion('5.17.0')))->show()), 'needs Cipi 5.18.0+'), 'policy on an older core: refused, with the version');
+    $routes = (string) file_get_contents($root . '/routes/api.php');
+    foreach (["Route::get('/self-update/policy', [SelfUpdateController::class, 'show'])->middleware('ability:updates-view')", "Route::put('/self-update/policy', [SelfUpdateController::class, 'update'])->middleware('ability:updates-manage')",
+        "Route::post('/backups/destinations', [BackupController::class, 'createDestination'])->middleware('ability:backups-manage')", "Route::put('/backups/destinations/{name}', [BackupController::class, 'updateDestination'])->middleware('ability:backups-manage')",
+        "Route::get('/backups/destinations/{name}/key', [BackupController::class, 'destinationKey'])->middleware('ability:backups-view')", "Route::delete('/backups/destinations/{name}', [BackupController::class, 'deleteDestination'])->middleware('ability:backups-manage')"] as $r) {
+        ok(str_contains($routes, $r), 'route: ' . substr($r, 0, 70));
+    }
+    $cfg = (string) file_get_contents($root . '/config/cipi.php');
+    ok(str_contains($cfg, "'updates-view' =>") && str_contains($cfg, "'updates-manage' =>"), 'abilities updates-view and updates-manage');
+    ok(str_contains((string) file_get_contents($root . '/src/Http/Controllers/BackupController.php'), "if ((\$in['type'] ?? 'sftp') !== 'sftp') {"), 'the API adds SFTP destinations only: an S3 one needs its secret, at the shell');
 
     echo "\n=== {$pass} passed, {$fail} failed ===\n";
     exit($fail === 0 ? 0 : 1);

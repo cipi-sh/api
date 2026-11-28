@@ -134,6 +134,12 @@ class CipiFirewallService
             'zero_trust' => [
                 'lock_http' => (bool) ($zt['lock_http'] ?? false),
                 'lock_ssh' => (bool) ($zt['lock_ssh'] ?? false),
+                // Who holds each lock (Cipi ≥ 5.18.0): cloudflare, tailscale, netbird.
+                // An older core says nothing, and a lock is then Cloudflare's.
+                'by' => [
+                    'http' => $strings(is_array($zt['by'] ?? null) ? ($zt['by']['http'] ?? []) : []),
+                    'ssh' => $strings(is_array($zt['by'] ?? null) ? ($zt['by']['ssh'] ?? []) : []),
+                ],
             ],
             'fail2ban' => [
                 'installed' => (bool) ($f2b['installed'] ?? false),

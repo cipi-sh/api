@@ -179,6 +179,99 @@ class CipiBackupCliService
         return ['ok' => $result['exit_code'] === 0, 'output' => $this->strip($result['output'] ?? '')];
     }
 
+    /** SFTP destinations (Cipi 5.18.0): a server over SSH, with a key Cipi makes. */
+    public const MIN_CIPI_SFTP = '5.18.0';
+
+    public const SFTP_HOST_RE = '/^[A-Za-z0-9]([A-Za-z0-9.:-]{0,252}[A-Za-z0-9])?$/';
+
+    public const SFTP_USER_RE = '/^[A-Za-z0-9_][A-Za-z0-9._-]{0,63}$/';
+
+    public const SFTP_PATH_RE = '#^/?[A-Za-z0-9._/-]{0,255}$#';
+
+    /**
+     * What is wrong with the fields of an SFTP destination, by field.
+     *
+     * @param  array<string, mixed>  $in
+     * @return array<string, string>
+     */
+    public function sftpErrors(array $in, bool $isEdit): array
+    {
+        $errors = [];
+        foreach (['host', 'user'] as $f) {
+            if (! $isEdit && (! isset($in[$f]) || $in[$f] === '')) {
+                $errors[$f] = "{$f} is required";
+            }
+        }
+        if (isset($in['host']) && (! is_string($in['host']) || ! preg_match(self::SFTP_HOST_RE, $in['host']))) {
+            $errors['host'] = 'host must be an IP address or a hostname';
+        }
+        if (isset($in['user']) && (! is_string($in['user']) || ! preg_match(self::SFTP_USER_RE, $in['user']))) {
+            $errors['user'] = 'user: letters, digits, . _ - (64 at most)';
+        }
+        if (array_key_exists('port', $in) && $in['port'] !== null && (filter_var($in['port'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 65535]]) === false)) {
+            $errors['port'] = 'port must be between 1 and 65535';
+        }
+        if (array_key_exists('path', $in) && $in['path'] !== null && (! is_string($in['path']) || ! preg_match(self::SFTP_PATH_RE, $in['path']) || str_contains($in['path'], '..'))) {
+            $errors['path'] = 'path: a folder on the remote — letters, digits, . _ - /, no ..';
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Add or change an SFTP destination: `cipi backup sftp add|edit <name> …`. Cipi makes the key on the server; the answer
+     * carries its public half, to install on the remote. No secret is sent.
+     *
+     * @param  array<string, mixed>  $in  host, port, user, path, new_key
+     * @return array<string, mixed>  name, type, host, port, user, path, public_key
+     */
+    public function saveSftp(string $name, array $in, bool $isEdit): array
+    {
+        $this->version->require(self::MIN_CIPI_SFTP, 'SFTP backup destinations');
+        $command = 'backup sftp ' . ($isEdit ? 'edit' : 'add') . ' ' . escapeshellarg($name);
+        foreach (['host', 'port', 'user', 'path'] as $f) {
+            if (array_key_exists($f, $in) && $in[$f] !== null) {
+                $command .= ' ' . escapeshellarg("--{$f}=" . $in[$f]);
+            }
+        }
+        if (! empty($in['new_key'])) {
+            $command .= ' --new-key';
+        }
+        $command .= ' --json';
+        $result = $this->cli->run($command);
+        $output = $this->strip($result['output'] ?? '');
+        if ($result['exit_code'] !== 0) {
+            throw new \RuntimeException($this->firstError($output, 'cipi backup destination failed'));
+        }
+        $decoded = CipiAppJitService::decode($output);
+        if (! is_array($decoded) || ($decoded['type'] ?? null) !== 'sftp') {
+            throw new \RuntimeException('Cipi CLI returned no destination (Cipi CLI ≥ ' . self::MIN_CIPI_SFTP . ' required)');
+        }
+
+        return $decoded;
+    }
+
+    /** The public key an SFTP destination must accept. */
+    public function sftpKey(string $name): string
+    {
+        $this->version->require(self::MIN_CIPI_SFTP, 'SFTP backup destinations');
+        $key = $this->plain('backup sftp key ' . escapeshellarg($name) . ' --raw', 'cipi backup sftp key');
+        $line = trim((string) strtok($key, "\n"));
+        if (! preg_match('#^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp\d+) [A-Za-z0-9+/=]+( \S+)?$#', $line)) {
+            throw new \RuntimeException("No key for '{$name}'");
+        }
+
+        return $line;
+    }
+
+    /** Remove an SFTP destination: its archives stay where they are. An S3 one is removed at the shell. */
+    public function removeDestination(string $name): string
+    {
+        $this->version->require(self::MIN_CIPI_SFTP, 'Removing a backup destination from the panel');
+
+        return $this->plain('backup sftp remove ' . escapeshellarg($name), 'cipi backup sftp remove');
+    }
+
     /**
      * Validate the fields of a profile and turn them into CLI flags.
      *

@@ -180,6 +180,79 @@ class BackupController extends Controller
         }
     }
 
+    /**
+     * POST /backups/destinations — a new SFTP destination: `name`, `host`,
+     * `user`, `port` (22), `path` (the login's home). Cipi makes its key on
+     * the server; the answer has `public_key`, to install on the remote. An S3
+     * destination is added at the server's shell (its secret key).
+     */
+    public function createDestination(Request $request): JsonResponse
+    {
+        $in = $request->all();
+        if (($in['type'] ?? 'sftp') !== 'sftp') {
+            return response()->json(['error' => 'Only an SFTP destination is added through the API: an S3 one needs its secret key, at the server (cipi backup destination add)', 'errors' => ['type' => 'sftp']], 422);
+        }
+        $name = $in['name'] ?? null;
+        if (! is_string($name) || ! $this->backup->isValidName($name) || in_array($name, ['local', 's3'], true)) {
+            return response()->json(['error' => 'name: lowercase letters, digits and dashes, 2 to 32; not local or s3', 'errors' => ['name' => 'invalid']], 422);
+        }
+
+        return $this->saveSftp($name, $in, false);
+    }
+
+    /** PUT /backups/destinations/{name} — change an SFTP destination; `new_key: true` makes a new key. */
+    public function updateDestination(Request $request, string $name): JsonResponse
+    {
+        if (! $this->backup->isValidName($name)) {
+            return response()->json(['error' => "Invalid destination name '{$name}'"], 422);
+        }
+
+        return $this->saveSftp($name, $request->all(), true);
+    }
+
+    /** GET /backups/destinations/{name}/key — the public key an SFTP destination must accept. */
+    public function destinationKey(string $name): JsonResponse
+    {
+        if (! $this->backup->isValidName($name)) {
+            return response()->json(['error' => "Invalid destination name '{$name}'"], 422);
+        }
+
+        try {
+            return response()->json(['data' => ['name' => $name, 'public_key' => $this->backup->sftpKey($name)]], 200);
+        } catch (\RuntimeException $e) {
+            return $this->cliError($e);
+        }
+    }
+
+    /** DELETE /backups/destinations/{name} — an SFTP destination; refused while a profile uses it; the archives stay. */
+    public function deleteDestination(string $name): JsonResponse
+    {
+        if (! $this->backup->isValidName($name) || in_array($name, ['local', 's3'], true)) {
+            return response()->json(['error' => "Invalid destination name '{$name}'"], 422);
+        }
+
+        try {
+            return response()->json(['data' => ['name' => $name, 'removed' => true, 'message' => $this->backup->removeDestination($name)]], 200);
+        } catch (\RuntimeException $e) {
+            return $this->cliError($e);
+        }
+    }
+
+    /** @param  array<string, mixed>  $in */
+    protected function saveSftp(string $name, array $in, bool $isEdit): JsonResponse
+    {
+        $fields = array_intersect_key($in, array_flip(['host', 'port', 'user', 'path', 'new_key']));
+        if (($errors = $this->backup->sftpErrors($fields, $isEdit)) !== []) {
+            return response()->json(['error' => implode('; ', $errors), 'errors' => $errors], 422);
+        }
+
+        try {
+            return response()->json(['data' => $this->backup->saveSftp($name, $fields, $isEdit)], $isEdit ? 200 : 201);
+        } catch (\RuntimeException $e) {
+            return $this->cliError($e);
+        }
+    }
+
     protected function toggle(string $name, bool $enabled): JsonResponse
     {
         if (! $this->backup->isValidName($name)) {

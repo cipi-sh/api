@@ -29,6 +29,8 @@ class DeployConfigController extends Controller
     {
         $validated = $request->validate([
             'keep_releases' => 'nullable|integer|min:1|max:20',
+            'build_timeout' => 'nullable|integer|min:60|max:3600',
+            'step_timeout' => 'nullable|integer|min:60|max:1800',
             'migrate' => 'nullable|boolean',
             'optimize' => 'nullable|boolean',
             'storage_link' => 'nullable|boolean',

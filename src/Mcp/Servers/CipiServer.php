@@ -87,6 +87,7 @@ use CipiApi\Mcp\Tools\FrankenPhpUpgradeTool;
 use CipiApi\Mcp\Tools\OctanePhpShowTool;
 use CipiApi\Mcp\Tools\OctanePhpSwitchTool;
 use CipiApi\Mcp\Tools\PageCacheClearTool;
+use CipiApi\Mcp\Tools\PageCachePurgeTool;
 use CipiApi\Mcp\Tools\PageCacheShowTool;
 use CipiApi\Mcp\Tools\PageCacheUpdateTool;
 use CipiApi\Mcp\Tools\ValkeyListTool;
@@ -218,6 +219,7 @@ class CipiServer extends Server
         PageCacheShowTool::class,
         PageCacheUpdateTool::class,
         PageCacheClearTool::class,
+        PageCachePurgeTool::class,
         ValkeyListTool::class,
         IpWhitelistShowTool::class,
     ];

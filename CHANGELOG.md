@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.48.0] - 2026-11-27
+
+For Cipi 5.18.0: the mesh network of Zero Trust — Tailscale or NetBird. `GET /api/zt` reads it, and five routes under `/api/zt/mesh` join it, leave it and lock the server behind it, so a panel can do everything the CLI does. New abilities: `zt-manage`, `sync-manage`, `updates-view`, `updates-manage`.
+
+### Added
+
+- **Backups to SFTP** (Cipi 5.18.0+): `POST /api/backups/destinations` adds an SFTP destination — `name`, `host`, `user`, `port`, `path` — a VPS with a backup user, a Hetzner Storage Box (port 23), a NAS. Cipi makes its key on the server and answers with `public_key`, to install on the remote; `PUT /api/backups/destinations/{name}` changes one (`new_key: true` for a new key), `GET …/{name}/key` gives the key again, `DELETE …/{name}` removes a destination no profile uses. `GET /api/backups` lists SFTP destinations with `type: "sftp"`. An S3 destination is still added at the shell: the allow-list takes `backup sftp add|edit|key|remove`, which touches SFTP destinations only.
+- **How the server updates Cipi** (Cipi 5.18.0+, abilities `updates-view`, `updates-manage`): `GET|PUT /api/self-update/policy` — `verify` (a release installed only when its tag is signed by a trusted key), `delay_hours` (0 to 168), and `fingerprint` to trust the shipped keys the first time. Both off by default. Starting an update is not in the API.
+
+- **Page cache — purge some pages** (Cipi 5.18.0+, ability `nginx-manage`): `POST /api/apps/{name}/cache/purge` with `{"paths": ["/blog/hello-world/", "/category/news/*", "https://www.example.com/x/"]}`. A path is that page on every domain and alias of the app, http and https, with its query-string variants; a trailing `*` is a prefix; a URL is that host only. At most 500 pages; answers `purged`, the cached files deleted, and the rest of the cache stays warm. MCP tool `PageCachePurge`.
+
+- **`GET /api/zt`: the mesh** (`cipi zt tailscale|netbird`, Cipi 5.18.0). Zero Trust has two sides: Cloudflare Tunnel publishes the sites, a mesh network is how the people who run the server reach it. The same call answers for both.
+  - `mesh` — `tailscale`, `netbird`, or `null` while the server is on none (and on an older Cipi); `mesh_state` — `connected` / `disconnected`; `mesh_ip` — the server's address on the network.
+  - `details.mesh` — what `cipi zt status --json` says of it: `provider`, `label`, `connected`, `state` (the client's own word: `Running`, `NeedsLogin`…), `ip`, `ip6`, `name`, `fqdn`, `network`, `control_url` (Headscale, a self-hosted NetBird), `version`, `tags`, `key_expiry` and `key_expires_in_days`, `peers` (`total`, `online`), `ssh` (`provider_ssh`, `ports`, `command`, `seen` — the last login sshd accepted over the mesh), `lock` (`ssh`, `http`), `direct`, `firewall_active`, `http01_apps`, `warnings`.
+  - `details.mesh.panel` — the address of the request goes to the CLI (`--via`), which answers what this caller may do from where it is: `via` (`mesh`, `local`, `tunnel`, `public`, `unknown`), `from`, and `blocked` `{lock_ssh, lock_http, disable}`, each `null` or the reason it would be refused. `GET /api/zt?client=<address>` and `client` on the lock are for a panel on the same server: the address of the person at it (`--client`), answered in `details.mesh.panel.client`.
+  - `enabled`, `cloudflared`, `tunnel`, `lock_http`, `lock_ssh` and `ssh_hostname` are Cloudflare's, as they were: a server with a mesh and no tunnel answers `enabled: false` and `mesh: "tailscale"`.
+- **The mesh from the panel** — ability **`zt-manage`**, synchronous, each answering `{data, message}` with Zero Trust as it is after the change:
+  - `POST /api/zt/mesh` — join: `provider` (`tailscale` | `netbird`), `key` (left out to adopt a client that is already connected: the CLI gets `--adopt` and never waits for one), `hostname`, `control_url`, `direct`, `accept_dns`, `accept_routes`, and for Tailscale `tags`, `ssh`, `reauth`. Nothing is closed by joining.
+  - `DELETE /api/zt/mesh` — leave: what its locks closed is reopened first.
+  - `POST /api/zt/mesh/lock` and `DELETE /api/zt/mesh/lock` — `{port: "ssh" | "http"}`: close the SSH port, or 80/443, to the world and reopen it.
+  - `PUT /api/zt/mesh/ssh` — `{enabled}`: Tailscale SSH.
+  - A refusal is a `422` with the CLI's words; a Cipi older than 5.18.0 a `503` before anything runs.
+  - `CipiZtMeshService`, `ZtMeshController`, `ZtRefusedException`.
+- **`GET /api/firewall`: `zero_trust.by`** — who holds each lock: `{http: ["cloudflare"], ssh: ["tailscale"]}`. A port closed by `cipi zt tailscale|netbird lock` is refused to `POST /api/firewall/rules` like one closed by Cloudflare's lock, and the CLI's message names the command that reopens it. Empty lists on an older Cipi, where a lock is Cloudflare's.
+- MCP `ZtStatus`: the same fields, described. OpenAPI 1.48.0: a `Zero Trust` tag with `GET /zt` and the five mesh routes; `ZtMeshJoinRequest`, `ZtMeshLockRequest`, `ZtMeshSshRequest`, `ZtMeshChangeResponse`; `mesh`, `mesh_state`, `mesh_ip` and `details.mesh` on `ZtStatusResponse`; `by` on `FirewallStatus.zero_trust`.
+
+- **Moving apps to another server: `/api/sync`** (`cipi sync`, Cipi 5.18.0+) — ability **`sync-manage`**:
+  - `GET /api/sync/key` — this server's sync key (`key`, `type`, `fingerprint`, `comment`).
+  - `POST /api/sync/trust` and `DELETE /api/sync/trust` (`{key}`) — on the target: let the server the key belongs to push here, and take that back. A key is one line — a type, the key, at most a comment — and its blob must be of that type; anything else is a `422` before the CLI is asked.
+  - `POST /api/sync/check` (`{host, port?, user?}`) — does the target accept this server's key, does Cipi answer: `ok`, `cipi`, `auto_passphrase`, or a `reason`. A target that says no is a `200`.
+  - `POST /api/sync/push` (`{host, port?, user?, apps?, with_db?, with_storage?}`) — the transfer, as a `sync-push` job (two hours, like a deploy): `cipi sync push … --import --auto-passphrase`.
+  - `CipiSyncService`, `SyncController`, `SyncUnsupportedException` (an older core: `503`). OpenAPI: a `Sync` tag, the five operations, `SyncKey`, `SyncKeyRequest`, `SyncTarget`, `SyncCheck`, `SyncPushRequest`.
+- **`POST /api/apps`: `db`** — the name of a new database made with a **custom or a Node app** and linked to it (`cipi app create --db=NAME`, Cipi 5.18.0+): a user of the same name, a generated password, on `engine` or the server's default. Its credentials come in the `app-create` job result (`database`), like a Laravel app's. Checked before the job is queued: a name that is not a database name (`422`), a Laravel app — it is created with its own (`422`) — and an older core (`503`). `engine` is now read for a custom or a Node app when `db` is sent. MCP `AppCreate`: the same field.
+- **Deploy config: `build_timeout` and `step_timeout`** (`GET|PUT /api/apps/{name}/deploy-config`, Cipi 5.18.0+) — the two clocks of a deploy, in seconds, per app: how long the frontend build may run (60–3600, 1800 unless set) and how long every other command may (60–1800, 300 unless set). Sending the default number puts an app back on it. An older core answers `503` rather than taking the flag for nothing.
+- **A Node app has deploy options**: the same route answers for it with `runtime: "node"`, `keep_releases`, `predeploy_snapshot`, `build_timeout`, `step_timeout`, and takes those four. An artisan option sent to it is a `422` that names it. MCP `AppDeployConfigShow` / `AppDeployConfigUpdate`: the same.
+
+### Fixed
+
+- **A deploy started from the panel was stopped after ten minutes, whatever it was doing.** Every job had 600 seconds (`RunCipiCommand::$timeout`), a deploy included — and a deploy is the one command that is long by nature: the clone, Composer, then the frontend build, to which Cipi 5.18.0 gives up to 30 minutes of its own (Deployer stopped it after 300 seconds: `The command "…/node-build.sh …" exceeded the timeout of 300 seconds`). The same deploy, started from the server's shell or by a Git push, had no such ceiling. **A deploy job now has two hours** (the longest build an app can ask for is one); a rollback, an unlock and every other job keep the ten minutes. `CipiJobTimeout::forCommand()` decides, the job carries its limit, and that counts over the worker's `--timeout=600`: nothing changes in the `cipi-queue` unit.
+- **A job the worker stopped stayed `running` for ever** — and the panel's overlay with it. Nothing wrote the end of a job whose time was over, or whose handler threw (a locked database while saving the result, a worker restarted half way). `RunCipiCommand::failed()` closes it: `failed`, `exit_code` 124 for a timeout (1 otherwise), the output the command had printed and one line under it — for a deploy, with the command that says on the server whether it is still running (`cipi deploy <app> --status`). The text of an exception never becomes the output of a job. The dump uploaded for a restore is discarded there too.
+
+### Security
+
+- **A click cannot lock the server out.** The API never sends `--force`, and the CLI ignores it when sudo comes from `www-data`. `lock ssh` is refused until sshd has accepted a login that came over the mesh, while the node key can expire, with UFW off or sshd not listening on the mesh address. `lock http` is refused while an app renews SSL over HTTP-01, when the caller reaches the API on the public address it would close, and — for a panel that runs on the server itself and sends the browser's address as `client` — when the person clicking looks at that panel on the public address. Leaving the network is refused when the caller comes over it.
+- **The join key never rests anywhere**: validated (8–512 characters, no spaces, no quotes), quoted, passed as a flag of a synchronous command — never a job, so never in the jobs table — never returned, and replaced by `[key]` should the CLI repeat it in an error.
+- **A transfer's passphrase never goes through the API.** The source makes it for that one transfer and hands it to the target's import over SSH, on standard input; no route takes one, returns one, or puts one in the jobs table. The whitelist takes `sync pubkey --raw`, `check`, `trust`, `untrust` and `push` — not `export`, `import` or `list`, which read or leave an archive at a path the caller would name.
+- **`sync-manage` is as strong as `ssh-manage`**: whoever holds it can have the server send every app — code, `.env`, databases — to a host of their choosing, and can let another server's `cipi` user sign in here. A token made with a list of abilities has it only once it is named there (`cipi api token create --abilities=…,sync-manage`); a `--full-access` token has it. The host, port and user of a target are checked before they reach a command line.
+- **`zt-manage` is as strong as `ssh-manage`**: whoever holds it can put the server on a network of their own. A token made with a list of abilities does not have it until it is named there (`cipi api token create --abilities=…,zt-manage`); a `--full-access` token has it, as it has every ability the API adds.
+- The whitelist names each mesh command as the sudoers spell it; nothing of Cloudflare's side was added — `zt enable`, `hostname`, `access`, `lock` stay at the server's shell.
+
+### Notes
+
+- MCP stays read-only for Zero Trust: an agent reads the mesh, it does not join a network or close a port.
+- A join installs a package and signs in: it can take a minute or two, within the 300 s the API's PHP-FPM pool and vhost allow.
+- On a Cipi older than 5.18.0 the three `mesh*` fields are `null`, `details` has no `mesh`, and the routes under `/api/zt/mesh` answer `503`.
+
 ## [1.47.0] - 2026-11-26
 
 For Cipi 5.17.0: the nginx page cache of an app, the PHP of an Octane app by its number, Valkey per app for the whole server, and how notifications read. No new ability: each route sits under one a panel's token already has.

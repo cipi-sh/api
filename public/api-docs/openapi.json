@@ -3,7 +3,7 @@
     "info": {
         "title": "Cipi API",
         "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`. Each endpoint names the ability it requires; a token created with `--full-access` (ability `*`) passes all of them, including the ones later versions add.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status: the token needs the ability the job was created under (`apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, \u2026 \u2014 since 1.36.1), otherwise `404`. **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Deploy status (Cipi >= 5.8.4):** `GET /apps/{name}/deploy/status` says whether a deploy is running right now \u2014 whoever started it: Git webhook, CLI, panel, rollback \u2014 with its trigger, branch, start time and elapsed seconds, and how the last one ended; `tail` adds the last lines of the deploy log (ability `deploy-manage`). `503` on an older core: the flag is never sent to a Cipi that does not know it.\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2; installing and removing below), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0; from Cipi 5.16.0 with `details`: the tunnel and its connectors, Access paths and people, service tokens, TCP services, SSH certificates, previews), `GET /disk` and `GET /disk/dbs` (`disk-view`, Cipi >= 5.5.2 for the API sudoers) \u2014 the figures of `cipi disk --json` / `cipi disk db --json` (server filesystem, every app with files, database, total, share of the disk and soft limit; every database per engine), measured on request.\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).\n\n**App create & repository access (Cipi >= 5.6.0):** `POST /apps` accepts `node_build` (Laravel asset build run inside every deploy). The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access` (`ok` | `nobranch` | `denied`, with git's error and the CLI fix as `hint`): Cipi tests the deploy key against the repository on the spot.\n\n**cipi.yml (Cipi >= 5.6.4):** `GET /apps/{name}/yml` (ability `yml-view`) returns the app's cipi.yml plan: file, auto-apply, validity, changes, blockers. `POST /apps/{name}/yml/apply` applies it as an async job (`app-yml-apply`); `POST /apps/{name}/yml/auto/enable|disable` turn on or off the apply after every successful deploy (ability `yml-manage`). With auto-apply on, whoever can commit to the repository controls the app's server configuration.\n\n**Environments (Cipi >= 5.8.0):** every app carries an `env` label (`production` unless set). `POST /apps` and `PUT /apps/{name}` accept `env` (lowercase letters, digits, `-`, `_`, max 32 chars; 422 otherwise), app list/show return it, and the cipi.yml plan/auto responses report the `env` Cipi read the file for (`cipi-<env>.yml` before `cipi.yml`).\n\n**Metrics & health history (Cipi >= 5.11.0):** `GET /metrics` (latest values, last-hour trend per app, uptime 24h/7d/30d, recent events), `GET /metrics/series`, `GET /apps/{name}/metrics`, `GET /metrics/uptime`, `GET /metrics/events`, `GET /metrics/settings` (ability `metrics-view`); `PUT /metrics/settings` (retention, probe, collector on/off), `PUT|DELETE /metrics/heartbeat`, `POST /metrics/heartbeat/test` (ability `metrics-manage`). Synchronous: the CLI reads the server's SQLite. The OpenMetrics endpoint, prune and reset stay on the host. `GET|PUT /apps/{name}/basicauth/agent` (ability `apps-basicauth`): whether the cipi/agent routes are left out of basic auth.\n\n**Notifications (Cipi >= 5.12.0):** `GET /notifications` and `GET /notifications/triggers` (ability `notifications-view`, or `smtp-view`); `POST /notifications/channels`, `PUT|DELETE /notifications/channels/{id}`, `POST /notifications/channels/{id}/enable|disable|test`, `PUT /notifications/triggers`, `POST /notifications/triggers/reset` (ability `notifications-manage`, or `smtp-manage`). Every channel type \u2014 SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook \u2014 and every trigger. Synchronous: secrets go straight to the server's vault, never to the jobs table, and never come back (`*_set` flags). The `/smtp` routes are unchanged. From Cipi 5.15.0 a channel takes `events` (categories, triggers, `urgent`; null for everything) and `GET /notifications` lists the `categories`.\n\n**Cipi 5.13.0:** `PUT /apps/{name}/env` takes `order` \u2014 every key once, applied after `set`/`unset` (the panel's drag and drop); an older core is refused with `422`. Backup profiles take `exclude_paths` (folders and files left out of the app archives; `422` on an older core, which would ignore it). `GET /apps/{name}/deploy/status` reports `paused_commit`: the commit whose automatic deploy failed, which the webhook no longer deploys until a new push, a deploy from the panel, or `POST /apps/{name}/deploy/unlock`, which also resumes it. `GET /dbs/engines` says which server runs on each engine (`server`: `mariadb` or `mysql` for the engine `mariadb`, `label`); replacing MariaDB with MySQL is a CLI-only action (`cipi db switch`). `GET /apps/{name}/basicauth` reads `cipi basicauth status --json` (and the agent mode), and no longer fails on Cipi 5.11\u20135.12, which exited 1 after printing the status.\n\n**Firewall (Cipi >= 5.14.0):** `GET /firewall` (ability `firewall-view`) reads UFW, fail2ban and CrowdSec in one call; with `firewall-manage`: `POST|DELETE /firewall/rules` (open a port, remove what allow made), `POST|DELETE /firewall/blocks` (every port refused to an address, ahead of every allow), `PUT /firewall/attempts` (fail2ban threshold), `DELETE /firewall/bans` (fail2ban and CrowdSec), `POST|DELETE /firewall/crowdsec/allowlist`, and `POST /firewall/crowdsec/enable|disable` (async jobs `crowdsec-enable`, `crowdsec-disable`). Synchronous changes answer with the firewall after them. From Cipi 5.15.0 `GET /firewall` has `real_ip` (the visitor's address behind Cloudflare), changed with `PUT|DELETE /firewall/real-ip` and `POST /firewall/real-ip/refresh`. Never from the API: denying or removing the SSH port, 80 or 443 for everyone, reopening what a Zero Trust lock keeps closed, blocking the address of the caller; the CLI ignores `--force` from the panel.\n\n**Optional packages (Cipi >= 5.14.0):** `POST /packages/{package}` installs and `DELETE /packages/{package}` removes one entry of the server's closed catalog (`browsershot`, `fonts-cjk`, `avif`, `ffmpeg`, `imagemagick`, `image-optimizers`, `poppler-utils`, `pdftk`, `libreoffice`, `pandoc`, `tesseract`, and the security scanners Hackly runs: `sec-recon`, `sec-gitleaks`, `sec-nuclei`, `sec-zap`, `sec-nikto`, `sec-wpscan`, `sec-trivy`, `sec-semgrep`, `sec-checkov`) as async jobs (`package-install`, `package-remove`; ability `packages-manage`). A removal takes nothing another package needs. `GET /packages` adds `kind` (`tools` | `libraries`), `binaries`, `missing`, `source` (`ubuntu` | `upstream`), `version`, `installed_version` and `outdated`: upstream entries are releases pinned in Cipi by version and SHA-256, and installing an outdated one updates it.",
-        "version": "1.47.0",
+        "version": "1.48.0",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -961,7 +961,7 @@
                     "Apps"
                 ],
                 "summary": "Get deploy config",
-                "description": "Return structured Deployer recipe options for a Laravel app (stored in apps.json, applied to deploy.php). Requires `apps-deploy-config` and Cipi >= 5.0.3.",
+                "description": "Return structured Deployer recipe options for a Laravel app (stored in apps.json, applied to deploy.php). Requires `apps-deploy-config` and Cipi >= 5.0.3. With Cipi 5.18.0+ the answer carries `build_timeout` and `step_timeout`, and a Node app answers too: `app`, `runtime: \"node\"`, `keep_releases`, `predeploy_snapshot`, `build_timeout`, `step_timeout` (its recipe has no artisan hooks).",
                 "operationId": "appDeployConfigShow",
                 "parameters": [
                     {
@@ -1001,7 +1001,7 @@
                     "Apps"
                 ],
                 "summary": "Update deploy config",
-                "description": "Merge structured deploy options and regenerate deploy.php from the Cipi template. Safe alternative to editing PHP by hand. Requires `apps-deploy-config`.",
+                "description": "Merge structured deploy options and regenerate deploy.php from the Cipi template. Safe alternative to editing PHP by hand. Requires `apps-deploy-config`. `build_timeout` (60–3600 s, the frontend build) and `step_timeout` (60–1800 s, every other command) need Cipi 5.18.0+: an older core answers `503` instead of ignoring them. A Node app takes `keep_releases`, `predeploy_snapshot`, `build_timeout` and `step_timeout`; an artisan option sent to it is a `422`.",
                 "operationId": "appDeployConfigUpdate",
                 "parameters": [
                     {
@@ -2291,7 +2291,7 @@
                     "Deploy"
                 ],
                 "summary": "Deploy app",
-                "description": "Trigger a deploy for an app. Validates app exists synchronously. Dispatches CLI command as async job. Requires `deploy-manage` ability.",
+                "description": "Trigger a deploy for an app. Validates app exists synchronously. Dispatches CLI command as async job. Requires `deploy-manage` ability. The job may run for two hours — the frontend build of a release has 30 minutes by itself, up to an hour where the app's `build_timeout` says so — where every other job has ten minutes; one the worker stops ends as `failed` with `exit_code` 124, what it had printed, and a line that says so.",
                 "operationId": "appDeploy",
                 "parameters": [
                     {
@@ -2761,7 +2761,7 @@
                     "Jobs"
                 ],
                 "summary": "Get job status",
-                "description": "Poll a background job (typically after receiving a `job_id` from another endpoint). The token needs the ability the job was created under \u2014 the one of the endpoint that queued it: `apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, `apps-artisan` for `app-artisan`, \u2026 (since 1.36.1). A token without it gets the same `404` as an unknown id. Returns status (pending, running, completed, failed). When finished, includes `result` (parsed structured data from Cipi CLI) and `output` (raw CLI output).",
+                "description": "Poll a background job (typically after receiving a `job_id` from another endpoint). The token needs the ability the job was created under \u2014 the one of the endpoint that queued it: `apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, `apps-artisan` for `app-artisan`, \u2026 (since 1.36.1). A token without it gets the same `404` as an unknown id. Returns status (pending, running, completed, failed). A job the queue worker stops — after two hours for a deploy, ten minutes for any other — ends as `failed` with `exit_code` 124 and its output so far (before 1.48.0 it stayed `running`). When finished, includes `result` (parsed structured data from Cipi CLI) and `output` (raw CLI output).",
                 "operationId": "jobShow",
                 "parameters": [
                     {
@@ -3106,6 +3106,95 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/apps/{name}/cache/purge": {
+            "post": {
+                "tags": [
+                    "Page cache"
+                ],
+                "summary": "Purge some pages of an app's page cache",
+                "description": "`cipi cache <app> purge <page>…`: the pages named are deleted from the cache and the rest stays warm. A page is a path (`/blog/hello-world/`): that page on every domain and alias of the app, http and https, GET and HEAD, with its query-string variants (`?utm_source=…`). A trailing `*` is every page whose path starts so (`/category/news/*`). A full URL (`https://www.example.com/blog/hello-world/`) is that page on that host only, and the host must be one of the app's. At most 500 pages per call; for all of them, `POST /apps/{name}/cache/clear`. The app's own code does the same without the API: `sudo /usr/local/bin/cipi-cache-clear <app> <page>…` (the WordPress plugin cipi-sh/cache-wp and the PHP package cipi-sh/cache-php call it). With the cache off it answers `purged: 0`. Synchronous. Requires `nginx-manage` ability and Cipi CLI >= 5.18.0.",
+                "operationId": "pageCachePurge",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "paths"
+                                ],
+                                "properties": {
+                                    "paths": {
+                                        "type": "array",
+                                        "minItems": 1,
+                                        "maxItems": 500,
+                                        "items": {
+                                            "type": "string"
+                                        },
+                                        "example": [
+                                            "/blog/hello-world/",
+                                            "/category/news/*",
+                                            "/"
+                                        ]
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "How many cached files were deleted",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "app": {
+                                                    "type": "string",
+                                                    "example": "blog"
+                                                },
+                                                "enabled": {
+                                                    "type": "boolean"
+                                                },
+                                                "purged": {
+                                                    "type": "integer",
+                                                    "description": "Cached files deleted (a page can be several: http and https, GET and HEAD, each host)",
+                                                    "example": 6
+                                                },
+                                                "targets": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "App not found"
+                    },
+                    "422": {
+                        "description": "A page that is not one: no leading /, a query string, a * inside, a host that is not the app's, more than 500"
+                    },
+                    "503": {
+                        "description": "Cipi CLI older than 5.18.0"
                     }
                 }
             }
@@ -4184,11 +4273,23 @@
         "/zt": {
             "get": {
                 "tags": [
-                    "Server"
+                    "Zero Trust"
                 ],
-                "summary": "Cloudflare Zero Trust status",
-                "description": "Cloudflare Zero Trust status (`cipi zt status`): cloudflared/tunnel state, real_ip, HTTP/SSH locks and SSH hostname. From Cipi 5.16.0 `details` holds the whole of `cipi zt status --json` (and `raw` is empty); an older Cipi gives `details: null` and its text output in `raw`. Read-only by design \u2014 the API sudoers allow `zt status` only. Requires `zt-view` ability and Cipi 5.3.0+.",
+                "summary": "Zero Trust status (Cloudflare, Tailscale, NetBird)",
+                "description": "Zero Trust status (`cipi zt status`). Cloudflare: cloudflared/tunnel state, real_ip, HTTP/SSH locks and SSH hostname. Mesh network (Cipi 5.18.0+): `mesh` is `tailscale`, `netbird` or null, with `mesh_state` and `mesh_ip`; `details.mesh` has the rest. `enabled` and the Cloudflare fields say nothing of the mesh: a server may have either, both or none. From Cipi 5.16.0 `details` holds the whole of `cipi zt status --json` (and `raw` is empty); an older Cipi gives `details: null` and its text output in `raw`. Cloudflare's side is read-only by design; the mesh is changed with `/zt/mesh` (`zt-manage`). The address of the request goes to the CLI, and `details.mesh.panel` says what the caller may do from where it is: `via` (`mesh`, `local`, `tunnel`, `public`, `unknown`), `from`, `client` (see the parameter), and `blocked` {`lock_ssh`, `lock_http`, `disable`} \u2014 each null, or the reason it would be refused. Requires `zt-view` ability and Cipi 5.3.0+.",
                 "operationId": "ztStatus",
+                "parameters": [
+                    {
+                        "name": "client",
+                        "in": "query",
+                        "required": false,
+                        "description": "For a panel that runs on this server: the address of the person at it (their browser, as the panel saw it). `details.mesh.panel.client` then says how they reach the panel (`mesh`, `local`, `tunnel`, `public`), and `blocked.lock_http` why 80/443 would not be closed under their own page.",
+                        "schema": {
+                            "type": "string",
+                            "example": "198.51.100.7"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "Zero Trust status",
@@ -4208,6 +4309,520 @@
                     },
                     "503": {
                         "description": "Cipi CLI error (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/sync/key": {
+            "get": {
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "This server's sync key",
+                "description": "The public key of this server's `cipi` user: what a target must trust before this server can push apps to it (`POST /sync/trust` on the target). Requires `sync-manage` and Cipi 5.18.0+ (`503` on an older core).",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/SyncKey"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            }
+        },
+        "/sync/check": {
+            "post": {
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "Can this server push to a target?",
+                "description": "Runs `cipi sync check`: is this server's sync key accepted by the target, and does Cipi answer there. Nothing is sent. A target that says no is a `200` with `ok: false` and a `reason` — `not-trusted` (the target has not been given the key), `unreachable`, `host-key-changed`, `no-cipi`, `no-key`. `auto_passphrase` is true when the target takes the passphrase of a transfer on standard input (Cipi 5.18.0+ there), which `POST /sync/push` needs. Requires `sync-manage`.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SyncTarget"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/SyncCheck"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            }
+        },
+        "/sync/trust": {
+            "post": {
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "Trust another server's sync key",
+                "description": "`data.changed` says whether this call added the key (false: it was trusted already). Adds the key to the authorized keys of this server's `cipi` user (`cipi sync trust --key=`): the server it belongs to can then push apps here — and sign in here as `cipi`, which is why `sync-manage` is as strong as `ssh-manage`. One line: a type, the key, at most a comment; anything else is a `422`.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SyncKeyRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/SyncKey"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "Stop trusting a key",
+                "description": "Removes the key again (`cipi sync untrust --key=`), matched by type and key whatever its comment. A key that is not there is not an error.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SyncKeyRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "$ref": "#/components/schemas/SyncKey"
+                                        },
+                                        "message": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            }
+        },
+        "/sync/push": {
+            "post": {
+                "tags": [
+                    "Sync"
+                ],
+                "summary": "Move apps to another server",
+                "description": "Queues `cipi sync push … --import --auto-passphrase` (job type `sync-push`, read with `sync-manage`, up to two hours): this server exports the apps — settings, `.env`, deploy recipe, and with `with_db` / `with_storage` their databases and `shared/storage` — into an archive, encrypts it, sends it over SSH and has the target import it. Apps that exist on the target are updated, the others created. **The archive's passphrase is made by the source for this one transfer and handed to the target's import over SSH; no field takes one and none is returned.** The target must trust this server's key (`GET /sync/key` here, `POST /sync/trust` there) and run Cipi 5.18.0+. `apps` left out or empty: every app. The apps stay on this server: nothing is deleted or stopped here.",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SyncPushRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "202": {
+                        "description": "Queued",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "job_id": {
+                                            "type": "string"
+                                        },
+                                        "status": {
+                                            "type": "string",
+                                            "example": "pending"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            }
+        },
+        "/zt/mesh": {
+            "post": {
+                "tags": [
+                    "Zero Trust"
+                ],
+                "summary": "Join a mesh network (Tailscale or NetBird)",
+                "description": "`cipi zt tailscale|netbird enable`: the client is installed from its vendor's package repository, the server signs in with the key, and the mesh interface is let through UFW. Nothing is closed: SSH and 80/443 stay as they were until `POST /zt/mesh/lock`. A server is on one mesh at a time; Cloudflare Tunnel may be on beside it. Without `key`, a client that is already installed and connected is taken as it is. The key is a flag of the command, never queued and never returned. It can take a minute or two. Synchronous. Answers with Zero Trust as it is after the change (`data`, the same as `GET /zt`) and what the CLI said (`message`). Requires `zt-manage` and Cipi 5.18.0+.",
+                "operationId": "ztMeshJoin",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ZtMeshJoinRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Joined: Zero Trust as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ZtMeshChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — another mesh is on, the key was refused, the coordination server did not answer (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.18.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Zero Trust"
+                ],
+                "summary": "Leave the mesh network",
+                "description": "`cipi zt tailscale|netbird disable --yes`: what its locks closed is reopened first, then the rules, the client and its package repository go. Refused when the caller reaches this server over the mesh itself — it would cut itself off; that is done at the server's shell. Synchronous. Answers with Zero Trust as it is after the change (`data`, the same as `GET /zt`) and what the CLI said (`message`). Requires `zt-manage` and Cipi 5.18.0+.",
+                "operationId": "ztMeshLeave",
+                "responses": {
+                    "200": {
+                        "description": "Left: Zero Trust as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ZtMeshChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Refused by the CLI — no mesh is on, or the caller comes over it (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.18.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/zt/mesh/lock": {
+            "post": {
+                "tags": [
+                    "Zero Trust"
+                ],
+                "summary": "Close SSH or 80/443 to the world",
+                "description": "`cipi zt tailscale|netbird lock ssh|http --yes`: the port stays open on the mesh interface only. The CLI ignores `--force` from the API and refuses what a click must not do. `ssh`: the mesh must be connected, UFW active, sshd listening on the mesh address, the node key not due to expire, and sshd must have accepted a login that came over the mesh (the proof that the way in works); with Tailscale SSH on it is done at the shell. `http`: no app may renew its certificate over HTTP-01, and the caller must not reach the API on the public address it would close — the address of the request goes to the CLI; a panel that runs on this server also sends `client`, the address of the person at it, and the lock is refused when they look at the panel on the public address. The reasons are in `GET /zt` beforehand: `details.mesh.panel.blocked`. Synchronous. Answers with Zero Trust as it is after the change (`data`, the same as `GET /zt`) and what the CLI said (`message`). Requires `zt-manage` and Cipi 5.18.0+.",
+                "operationId": "ztMeshLock",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ZtMeshLockRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Closed: Zero Trust as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ZtMeshChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — one of the conditions above (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.18.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Zero Trust"
+                ],
+                "summary": "Reopen SSH or 80/443 to the world",
+                "description": "`cipi zt tailscale|netbird unlock ssh|http`. A port Cloudflare's own lock also holds stays closed, and the CLI says so. Synchronous. Answers with Zero Trust as it is after the change (`data`, the same as `GET /zt`) and what the CLI said (`message`). Requires `zt-manage` and Cipi 5.18.0+.",
+                "operationId": "ztMeshUnlock",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ZtMeshLockRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Reopened: Zero Trust as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ZtMeshChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — no mesh is on (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.18.0, or the CLI could not be run (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/zt/mesh/ssh": {
+            "put": {
+                "tags": [
+                    "Zero Trust"
+                ],
+                "summary": "Tailscale SSH on or off",
+                "description": "`cipi zt tailscale ssh enable|disable`: tailscaled answers port 22 of the tailnet address and lets in whom the tailnet's policy says, without the server's keys. Tailscale only: over NetBird, SSH is OpenSSH. Synchronous. Answers with Zero Trust as it is after the change (`data`, the same as `GET /zt`) and what the CLI said (`message`). Requires `zt-manage` and Cipi 5.18.0+.",
+                "operationId": "ztMeshSsh",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ZtMeshSshRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Done: Zero Trust as it is now, and what the CLI said",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ZtMeshChangeResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "422": {
+                        "description": "Not valid, or refused by the CLI — no mesh is on, or it is NetBird (message in `error`)",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ErrorResponse"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi older than 5.18.0, or the CLI could not be run (message in `error`)",
                         "content": {
                             "application/json": {
                                 "schema": {
@@ -5364,6 +5979,382 @@
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        "/backups/destinations": {
+            "post": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Add an SFTP backup destination",
+                "description": "`cipi backup destination add <name> --type=sftp`: a server reached over SSH — a VPS with a backup user, a Hetzner Storage Box (port 23), a NAS. Cipi makes a key of its own for it on the server; the answer has its public half, to install on the remote (`authorized_keys`, or `ssh-copy-id -s` for a Storage Box), then `POST /backups/destinations/test`. No password or secret is sent or stored. An S3 destination is not added here: its secret key stays at the server's shell. Requires `backups-manage` and Cipi CLI >= 5.18.0.",
+                "operationId": "backupDestinationCreate",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": [
+                                    "name",
+                                    "host",
+                                    "user"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "example": "box"
+                                    },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "sftp"
+                                        ],
+                                        "default": "sftp"
+                                    },
+                                    "host": {
+                                        "type": "string",
+                                        "example": "u1234.your-storagebox.de"
+                                    },
+                                    "port": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 65535,
+                                        "default": 22,
+                                        "example": 23
+                                    },
+                                    "user": {
+                                        "type": "string",
+                                        "example": "u1234"
+                                    },
+                                    "path": {
+                                        "type": "string",
+                                        "description": "A folder on the remote, relative to the login's home or absolute; empty: the home",
+                                        "example": "cipi"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "201": {
+                        "description": "The destination, with the public key the remote must accept",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "sftp"
+                                                    ]
+                                                },
+                                                "public_key": {
+                                                    "type": "string",
+                                                    "example": "ssh-ed25519 AAAAC3Nz… cipi-backup-box@web1"
+                                                },
+                                                "host": {
+                                                    "type": "string",
+                                                    "example": "u1234.your-storagebox.de"
+                                                },
+                                                "port": {
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                    "maximum": 65535,
+                                                    "default": 22,
+                                                    "example": 23
+                                                },
+                                                "user": {
+                                                    "type": "string",
+                                                    "example": "u1234"
+                                                },
+                                                "path": {
+                                                    "type": "string",
+                                                    "description": "A folder on the remote, relative to the login's home or absolute; empty: the home",
+                                                    "example": "cipi"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field that is not one, an S3 type, a name that exists"
+                    },
+                    "503": {
+                        "description": "Cipi CLI older than 5.18.0"
+                    }
+                }
+            }
+        },
+        "/backups/destinations/{name}": {
+            "put": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Change an SFTP backup destination",
+                "description": "What is given changes, the rest stays; `new_key: true` makes a new key (install its public half again). Requires `backups-manage` and Cipi CLI >= 5.18.0.",
+                "operationId": "backupDestinationUpdate",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "new_key": {
+                                        "type": "boolean"
+                                    },
+                                    "host": {
+                                        "type": "string",
+                                        "example": "u1234.your-storagebox.de"
+                                    },
+                                    "port": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 65535,
+                                        "default": 22,
+                                        "example": 23
+                                    },
+                                    "user": {
+                                        "type": "string",
+                                        "example": "u1234"
+                                    },
+                                    "path": {
+                                        "type": "string",
+                                        "description": "A folder on the remote, relative to the login's home or absolute; empty: the home",
+                                        "example": "cipi"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The destination, with the public key the remote must accept",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "type": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "sftp"
+                                                    ]
+                                                },
+                                                "public_key": {
+                                                    "type": "string",
+                                                    "example": "ssh-ed25519 AAAAC3Nz… cipi-backup-box@web1"
+                                                },
+                                                "host": {
+                                                    "type": "string",
+                                                    "example": "u1234.your-storagebox.de"
+                                                },
+                                                "port": {
+                                                    "type": "integer",
+                                                    "minimum": 1,
+                                                    "maximum": 65535,
+                                                    "default": 22,
+                                                    "example": 23
+                                                },
+                                                "user": {
+                                                    "type": "string",
+                                                    "example": "u1234"
+                                                },
+                                                "path": {
+                                                    "type": "string",
+                                                    "description": "A folder on the remote, relative to the login's home or absolute; empty: the home",
+                                                    "example": "cipi"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A field that is not one, or not an SFTP destination"
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "Remove a backup destination",
+                "description": "`cipi backup destination remove`: refused while a profile writes to it. The archives on it stay where they are, and Cipi stops pruning them; an SFTP destination's key is deleted on the server. Requires `backups-manage` and Cipi CLI >= 5.18.0.",
+                "operationId": "backupDestinationDelete",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Removed"
+                    },
+                    "422": {
+                        "description": "Used by a profile, or no such destination"
+                    }
+                }
+            }
+        },
+        "/backups/destinations/{name}/key": {
+            "get": {
+                "tags": [
+                    "Backups"
+                ],
+                "summary": "The public key of an SFTP destination",
+                "description": "The key Cipi signs in with: what the remote has to accept. Requires `backups-view` and Cipi CLI >= 5.18.0.",
+                "operationId": "backupDestinationKey",
+                "parameters": [
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{1,31}$"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The key",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "data": {
+                                            "type": "object",
+                                            "properties": {
+                                                "name": {
+                                                    "type": "string"
+                                                },
+                                                "public_key": {
+                                                    "type": "string"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Not an SFTP destination"
+                    }
+                }
+            }
+        },
+        "/self-update/policy": {
+            "get": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "How the server updates Cipi",
+                "description": "`cipi self-update policy --json`. By default the nightly self-update installs what is on GitHub. Two safeguards can be on: `verify` — a release is installed only when its tag `v<version>` is signed by a key of the server's own list (`signers`) and points at the commit downloaded; `delay_hours` — a new commit is installed only once this server has seen it for that long. `pending` is a release waiting for its delay, `held` why the last update was not installed. `shipped_signers` are the keys that come with the release, offered for the first trust. Requires `updates-view` and Cipi CLI >= 5.18.0.",
+                "operationId": "selfUpdatePolicyShow",
+                "responses": {
+                    "200": {
+                        "description": "The policy",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SelfUpdatePolicy"
+                                }
+                            }
+                        }
+                    },
+                    "503": {
+                        "description": "Cipi CLI older than 5.18.0"
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Server"
+                ],
+                "summary": "Set how the server updates Cipi",
+                "description": "`verify` on or off; `delay_hours` 0 (none) to 168. Turning `verify` on the first time trusts the keys shipped with the release, and takes `fingerprint` — one of theirs, as the person compared it with the one published at cipi.sh. Starting an update is not here: it stays the server's. Requires `updates-manage` and Cipi CLI >= 5.18.0.",
+                "operationId": "selfUpdatePolicyUpdate",
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "verify": {
+                                        "type": "boolean"
+                                    },
+                                    "delay_hours": {
+                                        "type": "integer",
+                                        "minimum": 0,
+                                        "maximum": 168,
+                                        "example": 12
+                                    },
+                                    "fingerprint": {
+                                        "type": "string",
+                                        "example": "SHA256:abcd…"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The policy after it",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SelfUpdatePolicy"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "A delay past a week, a fingerprint that is not the shipped key's, no key to trust"
                     }
                 }
             }
@@ -10236,6 +11227,25 @@
             }
         },
         "schemas": {
+            "SelfUpdatePolicy": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "verify": {"type": "boolean"},
+                            "delay_hours": {"type": "integer", "example": 12},
+                            "delay_default_hours": {"type": "integer", "example": 12},
+                            "signers_ready": {"type": "boolean"},
+                            "signers": {"type": "array", "items": {"type": "object", "properties": {"fingerprint": {"type": "string"}, "principal": {"type": "string"}}}},
+                            "shipped_signers": {"type": "array", "items": {"type": "object", "properties": {"fingerprint": {"type": "string"}, "principal": {"type": "string"}}}},
+                            "pending": {"type": "object", "nullable": true, "properties": {"sha": {"type": "string"}, "version": {"type": "string"}, "first_seen": {"type": "integer"}}},
+                            "held": {"type": "object", "nullable": true, "properties": {"reason": {"type": "string"}, "at": {"type": "integer"}}},
+                            "installed_sha": {"type": "string", "nullable": true}
+                        }
+                    }
+                }
+            },
             "AppCreateRequest": {
                 "type": "object",
                 "required": [
@@ -10302,8 +11312,14 @@
                             "mariadb",
                             "pgsql"
                         ],
-                        "description": "Database engine for Laravel apps (ignored for custom apps). Requires Cipi 4.8+ and an installed engine. Server default when omitted.",
+                        "description": "Database engine for Laravel apps. Requires Cipi 4.8+ and an installed engine. Server default when omitted. For a custom or a Node app it is read only with `db`: the engine of that database.",
                         "example": "pgsql"
+                    },
+                    "db": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{1,63}$",
+                        "description": "Custom and Node apps only (Cipi 5.18.0+): the name of a new database to create with the app — a user of the same name, a generated password — on `engine` or the server's default, linked to the app (`GET /api/dbs` shows it as the app's). The job result carries its credentials in `database`. Refused for a Laravel app (`422`: it is created with its own database), when a database of that name exists (the job fails before anything is created), and on an older core (`503`).",
+                        "example": "wpblog"
                     },
                     "octane": {
                         "oneOf": [
@@ -12016,6 +13032,20 @@
                         "maximum": 20,
                         "example": 5
                     },
+                    "build_timeout": {
+                        "type": "integer",
+                        "minimum": 60,
+                        "maximum": 3600,
+                        "example": 1800,
+                        "description": "Seconds the frontend build of a deploy may run: the `node_build` of a Laravel app, the install and the build of a Node app. 1800 unless set (send 1800 to go back to it). Cipi 5.18.0+."
+                    },
+                    "step_timeout": {
+                        "type": "integer",
+                        "minimum": 60,
+                        "maximum": 1800,
+                        "example": 300,
+                        "description": "Seconds every other command of a deploy may run — the clone, Composer, the migrations. 300 unless set. Cipi 5.18.0+."
+                    },
                     "migrate": {
                         "type": "boolean",
                         "example": true
@@ -13530,6 +14560,33 @@
                                 "nullable": true,
                                 "example": "ssh.example.com"
                             },
+                            "mesh": {
+                                "type": "string",
+                                "nullable": true,
+                                "enum": [
+                                    "tailscale",
+                                    "netbird",
+                                    null
+                                ],
+                                "description": "The mesh network the server is on (`cipi zt tailscale|netbird enable`, Cipi >= 5.18.0). Null while none is, and on an older Cipi.",
+                                "example": "tailscale"
+                            },
+                            "mesh_state": {
+                                "type": "string",
+                                "nullable": true,
+                                "enum": [
+                                    "connected",
+                                    "disconnected",
+                                    null
+                                ],
+                                "example": "connected"
+                            },
+                            "mesh_ip": {
+                                "type": "string",
+                                "nullable": true,
+                                "description": "The server's address on the mesh: where SSH, the panel and the sites answer for the devices of the network.",
+                                "example": "100.101.102.103"
+                            },
                             "raw": {
                                 "type": "string",
                                 "description": "Raw `cipi zt status` output (ANSI stripped); empty when `details` is set"
@@ -13537,7 +14594,7 @@
                             "details": {
                                 "type": "object",
                                 "nullable": true,
-                                "description": "`cipi zt status --json` (Cipi >= 5.16.0): `enabled`, `token`, `tunnel` (`id`, `name`, `running`, `status` as Cloudflare reports it, `replica`, `connectors` with `origin_ips`, `conns`, `this_server`), `real_ip`, `lock` (`http`, `http_mode`, `ssh`), `hostnames` (per app: `domains`, `access` {`enabled`, `paths`, `allow`}, `service_tokens`, `webhook_bypass`, `origin_cert`, `purge_on_deploy`, `preview`), `gui`, `api`, `ssh` (`hostname`, `access`, `certificates`), `tcp`, `service_tokens` (names, targets and client ids \u2014 never secrets), `previews`, `missing`. Null on an older Cipi.",
+                                "description": "`cipi zt status --json` (Cipi >= 5.16.0): `enabled`, `token`, `tunnel` (`id`, `name`, `running`, `status` as Cloudflare reports it, `replica`, `connectors` with `origin_ips`, `conns`, `this_server`), `real_ip`, `lock` (`http`, `http_mode`, `ssh`), `hostnames` (per app: `domains`, `access` {`enabled`, `paths`, `allow`}, `service_tokens`, `webhook_bypass`, `origin_cert`, `purge_on_deploy`, `preview`), `gui`, `api`, `ssh` (`hostname`, `access`, `certificates`), `tcp`, `service_tokens` (names, targets and client ids \u2014 never secrets), `previews`, `missing`. From Cipi 5.18.0 also `mesh`: `enabled`, `provider` (`tailscale`, `netbird`), `label`, `installed`, `installed_by_cipi`, `running`, `connected`, `state` as the client says it, `online`, `interface`, `ip`, `ip6`, `name`, `fqdn`, `network`, `control_url` (Headscale or a self-hosted NetBird; null for the vendor's own), `version`, `tags`, `key_expiry` and `key_expires_in_days` (Tailscale; null when the node key does not expire), `peers` {`total`, `online`}, `ssh` {`provider_ssh`, `ports`, `command`, `seen` — the last login sshd accepted over the mesh, {`at`, `from`} or null}, `lock` {`ssh`, `http`}, `direct` {`port`, `open`}, `accept_dns`, `accept_routes`, `firewall_active`, `http01_apps` (apps that renew SSL over HTTP-01, which `lock http` would break), `enabled_at`, `warnings`, and `panel` when the request came through the API: {`via`, `from`, `client` {`via`, `from`} or null, `blocked` {`lock_ssh`, `lock_http`, `disable`}} \u2014 or {`enabled`: false, `provider`: null} while no mesh is on. Null on an older Cipi.",
                                 "additionalProperties": true
                             }
                         }
@@ -15095,6 +16152,24 @@
                             },
                             "lock_ssh": {
                                 "type": "boolean"
+                            },
+                            "by": {
+                                "type": "object",
+                                "description": "Who holds each lock (Cipi >= 5.18.0): `cloudflare` (`cipi zt lock`), `tailscale` or `netbird` (`cipi zt tailscale|netbird lock`). Empty lists on an older Cipi, where a lock is Cloudflare's.",
+                                "properties": {
+                                    "http": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "ssh": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "string"
+                                        }
+                                    }
+                                }
                             }
                         }
                     },
@@ -15316,6 +16391,278 @@
                     "message": {
                         "type": "string",
                         "example": "Allowed 8080/tcp"
+                    }
+                }
+            },
+            "SyncKey": {
+                "type": "object",
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "example": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI… cipi@fra1"
+                    },
+                    "type": {
+                        "type": "string",
+                        "example": "ssh-ed25519"
+                    },
+                    "fingerprint": {
+                        "type": "string",
+                        "example": "SHA256:Zk1…"
+                    },
+                    "comment": {
+                        "type": "string",
+                        "nullable": true,
+                        "example": "cipi@fra1"
+                    }
+                }
+            },
+            "SyncKeyRequest": {
+                "type": "object",
+                "required": [
+                    "key"
+                ],
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "maxLength": 2048,
+                        "description": "A public key, as `GET /sync/key` of the other server returns it."
+                    }
+                }
+            },
+            "SyncTarget": {
+                "type": "object",
+                "required": [
+                    "host"
+                ],
+                "properties": {
+                    "host": {
+                        "type": "string",
+                        "description": "The target: an IP address or a hostname.",
+                        "example": "203.0.113.9"
+                    },
+                    "port": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 65535,
+                        "default": 22
+                    },
+                    "user": {
+                        "type": "string",
+                        "default": "cipi",
+                        "description": "The SSH user on the target. `cipi` unless the target was set up otherwise."
+                    }
+                }
+            },
+            "SyncCheck": {
+                "type": "object",
+                "properties": {
+                    "ok": {
+                        "type": "boolean"
+                    },
+                    "host": {
+                        "type": "string"
+                    },
+                    "port": {
+                        "type": "integer"
+                    },
+                    "user": {
+                        "type": "string"
+                    },
+                    "cipi": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "The target's Cipi version, when it answers."
+                    },
+                    "auto_passphrase": {
+                        "type": "boolean",
+                        "description": "The target takes a transfer's passphrase on standard input (Cipi 5.18.0+)."
+                    },
+                    "reason": {
+                        "type": "string",
+                        "nullable": true,
+                        "enum": [
+                            "not-trusted",
+                            "unreachable",
+                            "host-key-changed",
+                            "no-cipi",
+                            "no-key",
+                            null
+                        ]
+                    },
+                    "message": {
+                        "type": "string",
+                        "nullable": true
+                    }
+                }
+            },
+            "SyncPushRequest": {
+                "type": "object",
+                "required": [
+                    "host"
+                ],
+                "properties": {
+                    "host": {
+                        "type": "string",
+                        "description": "The target: an IP address or a hostname.",
+                        "example": "203.0.113.9"
+                    },
+                    "port": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 65535,
+                        "default": 22
+                    },
+                    "user": {
+                        "type": "string",
+                        "default": "cipi",
+                        "description": "The SSH user on the target. `cipi` unless the target was set up otherwise."
+                    },
+                    "apps": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "description": "Apps to move. Left out or empty: every app of this server.",
+                        "example": [
+                            "shop",
+                            "blog"
+                        ]
+                    },
+                    "with_db": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Their databases too: dumped here, restored there."
+                    },
+                    "with_storage": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Their `shared/storage` too."
+                    }
+                }
+            },
+            "ZtMeshJoinRequest": {
+                "type": "object",
+                "required": [
+                    "provider"
+                ],
+                "properties": {
+                    "provider": {
+                        "type": "string",
+                        "enum": [
+                            "tailscale",
+                            "netbird"
+                        ]
+                    },
+                    "key": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "A Tailscale auth key (`tskey-auth-…`, or an OAuth client secret with `tags`) or a NetBird setup key. Left out: a client already installed and connected is taken as it is. 8–512 characters, no spaces or quotes. Never stored by the API, never returned.",
+                        "example": "tskey-auth-kExample-0123456789"
+                    },
+                    "hostname": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "The name of the machine on the network; the server's own hostname when left out",
+                        "example": "web1"
+                    },
+                    "control_url": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "The coordination server when it is not the vendor's: a Headscale (`--login-server`), a self-hosted NetBird (`--management-url`)",
+                        "example": "https://headscale.example.com"
+                    },
+                    "tags": {
+                        "description": "Tailscale only: tags of the machine (`tag:` is added). A tagged machine has a node key that does not expire — which `lock ssh` asks for.",
+                        "oneOf": [
+                            {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            {
+                                "type": "string"
+                            }
+                        ],
+                        "example": [
+                            "cipi"
+                        ]
+                    },
+                    "direct": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Also open the client's UDP port (41641 Tailscale, 51820 NetBird) so peers connect directly instead of through a relay"
+                    },
+                    "accept_dns": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Let the network set the server's DNS. Off by default: a server resolves as it always did."
+                    },
+                    "accept_routes": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Accept the subnet routes other machines of the network advertise. Off by default."
+                    },
+                    "ssh": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Tailscale only: turn Tailscale SSH on right away (`PUT /zt/mesh/ssh` later)"
+                    },
+                    "reauth": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Tailscale only, with a key: sign in again a machine that is already registered"
+                    }
+                }
+            },
+            "ZtMeshLockRequest": {
+                "type": "object",
+                "required": [
+                    "port"
+                ],
+                "properties": {
+                    "port": {
+                        "type": "string",
+                        "enum": [
+                            "ssh",
+                            "http"
+                        ],
+                        "description": "`ssh` is the SSH port; `http` is 80 and 443"
+                    },
+                    "client": {
+                        "type": "string",
+                        "nullable": true,
+                        "description": "With `http`, for a panel that runs on this server: the address of the person at it. On the public address the lock is refused — the page they are on would close itself.",
+                        "example": "198.51.100.7"
+                    }
+                }
+            },
+            "ZtMeshSshRequest": {
+                "type": "object",
+                "required": [
+                    "enabled"
+                ],
+                "properties": {
+                    "enabled": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "ZtMeshChangeResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "allOf": [
+                            {
+                                "$ref": "#/components/schemas/ZtStatusResponse/properties/data"
+                            }
+                        ],
+                        "nullable": true,
+                        "description": "Zero Trust after the change, as `GET /zt` gives it; null when it could not be read back"
+                    },
+                    "message": {
+                        "type": "string",
+                        "example": "Tailscale: web1 is on the network as 100.101.102.103"
                     }
                 }
             },
@@ -15559,6 +16906,14 @@
         {
             "name": "Notifications",
             "description": "Every notification channel (SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook) and the triggers (Cipi CLI \u2265 5.12.0). Abilities `notifications-view` / `notifications-manage`; tokens with `smtp-view` / `smtp-manage` are accepted too."
+        },
+        {
+            "name": "Zero Trust",
+            "description": "Cloudflare Tunnel (read-only: `GET /zt`) and the mesh network — Tailscale or NetBird, Cipi 5.18.0+ — which is joined, left and locked from here. Abilities `zt-view` / `zt-manage`; `zt-manage` is as strong as `ssh-manage`: whoever holds it can put the server on a network of their own. A lock that would cut the caller off is refused. A panel that runs on the server itself may add `client` — the address of the person at it — to the body of any change: the status in the answer is read for them too."
+        },
+        {
+            "name": "Sync",
+            "description": "Moving apps to another server (`cipi sync`, Cipi 5.18.0+): this server's key, whether a target accepts it, trusting another server's key, and the transfer — export, send, import — as a job. Ability `sync-manage`, as strong as `ssh-manage`: whoever holds it can have the server send every app (code, `.env`, databases) to a host of their choosing, and can let another server's `cipi` user sign in here. No route takes or returns the passphrase of an archive."
         },
         {
             "name": "Firewall",

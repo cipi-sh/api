@@ -118,6 +118,15 @@ class CipiCliService
         'backup profile enable',
         'backup profile disable',
         'backup destination test',
+        // Cipi CLI ≥ 5.18.0: SFTP destinations only (no secret: the key is made
+        // on the server). `backup destination add|edit|remove` take S3 secrets.
+        'backup sftp add ',
+        'backup sftp edit ',
+        'backup sftp key ',
+        'backup sftp remove ',
+        // Cipi CLI ≥ 5.18.0: how the server updates Cipi (not the update itself).
+        'self-update policy --json',
+        'self-update policy ',
         // Cipi CLI ≥ 5.10.0 (API sudoers ≥ 5.10.0)
         'app jit',
         'frankenphp status',
@@ -190,6 +199,32 @@ class CipiCliService
         'valkey share ',
         'valkey restart ',
         'valkey flush-shared --yes',
+        // Cipi CLI ≥ 5.18.0 (API sudoers ≥ 5.18.0): the mesh network of Zero
+        // Trust, each command spelled out as the sudoers have it. From the
+        // panel the CLI ignores --force, and refuses a lock or a leave that
+        // would cut the caller off. Nothing of Cloudflare's side: `zt status`.
+        'zt tailscale enable ',
+        'zt tailscale disable --yes',
+        'zt tailscale lock ssh --yes',
+        'zt tailscale lock http --yes',
+        'zt tailscale unlock ssh',
+        'zt tailscale unlock http',
+        'zt tailscale ssh enable',
+        'zt tailscale ssh disable',
+        'zt netbird enable ',
+        'zt netbird disable --yes',
+        'zt netbird lock ssh --yes',
+        'zt netbird lock http --yes',
+        'zt netbird unlock ssh',
+        'zt netbird unlock http',
+        // Cipi CLI ≥ 5.18.0: moving apps to another server from the panel. The
+        // transfer makes its own passphrase (--auto-passphrase): none goes
+        // through here. Not export, import or list: no archive at a path.
+        'sync pubkey --raw',
+        'sync check ',
+        'sync trust ',
+        'sync untrust ',
+        'sync push ',
     ];
 
     /**

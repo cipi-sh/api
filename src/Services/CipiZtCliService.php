@@ -3,15 +3,22 @@
 namespace CipiApi\Services;
 
 /**
- * Cloudflare Zero Trust status via `sudo cipi zt status` (Cipi CLI ≥ 5.3.0).
- * Read-only by design: the API sudoers allow `zt status` only — enable,
- * hostname, access and lock commands stay with the operator on the CLI.
+ * Zero Trust status via `sudo cipi zt status` (Cipi CLI ≥ 5.3.0): Cloudflare
+ * Tunnel and, from Cipi 5.18.0, the mesh network the server is on (Tailscale
+ * or NetBird). Cloudflare's side is read-only by design: enable, hostname,
+ * access and lock stay with the operator on the CLI.
  *
  * Cipi ≥ 5.16.0 answers `zt status --json` with the whole picture (the
  * tunnel and its connectors, every hostname with its Access paths and
  * people, service tokens, TCP services, SSH certificates, previews): it is
  * `details`. An older Cipi prints its text status for the same command, and
  * the summary fields are read from that text, as before.
+ *
+ * Cipi ≥ 5.18.0 adds `details.mesh` (provider, connected, address, peers,
+ * node key expiry, locks, warnings) and the summary gets `mesh`,
+ * `mesh_state` and `mesh_ip`: null while no mesh is on, and on an older Cipi.
+ * The mesh is changed from the panel by {@see CipiZtMeshService}; this class
+ * reads, and Cloudflare's side is read only.
  */
 class CipiZtCliService
 {
@@ -21,11 +28,18 @@ class CipiZtCliService
     ) {}
 
     /**
-     * @return array{enabled: bool, cloudflared: ?string, tunnel: ?string, real_ip: ?string, lock_http: ?string, lock_ssh: ?string, ssh_hostname: ?string, raw: string, details: ?array}
+     * @return array{enabled: bool, cloudflared: ?string, tunnel: ?string, real_ip: ?string, lock_http: ?string, lock_ssh: ?string, ssh_hostname: ?string, mesh: ?string, mesh_state: ?string, mesh_ip: ?string, raw: string, details: ?array}
      */
-    public function status(): array
+    public function status(?string $via = null, ?string $client = null): array
     {
-        $result = $this->cli->run('zt status --json');
+        // --via=<address of the caller> (Cipi ≥ 5.18.0): the mesh then says
+        // what the panel may do from where it is (`details.mesh.panel`).
+        // --client=<address of the person at a panel that runs on this
+        // server>: whether closing 80/443 would close the page they are on.
+        // An older Cipi takes the flags and ignores them.
+        $result = $this->cli->run('zt status --json'
+            .($via !== null && $via !== '' ? ' --via='.escapeshellarg($via) : '')
+            .($client !== null && $client !== '' ? ' --client='.escapeshellarg($client) : ''));
         if ($result['exit_code'] !== 0) {
             $detail = trim($result['output'] ?? '');
             throw new \RuntimeException($detail !== '' ? $detail : 'cipi zt status failed (Cipi CLI ≥ 5.3.0 required)');
@@ -67,6 +81,11 @@ class CipiZtCliService
         $lock = is_array($json['lock'] ?? null) ? $json['lock'] : [];
         $ssh = is_array($json['ssh'] ?? null) ? $json['ssh'] : [];
         $mode = $lock['http_mode'] ?? null;
+        // `enabled` and the fields above are Cloudflare's, as they always were;
+        // the mesh (Cipi ≥ 5.18.0) is on or off on its own.
+        $mesh = is_array($json['mesh'] ?? null) ? $json['mesh'] : [];
+        $provider = ! empty($mesh['enabled']) && is_string($mesh['provider'] ?? null) && $mesh['provider'] !== '' ? $mesh['provider'] : null;
+        $meshIp = $provider !== null && is_string($mesh['ip'] ?? null) && $mesh['ip'] !== '' ? $mesh['ip'] : null;
 
         return [
             'enabled' => $enabled,
@@ -76,6 +95,9 @@ class CipiZtCliService
             'lock_http' => $enabled ? ((! empty($lock['http']) ? 'true' : 'false').(is_string($mode) && $mode !== '' ? ' ('.$mode.')' : '')) : null,
             'lock_ssh' => $enabled ? (! empty($lock['ssh']) ? 'true' : 'false') : null,
             'ssh_hostname' => $enabled ? (($ssh['hostname'] ?? null) ?: null) : null,
+            'mesh' => $provider,
+            'mesh_state' => $provider !== null ? (! empty($mesh['connected']) ? 'connected' : 'disconnected') : null,
+            'mesh_ip' => $meshIp,
             'raw' => '',
             'details' => $json,
         ];
@@ -104,6 +126,9 @@ class CipiZtCliService
             'lock_http' => $enabled ? $label('lock http') : null,
             'lock_ssh' => $enabled ? $label('lock ssh') : null,
             'ssh_hostname' => $enabled ? $label('SSH hostname') : null,
+            'mesh' => null,
+            'mesh_state' => null,
+            'mesh_ip' => null,
             'raw' => trim($plain),
             'details' => null,
         ];

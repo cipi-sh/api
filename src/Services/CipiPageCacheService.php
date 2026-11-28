@@ -230,6 +230,69 @@ class CipiPageCacheService
         return $this->show($app) + ['cleared' => $cleared];
     }
 
+    /** Purge by page (cipi cache <app> purge): Cipi 5.18.0+. */
+    public const MIN_CIPI_PURGE = '5.18.0';
+
+    /**
+     * A page to purge, as `cipi cache <app> purge` takes it: a path
+     * (/blog/post/), a prefix (/blog/*), or a URL on one of the app's
+     * domains (https://www.example.com/blog/post/). The characters a browser
+     * sends in a path, a * at its end only, no query string.
+     */
+    public const PURGE_PATTERN = '#^(https?://[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?)?/[A-Za-z0-9._~%:@!,;=+/-]{0,2047}\*?$#';
+
+    public const PURGE_MAX = 500;
+
+    public const PURGE_RULES = [
+        'paths' => ['required', 'array', 'min:1', 'max:' . self::PURGE_MAX],
+        'paths.*' => ['string', 'max:2300'],
+    ];
+
+    /** What is wrong with a list of pages to purge, or null. */
+    public static function purgeError(array $paths): ?string
+    {
+        if ($paths === []) {
+            return 'paths: at least one page — POST /cache/clear empties them all';
+        }
+        if (count($paths) > self::PURGE_MAX) {
+            return 'paths: ' . self::PURGE_MAX . ' pages at most — a prefix (/blog/*) covers many';
+        }
+        foreach ($paths as $path) {
+            if (! is_string($path) || ! preg_match(self::PURGE_PATTERN, $path)) {
+                return 'paths: a page is a path (/blog/post/), a prefix (/blog/*) or a URL on a domain of the app — no query string, a * at the end only';
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Delete some cached pages of the app: every domain and alias, http and
+     * https, GET and HEAD, with their query variants. The rest of the cache
+     * stays warm.
+     *
+     * @param  list<string>  $paths
+     * @return array{app: string, enabled: bool, purged: int, targets: list<string>}
+     */
+    public function purge(string $app, array $paths): array
+    {
+        $this->version->require(self::MIN_CIPI_PURGE, 'Purging some pages of the cache');
+        if (($error = self::purgeError($paths)) !== null) {
+            throw new PageCacheRefusedException($error);
+        }
+        $paths = array_values(array_unique($paths));
+        $command = 'cache ' . escapeshellarg($app) . ' purge --json ' . implode(' ', array_map('escapeshellarg', $paths));
+        $plain = $this->change($command, 'cipi cache purge failed');
+        $decoded = CipiAppJitService::decode($plain) ?? [];
+
+        return [
+            'app' => $app,
+            'enabled' => (bool) ($decoded['enabled'] ?? false),
+            'purged' => (int) ($decoded['purged'] ?? 0),
+            'targets' => $paths,
+        ];
+    }
+
     public static function ttlSeconds(string $ttl): ?int
     {
         if (! preg_match(self::TTL_PATTERN, $ttl, $m)) {
@@ -263,7 +326,7 @@ class CipiPageCacheService
         }
         $message = $this->firstError($plain) ?? $fallback;
         // What the user can act on: the kind of app, a value, nginx's own verdict.
-        if (preg_match('/Node app|Invalid|nginx refused|nginx -t|not found|suspended|not a path|Too many paths|every page|wants paths/i', $plain)) {
+        if (preg_match('/Node app|Invalid|nginx refused|nginx -t|not found|suspended|not a path|Not a page|At most|Too many paths|every page|wants paths/i', $plain)) {
             throw new PageCacheRefusedException($message);
         }
 

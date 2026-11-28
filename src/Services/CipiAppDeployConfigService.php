@@ -8,9 +8,28 @@ namespace CipiApi\Services;
  */
 class CipiAppDeployConfigService
 {
+    /** The Cipi that knows the two clocks of a deploy, and gives a Node app its deploy options. */
+    public const MIN_CIPI_TIMEOUTS = '5.18.0';
+
+    /**
+     * Seconds, as the CLI takes them (deploy_timeout_bounds): the frontend
+     * build — 1800 unless the app says otherwise — and every other command
+     * of the deploy, 300.
+     *
+     * @var array<string, array{0: int, 1: int, 2: string}>
+     */
+    public const TIMEOUTS = [
+        'build_timeout' => [60, 3600, 'build-timeout'],
+        'step_timeout' => [60, 1800, 'step-timeout'],
+    ];
+
+    /** What a Node app's recipe takes: it has no artisan hooks, and its build is `build` on the app. */
+    public const NODE_OPTIONS = ['keep_releases', 'predeploy_snapshot', 'build_timeout', 'step_timeout'];
+
     public function __construct(
         protected CipiCliService $cli,
         protected CipiValidationService $validator,
+        protected ?CipiVersionService $version = null,
     ) {}
 
     /**
@@ -18,7 +37,7 @@ class CipiAppDeployConfigService
      */
     public function show(string $app): array
     {
-        $this->assertLaravelApp($app);
+        $this->assertHasRecipe($app);
 
         $result = $this->cli->run('app deploy-config ' . escapeshellarg($app) . ' --json');
         if ($result['exit_code'] !== 0) {
@@ -35,11 +54,24 @@ class CipiAppDeployConfigService
      */
     public function update(string $app, array $options): array
     {
-        $this->assertLaravelApp($app);
+        $this->assertHasRecipe($app);
+
+        if ($this->validator->isNodeApp($app)) {
+            $notForNode = array_diff(array_keys(array_filter($options, fn ($v) => $v !== null)), self::NODE_OPTIONS);
+            if ($notForNode !== []) {
+                throw new \InvalidArgumentException("'{$app}' is a Node app: its recipe has no artisan hooks. It takes " . implode(', ', self::NODE_OPTIONS) . ' — not ' . implode(', ', $notForNode) . '.');
+            }
+        }
 
         $flags = $this->buildFlags($options);
         if ($flags === []) {
             throw new \InvalidArgumentException('Nothing to change');
+        }
+        // An older CLI would take the flag for nothing and answer as if it had been applied.
+        foreach (array_keys(self::TIMEOUTS) as $key) {
+            if (isset($options[$key]) && ! $this->knowsTimeouts()) {
+                throw new \RuntimeException("{$key} needs Cipi " . self::MIN_CIPI_TIMEOUTS . '+ on the server (cipi self-update)');
+            }
         }
 
         $cmd = 'app deploy-config ' . escapeshellarg($app) . ' ' . implode(' ', $flags) . ' --json';
@@ -66,6 +98,17 @@ class CipiAppDeployConfigService
                 throw new \InvalidArgumentException('keep_releases must be between 1 and 20');
             }
             $flags[] = '--keep-releases=' . escapeshellarg((string) $kr);
+        }
+
+        foreach (self::TIMEOUTS as $key => [$min, $max, $flag]) {
+            if (! array_key_exists($key, $options) || $options[$key] === null) {
+                continue;
+            }
+            $seconds = $options[$key];
+            if ((! is_int($seconds) && ! (is_string($seconds) && ctype_digit($seconds))) || (int) $seconds < $min || (int) $seconds > $max) {
+                throw new \InvalidArgumentException("{$key} must be a number of seconds between {$min} and {$max}");
+            }
+            $flags[] = '--' . $flag . '=' . escapeshellarg((string) (int) $seconds);
         }
 
         foreach ([
@@ -118,14 +161,31 @@ class CipiAppDeployConfigService
         return $flags;
     }
 
-    protected function assertLaravelApp(string $app): void
+    /**
+     * Laravel and Octane apps have a release recipe, and so has a Node app —
+     * which Cipi keeps as a custom app with a runtime, and whose deploy
+     * options the CLI takes from 5.18.0. A classic custom app has none.
+     */
+    protected function assertHasRecipe(string $app): void
     {
         if (! $this->validator->appExists($app)) {
             throw new \RuntimeException("App '{$app}' not found");
         }
+        if ($this->validator->isNodeApp($app)) {
+            if (! $this->knowsTimeouts()) {
+                throw new \RuntimeException("The deploy options of a Node app need Cipi " . self::MIN_CIPI_TIMEOUTS . '+ on the server (cipi self-update)');
+            }
+
+            return;
+        }
         if ($this->validator->isCustomApp($app)) {
             throw new \RuntimeException("App '{$app}' is a custom app and has no deploy.php recipe");
         }
+    }
+
+    protected function knowsTimeouts(): bool
+    {
+        return $this->version === null || $this->version->atLeast(self::MIN_CIPI_TIMEOUTS);
     }
 
     /**

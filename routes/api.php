@@ -9,6 +9,7 @@ use CipiApi\Http\Controllers\AppRunController;
 use CipiApi\Http\Controllers\ArtisanController;
 use CipiApi\Http\Controllers\AuthJsonController;
 use CipiApi\Http\Controllers\BackupController;
+use CipiApi\Http\Controllers\SelfUpdateController;
 use CipiApi\Http\Controllers\BasicAuthController;
 use CipiApi\Http\Controllers\DbController;
 use CipiApi\Http\Controllers\DeployConfigController;
@@ -40,6 +41,8 @@ use CipiApi\Http\Controllers\StatusController;
 use CipiApi\Http\Controllers\WwwController;
 use CipiApi\Http\Controllers\YmlController;
 use CipiApi\Http\Controllers\ZtController;
+use CipiApi\Http\Controllers\SyncController;
+use CipiApi\Http\Controllers\ZtMeshController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function () {
@@ -126,6 +129,7 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::put('/apps/{name}/cache', [PageCacheController::class, 'update'])->middleware('ability:nginx-manage');
     Route::put('/apps/{name}/cache/exclude', [PageCacheController::class, 'exclude'])->middleware('ability:nginx-manage');
     Route::post('/apps/{name}/cache/clear', [PageCacheController::class, 'clear'])->middleware('ability:nginx-manage');
+    Route::post('/apps/{name}/cache/purge', [PageCacheController::class, 'purge'])->middleware('ability:nginx-manage');
 
     // Node apps + runtimes (Cipi CLI ≥ 5.4.0 + API sudoers ≥ 5.4.1)
     Route::get('/node', [NodeController::class, 'runtimes'])->middleware('ability:node-view');
@@ -185,6 +189,12 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/backups/run', [BackupController::class, 'run'])->middleware('ability:backups-manage');
     Route::post('/backups/verify', [BackupController::class, 'verify'])->middleware('ability:backups-manage');
     Route::post('/backups/destinations/test', [BackupController::class, 'testDestinations'])->middleware('ability:backups-manage');
+    Route::get('/self-update/policy', [SelfUpdateController::class, 'show'])->middleware('ability:updates-view');
+    Route::put('/self-update/policy', [SelfUpdateController::class, 'update'])->middleware('ability:updates-manage');
+    Route::post('/backups/destinations', [BackupController::class, 'createDestination'])->middleware('ability:backups-manage');
+    Route::put('/backups/destinations/{name}', [BackupController::class, 'updateDestination'])->middleware('ability:backups-manage');
+    Route::get('/backups/destinations/{name}/key', [BackupController::class, 'destinationKey'])->middleware('ability:backups-view');
+    Route::delete('/backups/destinations/{name}', [BackupController::class, 'deleteDestination'])->middleware('ability:backups-manage');
     Route::post('/backups/profiles', [BackupController::class, 'createProfile'])->middleware('ability:backups-manage');
     Route::put('/backups/profiles/{name}', [BackupController::class, 'updateProfile'])->middleware('ability:backups-manage');
     Route::delete('/backups/profiles/{name}', [BackupController::class, 'deleteProfile'])->middleware('ability:backups-manage');
@@ -297,8 +307,22 @@ Route::prefix('api')->middleware(['cipi.ip', 'auth:sanctum'])->group(function ()
     Route::post('/firewall/real-ip/refresh', [FirewallController::class, 'realIpRefresh'])->middleware('ability:firewall-manage');
     Route::delete('/firewall/real-ip', [FirewallController::class, 'realIpDisable'])->middleware('ability:firewall-manage');
 
-    // Cloudflare Zero Trust — read-only status (Cipi CLI ≥ 5.3.0)
+    // Zero Trust — Cloudflare's side is read-only (Cipi CLI ≥ 5.3.0); the mesh
+    // network (Tailscale, NetBird; Cipi CLI ≥ 5.18.0) is joined, left and locked
+    // from here too. Synchronous: a join carries a key.
     Route::get('/zt', [ZtController::class, 'status'])->middleware('ability:zt-view');
+    Route::post('/zt/mesh', [ZtMeshController::class, 'join'])->middleware('ability:zt-manage');
+    Route::delete('/zt/mesh', [ZtMeshController::class, 'leave'])->middleware('ability:zt-manage');
+    Route::post('/zt/mesh/lock', [ZtMeshController::class, 'lock'])->middleware('ability:zt-manage');
+    Route::delete('/zt/mesh/lock', [ZtMeshController::class, 'unlock'])->middleware('ability:zt-manage');
+    Route::put('/zt/mesh/ssh', [ZtMeshController::class, 'ssh'])->middleware('ability:zt-manage');
+
+    // Moving apps to another server (cipi sync, Cipi ≥ 5.18.0). As strong as ssh-manage.
+    Route::get('/sync/key', [SyncController::class, 'key'])->middleware('ability:sync-manage');
+    Route::post('/sync/check', [SyncController::class, 'check'])->middleware('ability:sync-manage');
+    Route::post('/sync/trust', [SyncController::class, 'trust'])->middleware('ability:sync-manage');
+    Route::delete('/sync/trust', [SyncController::class, 'untrust'])->middleware('ability:sync-manage');
+    Route::post('/sync/push', [SyncController::class, 'push'])->middleware('ability:sync-manage');
 
     // Disk usage — the server, every app, every database (Cipi CLI ≥ 5.5.0 + API sudoers ≥ 5.5.2)
     Route::get('/disk', [DiskController::class, 'usage'])->middleware('ability:disk-view');
