@@ -314,6 +314,9 @@ class CipiBackupCliService
             'key' => [self::CRED_RE, 'key: printable characters, no space, no quote'],
             'secret' => [self::CRED_RE, 'secret: printable characters, no space, no quote']];
         foreach ($checks as $f => [$re, $message]) {
+            if ($f === 'endpoint' && ($in[$f] ?? null) === 'none') {
+                continue; // no endpoint any more: AWS
+            }
             if (isset($in[$f]) && $in[$f] !== '' && ! isset($errors[$f]) && (! is_string($in[$f]) || ! preg_match($re, $in[$f]))) {
                 $errors[$f] = $message;
             }

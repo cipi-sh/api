@@ -1314,7 +1314,7 @@ namespace {
     ok(end($cli->ran) === "backup destination edit 'offsite' '--region=us-east-1' --json" && count($cli->inputs) === 1, 'edit without a secret: nothing on stdin, the secret kept by the server');
     ok($bk19->s3Errors([], false) === ['bucket' => 'bucket is required', 'key' => 'key is required', 'secret' => 'secret is required'] && $bk19->s3Errors([], true) === []
         && array_keys($bk19->s3Errors(['bucket' => 'Bad_Bucket!', 'region' => 'eu central', 'endpoint' => 'ftp://x', 'key' => "a\nb", 'secret' => "has space"], true)) === ['bucket', 'region', 'endpoint', 'key', 'secret']
-        && $bk19->s3Errors(['secret' => "quo'te"], true) === ['secret' => 'secret: printable characters, no space, no quote'] && array_keys($bk19->s3Errors(['key' => "AKIA\n"], true)) === ['key'], 'the fields of a bucket checked before anything runs; a line break, a space or a quote in a key is refused');
+        && $bk19->s3Errors(['secret' => "quo'te"], true) === ['secret' => 'secret: printable characters, no space, no quote'] && array_keys($bk19->s3Errors(['key' => "AKIA\n"], true)) === ['key'] && $bk19->s3Errors(['endpoint' => 'none'], true) === [], 'the fields of a bucket checked before anything runs; a line break, a space or a quote in a key is refused');
     $bk19->configure(['bucket' => 'acme-backups', 'key' => 'AKIAX', 'secret' => 'S2', 'endpoint' => 'https://fsn1.your-objectstorage.com']);
     ok(end($cli->ran) === "backup configure '--bucket=acme-backups' '--key=AKIAX' '--endpoint=https://fsn1.your-objectstorage.com' --secret-stdin" && end($cli->inputs) === 'S2', 'configure: the default bucket, its secret on stdin');
     $bk19->configure(['local_only' => true]);
