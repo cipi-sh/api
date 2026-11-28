@@ -3,7 +3,7 @@
     "info": {
         "title": "Cipi API",
         "description": "REST API for Cipi Server Control Panel. Manage Laravel apps (PHP-FPM or optional Octane/FrankenPHP on Cipi 5.0+), domain aliases, www/apex redirects, SSL certificates, and MariaDB/PostgreSQL databases (Cipi 4.8+ multi-engine).\n\n**Authentication:** All endpoints require a Bearer token via the `Authorization` header.\nTokens are managed with `cipi api token create|list|revoke`. Each endpoint names the ability it requires; a token created with `--full-access` (ability `*`) passes all of them, including the ones later versions add.\n\n**Async Operations:** Most write operations (create, edit, delete, SSL, alias/www, database create/backup/restore/password) are dispatched as background jobs with `202 Accepted` and a `job_id`. Poll `GET /api/jobs/{id}` to check status: the token needs the ability the job was created under (`apps-create` for `app-create`, `dbs-manage` for `db-password`, `deploy-manage` for `app-deploy`, \u2026 \u2014 since 1.36.1), otherwise `404`. **Database listing** (`GET /api/dbs`) and **engines** (`GET /api/dbs/engines`) are synchronous. **Server status** (`GET /api/status`) is synchronous (requires `status-view`).\n\n**Sync Validation:** Domain and app existence checks are performed synchronously before job dispatch. Validation errors (409, 404, 422) are returned immediately.\n\n**Env / auth.json / Artisan (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/env` (key/value, ability `apps-env`), `GET|POST|PUT|DELETE /apps/{name}/auth` (shared auth.json, ability `apps-auth` \u2014 not HTTP Basic Auth), `POST /apps/{name}/artisan` (async job, ability `apps-artisan`; poll `GET /jobs/{id}` for output).\n\n**App run (Cipi >= 5.0.3):** `GET /run-commands` and `POST /apps/{name}/run` (ability `apps-run`) dispatch whitelisted non-interactive binaries as the app user (composer, npm, ls, rm, git, \u2026 \u2014 no nano/vim/less/bash/tinker). Async job; poll `/jobs/{id}`.\n\n**Deploy config (Cipi >= 5.0.3):** `GET|PUT /apps/{name}/deploy-config` (ability `apps-deploy-config`) \u2014 structured recipe options (keep_releases, migrate/optimize hooks, node_build, extra_artisan). Regenerates deploy.php from template; not a raw PHP upload.\n\n**MCP Server:** Available at `/mcp` with `mcp-access` ability.\n\n**IP whitelist (Cipi >= 5.0.8):** `GET|PUT|POST|DELETE /ip-whitelist` and `POST /ip-whitelist/allow-all` (abilities `ip-whitelist-view` / `ip-whitelist-manage`). Default `*` allows all clients; otherwise only listed IPv4/IPv6/CIDR may call the API/MCP. Managed on the host with `cipi api ip-whitelist`.\n\n**App/path redirects & prefix proxies (Cipi >= 5.3.1, API sudoers >= 5.4.1):** `GET /apps/{name}/redirects`, `PUT|DELETE /apps/{name}/redirect`, `POST /apps/{name}/redirect/enable|disable`, `POST|DELETE /apps/{name}/redirects` (abilities `redirects-view` / `redirects-manage`); `GET|POST|DELETE /apps/{name}/proxies` (abilities `proxies-view` / `proxies-manage`). Synchronous: the CLI regenerates the vhost, runs `nginx -t` and reverts on failure.\n\n**Node apps & runtimes (Cipi >= 5.4.0):** app create/edit accept `node` (spa|static|ssr), `framework`, `node_version`, `build`, `start`, `output`, `health_path`. `GET /node` lists runtimes, `GET /apps/{name}/node` shows app Node status, `POST /apps/{name}/node/restart` does a blue/green restart (abilities `node-view` / `node-manage`).\n\n**Deploy audit (Cipi >= 5.4.0):** `GET /apps/{name}/deploy/audit` returns the root-only hash-chained ledger records (ability `deploy-manage`).\n\n**Deploy status (Cipi >= 5.8.4):** `GET /apps/{name}/deploy/status` says whether a deploy is running right now \u2014 whoever started it: Git webhook, CLI, panel, rollback \u2014 with its trigger, branch, start time and elapsed seconds, and how the last one ended; `tail` adds the last lines of the deploy log (ability `deploy-manage`). `503` on an older core: the flag is never sent to a Cipi that does not know it.\n\n**Search / Meilisearch (Cipi >= 5.2.2):** `GET /search` (ability `search-view`), `POST /apps/{name}/search/enable|disable` (ability `search-manage`). Engine install/upgrade/key-rotate stay on the host CLI.\n\n**Read-only host insights:** `GET /packages` (`packages-view`, Cipi >= 5.2.2; installing and removing below), `GET /monitor` (`monitor-view`, Cipi >= 5.3.0), `GET /zt` (`zt-view`, Cipi >= 5.3.0; from Cipi 5.16.0 with `details`: the tunnel and its connectors, Access paths and people, service tokens, TCP services, SSH certificates, previews), `GET /disk` and `GET /disk/dbs` (`disk-view`, Cipi >= 5.5.2 for the API sudoers) \u2014 the figures of `cipi disk --json` / `cipi disk db --json` (server filesystem, every app with files, database, total, share of the disk and soft limit; every database per engine), measured on request.\n\n**Fix permissions (Cipi >= 5.2.1):** `POST /apps/{name}/fix-permissions` (ability `apps-edit`) restores the app home permission model as an async job.\n\n**Wildcard domains (Cipi >= 5.1.1):** `*.example.com` is accepted as primary domain on app create/edit.\n\n**App type:** app list/show expose `type` (`laravel` | `custom` | `node`) and `custom` (true for custom and Node apps, as stored by Cipi). Use `type` to tell them apart.\n\n**Limits & soft disk limit (Cipi >= 5.5.0):** `GET|PUT /apps/{name}/limits` \u2014 PHP-FPM/Octane/worker limits and `disk_limit_gb` (files + database, alerts only; abilities `apps-view` / `apps-edit`). PUT is an async job (`app-limits`).\n\n**DNS-01 / wildcard certificates (Cipi >= 5.5.0):** `POST /apps/{name}/ssl` accepts `dns`, `account`, `wildcard`, `http`. `GET|PUT /ssl/dns` and `DELETE /ssl/dns/{account}` manage Cloudflare accounts (ability `ssl-manage`; tokens are never returned, PUT is synchronous so the token is never queued).\n\n**App create & repository access (Cipi >= 5.6.0):** `POST /apps` accepts `node_build` (Laravel asset build run inside every deploy). The `app-create` job result, and the `app-edit` result when the repository or branch changed, carry `repository_access` (`ok` | `nobranch` | `denied`, with git's error and the CLI fix as `hint`): Cipi tests the deploy key against the repository on the spot.\n\n**cipi.yml (Cipi >= 5.6.4):** `GET /apps/{name}/yml` (ability `yml-view`) returns the app's cipi.yml plan: file, auto-apply, validity, changes, blockers. `POST /apps/{name}/yml/apply` applies it as an async job (`app-yml-apply`); `POST /apps/{name}/yml/auto/enable|disable` turn on or off the apply after every successful deploy (ability `yml-manage`). With auto-apply on, whoever can commit to the repository controls the app's server configuration.\n\n**Environments (Cipi >= 5.8.0):** every app carries an `env` label (`production` unless set). `POST /apps` and `PUT /apps/{name}` accept `env` (lowercase letters, digits, `-`, `_`, max 32 chars; 422 otherwise), app list/show return it, and the cipi.yml plan/auto responses report the `env` Cipi read the file for (`cipi-<env>.yml` before `cipi.yml`).\n\n**Metrics & health history (Cipi >= 5.11.0):** `GET /metrics` (latest values, last-hour trend per app, uptime 24h/7d/30d, recent events), `GET /metrics/series`, `GET /apps/{name}/metrics`, `GET /metrics/uptime`, `GET /metrics/events`, `GET /metrics/settings` (ability `metrics-view`); `PUT /metrics/settings` (retention, probe, collector on/off), `PUT|DELETE /metrics/heartbeat`, `POST /metrics/heartbeat/test` (ability `metrics-manage`). Synchronous: the CLI reads the server's SQLite. The OpenMetrics endpoint, prune and reset stay on the host. `GET|PUT /apps/{name}/basicauth/agent` (ability `apps-basicauth`): whether the cipi/agent routes are left out of basic auth.\n\n**Notifications (Cipi >= 5.12.0):** `GET /notifications` and `GET /notifications/triggers` (ability `notifications-view`, or `smtp-view`); `POST /notifications/channels`, `PUT|DELETE /notifications/channels/{id}`, `POST /notifications/channels/{id}/enable|disable|test`, `PUT /notifications/triggers`, `POST /notifications/triggers/reset` (ability `notifications-manage`, or `smtp-manage`). Every channel type \u2014 SMTP, Resend, SES, Slack, Discord, Mattermost, Google Chat, Telegram, ntfy, Pushover, webhook \u2014 and every trigger. Synchronous: secrets go straight to the server's vault, never to the jobs table, and never come back (`*_set` flags). The `/smtp` routes are unchanged. From Cipi 5.15.0 a channel takes `events` (categories, triggers, `urgent`; null for everything) and `GET /notifications` lists the `categories`.\n\n**Cipi 5.13.0:** `PUT /apps/{name}/env` takes `order` \u2014 every key once, applied after `set`/`unset` (the panel's drag and drop); an older core is refused with `422`. Backup profiles take `exclude_paths` (folders and files left out of the app archives; `422` on an older core, which would ignore it). `GET /apps/{name}/deploy/status` reports `paused_commit`: the commit whose automatic deploy failed, which the webhook no longer deploys until a new push, a deploy from the panel, or `POST /apps/{name}/deploy/unlock`, which also resumes it. `GET /dbs/engines` says which server runs on each engine (`server`: `mariadb` or `mysql` for the engine `mariadb`, `label`); replacing MariaDB with MySQL is a CLI-only action (`cipi db switch`). `GET /apps/{name}/basicauth` reads `cipi basicauth status --json` (and the agent mode), and no longer fails on Cipi 5.11\u20135.12, which exited 1 after printing the status.\n\n**Firewall (Cipi >= 5.14.0):** `GET /firewall` (ability `firewall-view`) reads UFW, fail2ban and CrowdSec in one call; with `firewall-manage`: `POST|DELETE /firewall/rules` (open a port, remove what allow made), `POST|DELETE /firewall/blocks` (every port refused to an address, ahead of every allow), `PUT /firewall/attempts` (fail2ban threshold), `DELETE /firewall/bans` (fail2ban and CrowdSec), `POST|DELETE /firewall/crowdsec/allowlist`, and `POST /firewall/crowdsec/enable|disable` (async jobs `crowdsec-enable`, `crowdsec-disable`). Synchronous changes answer with the firewall after them. From Cipi 5.15.0 `GET /firewall` has `real_ip` (the visitor's address behind Cloudflare), changed with `PUT|DELETE /firewall/real-ip` and `POST /firewall/real-ip/refresh`. Never from the API: denying or removing the SSH port, 80 or 443 for everyone, reopening what a Zero Trust lock keeps closed, blocking the address of the caller; the CLI ignores `--force` from the panel.\n\n**Optional packages (Cipi >= 5.14.0):** `POST /packages/{package}` installs and `DELETE /packages/{package}` removes one entry of the server's closed catalog (`browsershot`, `fonts-cjk`, `avif`, `ffmpeg`, `imagemagick`, `image-optimizers`, `poppler-utils`, `pdftk`, `libreoffice`, `pandoc`, `tesseract`, and the security scanners Hackly runs: `sec-recon`, `sec-gitleaks`, `sec-nuclei`, `sec-zap`, `sec-nikto`, `sec-wpscan`, `sec-trivy`, `sec-semgrep`, `sec-checkov`) as async jobs (`package-install`, `package-remove`; ability `packages-manage`). A removal takes nothing another package needs. `GET /packages` adds `kind` (`tools` | `libraries`), `binaries`, `missing`, `source` (`ubuntu` | `upstream`), `version`, `installed_version` and `outdated`: upstream entries are releases pinned in Cipi by version and SHA-256, and installing an outdated one updates it.",
-        "version": "1.49.0",
+        "version": "1.49.1",
         "contact": {
             "name": "Cipi",
             "url": "https://cipi.sh"
@@ -646,6 +646,101 @@
                     },
                     "422": {
                         "$ref": "#/components/responses/ValidationError"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            }
+        },
+        "/apps/{name}/env/raw": {
+            "get": {
+                "tags": [
+                    "Apps"
+                ],
+                "summary": "Get the app .env as text",
+                "description": "The `.env` as it is: every line, comment, blank line and space (`cipi app env --raw --json`). Custom apps are rejected. Requires `apps-env` ability and Cipi CLI >= 5.19.2 (501 before).",
+                "operationId": "appEnvRawShow",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The file",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AppEnvRawResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "501": {
+                        "description": "The server's Cipi is older than 5.19.2"
+                    },
+                    "503": {
+                        "$ref": "#/components/responses/ServiceUnavailable"
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Apps"
+                ],
+                "summary": "Replace the app .env with a text",
+                "description": "The whole `.env`, written byte for byte: nothing parsed, quoted, trimmed or moved (`cipi app env --stdin`; the text goes on the CLI's standard input). Empty, more than 64 KB or with a NUL byte: 422, the file as it was. Answers the file as it is now. Requires `apps-env` ability and Cipi CLI >= 5.19.2 (501 before).",
+                "operationId": "appEnvRawUpdate",
+                "parameters": [
+                    {
+                        "$ref": "#/components/parameters/AppName"
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AppEnvRawUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "The file as it is now",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AppEnvRawResponse"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "$ref": "#/components/responses/Unauthorized"
+                    },
+                    "403": {
+                        "$ref": "#/components/responses/Forbidden"
+                    },
+                    "404": {
+                        "$ref": "#/components/responses/NotFound"
+                    },
+                    "422": {
+                        "$ref": "#/components/responses/ValidationError"
+                    },
+                    "501": {
+                        "description": "The server's Cipi is older than 5.19.2"
                     },
                     "503": {
                         "$ref": "#/components/responses/ServiceUnavailable"
@@ -13077,6 +13172,39 @@
                                 }
                             }
                         }
+                    }
+                }
+            },
+            "AppEnvRawResponse": {
+                "type": "object",
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "app": {
+                                "type": "string",
+                                "example": "shop"
+                            },
+                            "text": {
+                                "type": "string",
+                                "description": "The .env, byte for byte",
+                                "example": "APP_NAME=Shop\n\n# Mail\nMAIL_MAILER=ses\n"
+                            }
+                        }
+                    }
+                }
+            },
+            "AppEnvRawUpdateRequest": {
+                "type": "object",
+                "required": [
+                    "text"
+                ],
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "maxLength": 65536,
+                        "description": "The whole .env, written as it is",
+                        "example": "APP_NAME=Shop\n\n# Mail\nMAIL_MAILER=ses\n"
                     }
                 }
             },
