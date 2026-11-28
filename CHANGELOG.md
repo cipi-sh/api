@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.49.0] - 2026-11-28
+
+For Cipi 5.19.0/5.19.1: backups set up and managed from the panel — on the server first, then S3 buckets and SFTP servers on a par, the encryption key, the retention now.
+
+### Added
+
+- `POST /api/backups/destinations` takes `type: "s3"` (`name`, `bucket`, `key`, `secret`, `region`, `endpoint`); `PUT /api/backups/destinations/{name}` changes one — the secret kept when left out — and tells an S3 bucket from an SFTP server by its fields or, with none, by asking the server; `DELETE` removes either (`cipi backup destination remove` on 5.19.0, `backup sftp remove` before).
+- `PUT /api/backups/config` — `cipi backup configure`: backups on the server, the local folder and the nightly profile (no body; the local and temp folders are not set from the API). The answer is the backup status after it.
+- **S3 buckets and SFTP servers on a par** (Cipi 5.19.1+): any destination name but `local`, `s3` included for an S3 bucket — added, changed and removed like the others; `profiles` on `POST`/`PUT /api/backups/destinations` sends those profiles there too (`--use=`).
+- `GET /api/backups/key` (the encryption key, once — the server logs and notifies it), `POST /api/backups/key/rotate`, `POST /api/backups/prune` (`profile`, `dry_run`; job `backup-prune`). All under `backups-manage`.
+- `CipiCliService::runWithInput()`: a command with something on its standard input. **The secret key of a bucket goes there** (`--secret-stdin`): never on the command line (`ps`, logs), never in a job, never in an answer.
+- The fields of a bucket are checked before anything runs — a key or a secret with a space, a quote or a line break is a `422` — and the bucket is reached with its keys before the server saves it.
+- OpenAPI 1.49.0. `tests/standalone.php`: 694 checks.
+
 ## [1.48.0] - 2026-11-27
 
 For Cipi 5.18.0: the mesh network of Zero Trust — Tailscale or NetBird. `GET /api/zt` reads it, and five routes under `/api/zt/mesh` join it, leave it and lock the server behind it, so a panel can do everything the CLI does. New abilities: `zt-manage`, `sync-manage`, `updates-view`, `updates-manage`.
