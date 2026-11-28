@@ -6343,7 +6343,7 @@
                     "Backups"
                 ],
                 "summary": "Set up backups: this server only, an S3 bucket or an SFTP server",
-                "description": "`cipi backup configure`, where backups go — `type`: `local` (this server only; `local_only: true` too), `s3` (the default bucket, 's3' in profiles: `bucket`, `key`, `secret` kept when left out, `region`, `endpoint`; the bucket is reached before anything is saved, the secret goes on the CLI's standard input) or `sftp` (an SFTP server: `host`, `user`, `port`, `path`, `name` — 'sftp' by default; Cipi makes its key, answered as `destination.public_key`, to install on the remote). Without `type`, the fields say it. A first setup makes the nightly profile, sent to what was chosen. The local and temp folders are not set from here. Synchronous. Requires `backups-manage` and Cipi CLI >= 5.19.0.",
+                "description": "`cipi backup configure`, where backups go — `type`: `local` (this server only; `local_only: true` too), `s3` (the default bucket, 's3' in profiles: `bucket`, `key`, `secret` kept when left out, `region`, `endpoint`; the bucket is reached before anything is saved, the secret goes on the CLI's standard input) or `sftp` (an SFTP server: `host`, `user`, `port`, `path`, `name` — 'sftp' by default; Cipi makes its key, answered as `destination.public_key`, to install on the remote). Without `type`, the fields say it. A first setup makes the nightly profile, sent to what was chosen. The local and temp folders are not set from here. Synchronous. Requires `backups-manage` and Cipi CLI >= 5.19.0 (>= 5.19.1 for `sftp`).",
                 "operationId": "backupConfigure",
                 "requestBody": {
                     "required": true,

@@ -1317,7 +1317,9 @@ namespace {
         && $bk19->s3Errors(['secret' => "quo'te"], true) === ['secret' => 'secret: printable characters, no space, no quote'] && array_keys($bk19->s3Errors(['key' => "AKIA\n"], true)) === ['key'] && $bk19->s3Errors(['endpoint' => 'none'], true) === [], 'the fields of a bucket checked before anything runs; a line break, a space or a quote in a key is refused');
     $bk19->configure(['bucket' => 'acme-backups', 'key' => 'AKIAX', 'secret' => 'S2', 'endpoint' => 'https://fsn1.your-objectstorage.com']);
     ok(end($cli->ran) === "backup configure '--bucket=acme-backups' '--key=AKIAX' '--endpoint=https://fsn1.your-objectstorage.com' --secret-stdin" && end($cli->inputs) === 'S2', 'configure: the default bucket, its secret on stdin');
-    ok($bk19->configure(['local_only' => true]) === ['type' => 'local', 'destination' => null] && end($cli->ran) === 'backup configure --type=local', 'configure: local only (local_only: true, or type: local)');
+    ok($bk19->configure(['local_only' => true]) === ['type' => 'local', 'destination' => null] && end($cli->ran) === 'backup configure --local-only', 'configure: local only (local_only: true, or type: local) — as 5.19.0 takes it');
+    ok(str_contains((string) thrown(fn () => $bk19->configure(['type' => 'sftp', 'host' => 'h', 'user' => 'u'])), 'needs Cipi 5.19.1+'), 'configure: an SFTP server needs 5.19.1');
+    $bk19 = new CipiApi\Services\CipiBackupCliService($cli, new FakeVersion('5.19.1'));
     $sftpSetup = ['output' => "→ Created backup profile 'default'\n" . json_encode(['configured' => true, 'type' => 'sftp', 'destination' => ['name' => 'sftp', 'type' => 'sftp', 'host' => 'u1.your-storagebox.de', 'port' => 23, 'user' => 'u1', 'path' => 'cipi', 'public_key' => 'ssh-ed25519 AAAAKey cipi-backup-sftp@web1']]) . "\n✓ Backup configured", 'exit_code' => 0, 'success' => true];
     $cli->by["backup configure --type=sftp"] = $sftpSetup;
     $setup = $bk19->configure(['type' => 'sftp', 'host' => 'u1.your-storagebox.de', 'port' => 23, 'user' => 'u1', 'path' => 'cipi']);

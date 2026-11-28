@@ -281,6 +281,9 @@ class CipiBackupCliService
     // ── S3 buckets, the default bucket, the key, the retention (Cipi 5.19.0) ──
 
     /** Backups set up and managed from the panel: S3 buckets, `configure`, the key, prune. */
+    /** `cipi backup configure --type=sftp`: 5.19.1. */
+    public const MIN_CIPI_SFTP_SETUP = '5.19.1';
+
     public const MIN_CIPI_PANEL = '5.19.0';
 
     public const BUCKET_RE = '/^[a-z0-9][a-z0-9._-]{1,62}$/D';
@@ -361,11 +364,13 @@ class CipiBackupCliService
         $this->version->require(self::MIN_CIPI_PANEL, 'Setting up backups from the panel');
         $type = self::setupType($in);
         if ($type === 'local') {
-            $this->plain('backup configure --type=local', 'cipi backup configure');
+            // --local-only: what 5.19.0 already takes (--type= is 5.19.1's).
+            $this->plain('backup configure --local-only', 'cipi backup configure');
 
             return ['type' => 'local', 'destination' => null];
         }
         if ($type === 'sftp') {
+            $this->version->require(self::MIN_CIPI_SFTP_SETUP, 'Setting up backups to an SFTP server');
             $command = 'backup configure --type=sftp';
             foreach (['host', 'port', 'user', 'path', 'name'] as $f) {
                 if (array_key_exists($f, $in) && $in[$f] !== null && $in[$f] !== '') {
