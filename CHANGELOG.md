@@ -9,7 +9,7 @@ For Cipi 5.19.0: backups set up and managed from the panel — the default bucke
 ### Added
 
 - `POST /api/backups/destinations` takes `type: "s3"` (`name`, `bucket`, `key`, `secret`, `region`, `endpoint`); `PUT /api/backups/destinations/{name}` changes one — the secret kept when left out — and tells an S3 bucket from an SFTP server by its fields or, with none, by asking the server; `DELETE` removes either (`cipi backup destination remove` on 5.19.0, `backup sftp remove` before).
-- `PUT /api/backups/config` — `cipi backup configure`: the default bucket, or `local_only: true`. The answer is the backup status after it. The local and temp folders are not set from the API.
+- `PUT /api/backups/config` — `cipi backup configure`, where backups go: `type` `local` (this server only; `local_only: true` too), `s3` (the default bucket) or `sftp` (an SFTP server: `host`, `user`, `port`, `path`, `name` — `sftp` by default). The answer is the backup status after it, with `type` and `destination` — for an SFTP server its fields and the `public_key` it has to accept. The local and temp folders are not set from the API.
 - `GET /api/backups/key` (the encryption key, once — the server logs and notifies it), `POST /api/backups/key/rotate`, `POST /api/backups/prune` (`profile`, `dry_run`; job `backup-prune`). All under `backups-manage`.
 - `CipiCliService::runWithInput()`: a command with something on its standard input. **The secret key of a bucket goes there** (`--secret-stdin`): never on the command line (`ps`, logs), never in a job, never in an answer.
 - The fields of a bucket are checked before anything runs — a key or a secret with a space, a quote or a line break is a `422` — and the bucket is reached with its keys before the server saves it.

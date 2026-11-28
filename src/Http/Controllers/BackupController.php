@@ -232,29 +232,46 @@ class BackupController extends Controller
     }
 
     /**
-     * PUT /backups/config — set up backups: the default bucket ('s3' in
-     * profiles) — `bucket`, `key`, `secret` (kept when left out), `region`,
-     * `endpoint` — or `local_only: true`. Synchronous; the answer is the
-     * backup status after it. The secret goes on the CLI's standard input.
+     * PUT /backups/config — set up backups, where they go: `type` local (this
+     * server only; `local_only: true` too), s3 (the default bucket, 's3' in
+     * profiles — `bucket`, `key`, `secret` kept when left out, `region`,
+     * `endpoint`) or sftp (an SFTP server — `host`, `user`, `port`, `path`,
+     * `name`, 'sftp' by default). Synchronous; the answer is the backup status
+     * after it, and for an SFTP server the destination with the public key it
+     * has to accept. The secret goes on the CLI's standard input.
      */
     public function configure(Request $request): JsonResponse
     {
         $in = $request->all();
-        $localOnly = filter_var($in['local_only'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        if (! $localOnly) {
+        $type = CipiBackupCliService::setupType($in);
+        if ($type === null || $type === '') {
+            return response()->json(['error' => 'Say where backups go: type local, s3 (bucket, key, secret, region, endpoint) or sftp (host, user, port, path, name)'], 422);
+        }
+        if ($type === 's3') {
             $fields = array_intersect_key($in, array_flip(['bucket', 'key', 'secret', 'region', 'endpoint']));
-            if ($fields === []) {
-                return response()->json(['error' => 'Give the bucket (bucket, key, secret, region, endpoint) or local_only: true'], 422);
-            }
             if (($errors = $this->backup->s3Errors($fields, true)) !== []) {
+                return response()->json(['error' => implode('; ', $errors), 'errors' => $errors], 422);
+            }
+            // Only the region or the endpoint changes: the bucket stays as it is. Said as s3, or given: it is a bucket.
+            if ((array_key_exists('type', $in) || array_key_exists('bucket', $in)) && (! is_string($fields['bucket'] ?? null) || $fields['bucket'] === '')) {
+                return response()->json(['error' => 'An S3 bucket needs bucket (and key, secret)', 'errors' => ['bucket' => 'bucket is required']], 422);
+            }
+        }
+        if ($type === 'sftp') {
+            $fields = array_intersect_key($in, array_flip(['host', 'user', 'port', 'path']));
+            $errors = $this->backup->sftpErrors($fields, false);
+            if (isset($in['name']) && (! is_string($in['name']) || ! $this->backup->isValidName($in['name']) || in_array($in['name'], ['local', 's3'], true))) {
+                $errors['name'] = "name: lowercase letters, digits and dashes (2 to 32) — not 'local' or 's3'";
+            }
+            if ($errors !== []) {
                 return response()->json(['error' => implode('; ', $errors), 'errors' => $errors], 422);
             }
         }
 
         try {
-            $message = $this->backup->configure($localOnly ? ['local_only' => true] : $in);
+            $setup = $this->backup->configure(['type' => $type] + $in);
 
-            return response()->json(['data' => $this->backup->status(), 'message' => $message], 200);
+            return response()->json(['data' => $this->backup->status(), 'type' => $setup['type'], 'destination' => $setup['destination']], 200);
         } catch (\RuntimeException $e) {
             return $this->cliError($e);
         }

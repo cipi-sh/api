@@ -346,21 +346,68 @@ class CipiBackupCliService
     }
 
     /**
-     * Set up backups: the default bucket ('s3' in profiles) — `bucket`, `key`,
-     * `secret` (kept when not given), `region`, `endpoint` — or `local_only`.
-     * The bucket is reached with the keys before anything is saved. The local
-     * and temp folders stay the server's.
+     * Set up backups — where they go: `type` local (this server only), s3 (the
+     * default bucket, 's3' in profiles: `bucket`, `key`, `secret` kept when not
+     * given, `region`, `endpoint`) or sftp (an SFTP server: `host`, `user`,
+     * `port`, `path`, `name` — 'sftp' by default; Cipi makes its key). The
+     * bucket is reached with the keys before anything is saved. The local and
+     * temp folders stay the server's.
+     *
+     * @param  array<string, mixed>  $in
+     * @return array{type: string, destination: array<string, mixed>|null}  an SFTP destination with its public key
+     */
+    public function configure(array $in): array
+    {
+        $this->version->require(self::MIN_CIPI_PANEL, 'Setting up backups from the panel');
+        $type = self::setupType($in);
+        if ($type === 'local') {
+            $this->plain('backup configure --type=local', 'cipi backup configure');
+
+            return ['type' => 'local', 'destination' => null];
+        }
+        if ($type === 'sftp') {
+            $command = 'backup configure --type=sftp';
+            foreach (['host', 'port', 'user', 'path', 'name'] as $f) {
+                if (array_key_exists($f, $in) && $in[$f] !== null && $in[$f] !== '') {
+                    $command .= ' ' . escapeshellarg("--{$f}=" . $in[$f]);
+                }
+            }
+            $output = $this->plain($command . ' --json', 'cipi backup configure');
+            $decoded = CipiAppJitService::decode($output);
+            $dest = is_array($decoded) ? ($decoded['destination'] ?? null) : null;
+            if (! is_array($dest) || ($dest['type'] ?? null) !== 'sftp') {
+                throw new \RuntimeException('Cipi CLI returned no SFTP destination (Cipi CLI ≥ ' . self::MIN_CIPI_PANEL . ' required)');
+            }
+
+            return ['type' => 'sftp', 'destination' => $dest];
+        }
+        $this->withSecret('backup configure' . $this->s3Flags($in), $in['secret'] ?? null, 'cipi backup configure');
+
+        return ['type' => 's3', 'destination' => null];
+    }
+
+    /**
+     * What a setup is for: `type` (local, s3, sftp); `local_only: true` is
+     * local; S3 fields are s3, SFTP ones sftp. Null: nothing said.
      *
      * @param  array<string, mixed>  $in
      */
-    public function configure(array $in): string
+    public static function setupType(array $in): ?string
     {
-        $this->version->require(self::MIN_CIPI_PANEL, 'Setting up backups from the panel');
-        if (! empty($in['local_only'])) {
-            return $this->plain('backup configure --local-only', 'cipi backup configure');
+        if (filter_var($in['local_only'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            return 'local';
+        }
+        if (isset($in['type'])) {
+            return is_string($in['type']) && in_array($in['type'], ['local', 's3', 'sftp'], true) ? $in['type'] : '';
+        }
+        if (array_intersect_key($in, array_flip(['bucket', 'key', 'secret', 'region', 'endpoint'])) !== []) {
+            return 's3';
+        }
+        if (array_intersect_key($in, array_flip(['host', 'user'])) !== []) {
+            return 'sftp';
         }
 
-        return $this->withSecret('backup configure' . $this->s3Flags($in), $in['secret'] ?? null, 'cipi backup configure');
+        return null;
     }
 
     /** The encryption key, once — logged and notified on the server. Never kept here. */

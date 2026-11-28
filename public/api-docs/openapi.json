@@ -6342,8 +6342,8 @@
                 "tags": [
                     "Backups"
                 ],
-                "summary": "Set up backups: the default bucket, or local copies only",
-                "description": "`cipi backup configure`: the default bucket ('s3' in profiles) — `bucket`, `key`, `secret` (kept when left out), `region`, `endpoint` — or `local_only: true`. The bucket is reached before anything is saved. The secret goes on the CLI's standard input. The local and temp folders are not set from here. Synchronous; the answer is the backup status after it. Requires `backups-manage` and Cipi CLI >= 5.19.0.",
+                "summary": "Set up backups: this server only, an S3 bucket or an SFTP server",
+                "description": "`cipi backup configure`, where backups go — `type`: `local` (this server only; `local_only: true` too), `s3` (the default bucket, 's3' in profiles: `bucket`, `key`, `secret` kept when left out, `region`, `endpoint`; the bucket is reached before anything is saved, the secret goes on the CLI's standard input) or `sftp` (an SFTP server: `host`, `user`, `port`, `path`, `name` — 'sftp' by default; Cipi makes its key, answered as `destination.public_key`, to install on the remote). Without `type`, the fields say it. A first setup makes the nightly profile, sent to what was chosen. The local and temp folders are not set from here. Synchronous. Requires `backups-manage` and Cipi CLI >= 5.19.0.",
                 "operationId": "backupConfigure",
                 "requestBody": {
                     "required": true,
@@ -6352,8 +6352,18 @@
                             "schema": {
                                 "type": "object",
                                 "properties": {
+                                    "type": {
+                                        "type": "string",
+                                        "enum": [
+                                            "local",
+                                            "s3",
+                                            "sftp"
+                                        ],
+                                        "description": "Where backups go"
+                                    },
                                     "local_only": {
-                                        "type": "boolean"
+                                        "type": "boolean",
+                                        "description": "The same as type: local"
                                     },
                                     "bucket": {
                                         "type": "string",
@@ -6380,6 +6390,34 @@
                                         "type": "string",
                                         "example": "https://fsn1.your-objectstorage.com",
                                         "description": "S3: every provider but AWS"
+                                    },
+                                    "host": {
+                                        "type": "string",
+                                        "example": "u1234.your-storagebox.de",
+                                        "description": "SFTP: the server"
+                                    },
+                                    "port": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 65535,
+                                        "default": 22,
+                                        "description": "SFTP: 23 for a Hetzner Storage Box"
+                                    },
+                                    "user": {
+                                        "type": "string",
+                                        "example": "u1234",
+                                        "description": "SFTP: the login"
+                                    },
+                                    "path": {
+                                        "type": "string",
+                                        "example": "cipi",
+                                        "description": "SFTP: the folder on the remote; empty: the login's home"
+                                    },
+                                    "name": {
+                                        "type": "string",
+                                        "default": "sftp",
+                                        "pattern": "^[a-z][a-z0-9-]{1,31}$",
+                                        "description": "SFTP: its name in profiles"
                                     }
                                 }
                             }
@@ -6388,7 +6426,7 @@
                 },
                 "responses": {
                     "200": {
-                        "description": "The backup status after it (`data`), and the CLI's message"
+                        "description": "The backup status after it (`data`), `type`, and `destination` — for an SFTP server its fields and `public_key`, null otherwise"
                     },
                     "422": {
                         "description": "Refused: a field, the provider, or the server — with the reason"
